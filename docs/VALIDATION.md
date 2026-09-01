@@ -25,8 +25,8 @@ reference node.
 Latest result:
 
 ```text
-pytest:   126 passed
-unittest: 126 tests / 150 subtests passed
+pytest:   134 passed
+unittest: 134 tests / 151 subtests passed
 shell:    all repository shell scripts pass bash -n
 compile:  all Python modules compile
 ```
@@ -60,7 +60,7 @@ post-boot checks:
 - physical panel refreshed after boot;
 - zero failed systemd units;
 - raw probe and collector transcript hashes unchanged; and
-- all 126 tests plus the safety-gate smoke check passed on the Pi.
+- all 134 tests plus the safety-gate smoke check passed on the Pi.
 
 ## Read-only vehicle probe
 
@@ -160,3 +160,51 @@ hummer-collector.service = disabled / inactive
 ```
 
 This is an electrical/power-management gate, not a software test failure.
+
+## Expanded command capability probe
+
+At the owner's request, an exact-command mode was added and tested. It validates
+the complete operator-supplied list before opening the serial device, preserves
+command order, masks VIN output, and records byte-exact TX/RX data. A regression
+test proves that one unsafe entry rejects the whole set before any byte is sent.
+
+The following list was run on 2026-09-01, followed by a second `ATDP`/`ATDPN`
+pair after protocol detection:
+
+```text
+ATZ ATE0 ATL0 ATS0 ATH1 ATAL ATSP0 ATDP ATDPN ATRV
+0100 0120 0140 0160 0180
+0900 0902 0904 0906
+03 07 0A 0142 010D 015B
+ATDP ATDPN
+```
+
+The successful transcript contains 27 request/response pairs, 58 JSONL lines,
+15,677 bytes, zero corrupt records, and SHA-256:
+
+```text
+8aa78d77ab859708e237a6a564e94a1937c5ac0a8ab2e10b0cfc0302b3e1f805
+```
+
+The adapter was healthy and the vehicle was not in a data-serving state:
+
+| Command group | Exact result |
+|---|---|
+| `ATZ` | echoed command, then `ELM327 v1.4b` |
+| `ATE0`, `ATL0`, `ATS0`, `ATH1`, `ATAL`, `ATSP0` | `OK` |
+| `ATDP` / `ATDPN`, before an OBD request | `AUTO` / `A0` |
+| `ATRV` | `12.7V` |
+| `ATDP` / `ATDPN`, after `0100` | `AUTO, ISO 15765-4 (CAN 29/500)` / `A7` |
+| Mode 01 commands | `18DAF128 03 7F 01 22` |
+| Mode 09 commands | `18DAF128 03 7F 09 22` |
+| Mode 03, 07, 0A | `18DAF128 03 7F <service> 22` |
+
+`7F <service> 22` is a negative response with code `0x22`
+(`conditionsNotCorrect`). This proves that the request reached the vehicle
+gateway, but the gateway would not serve standard diagnostic data in the
+current ignition/sleep state. It is not `NO DATA`, a valid empty DTC response,
+or a positive PID response. The parser and reviewer now classify this form
+explicitly rather than reporting a structurally valid hex frame as `ok`.
+
+No clear, control, write, security, enhanced Mode 22, or other forbidden
+request appeared in the transcript.

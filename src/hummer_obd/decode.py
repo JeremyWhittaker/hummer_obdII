@@ -23,6 +23,10 @@ __all__ = [
     "decode_dtcs",
     "decode_vin",
     "supported_pids",
+    "supported_service09_pids",
+    "decode_ascii_items",
+    "decode_cvns",
+    "negative_response_name",
     "PID_DECODERS",
     "mask_vin",
 ]
@@ -40,6 +44,26 @@ _NO_DATA_MARKERS = (
     "?",
 )
 
+_NEGATIVE_RESPONSE_CODES = {
+    0x10: "generalReject",
+    0x11: "serviceNotSupported",
+    0x12: "subFunctionNotSupported",
+    0x13: "incorrectMessageLengthOrInvalidFormat",
+    0x21: "busyRepeatRequest",
+    0x22: "conditionsNotCorrect",
+    0x31: "requestOutOfRange",
+    0x33: "securityAccessDenied",
+    0x35: "invalidKey",
+    0x36: "exceedNumberOfAttempts",
+    0x37: "requiredTimeDelayNotExpired",
+    0x78: "responsePending",
+}
+
+
+def negative_response_name(code: int) -> str:
+    """Return the standard name for a UDS/OBD negative-response code."""
+    return _NEGATIVE_RESPONSE_CODES.get(code, f"NRC_0x{code:02X}")
+
 
 @dataclass
 class AdapterReply:
@@ -49,13 +73,15 @@ class AdapterReply:
     lines: list[str]
     #: Hex payload bytes per line, when the line is pure hex.
     frames: list[bytes]
-    status: str  # "ok", "text", "incomplete", "no_data", "error", "empty"
+    status: str  # "ok", "negative_response", "text", "incomplete", "no_data", "error", "empty"
     marker: str = ""
     #: CAN identifiers seen on responding lines, when headers are enabled.
     headers: list[str] = field(default_factory=list)
     #: Multi-frame messages whose consecutive frames never arrived.  They are
     #: counted, never decoded: a truncated payload must not look like an answer.
     incomplete: int = 0
+    #: ``(requested service, response code)`` pairs from ``7F xx yy`` frames.
+    negative_responses: list[tuple[int, int]] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -82,14 +108,36 @@ def parse_reply(data: bytes | str) -> AdapterReply:
     # A reply with no hex frames is not necessarily a failure: "OK", "ELM327
     # v1.4b" and other adapter answers are plain text, and calling those errors
     # buries the ones that matter.
-    if frames:
+    negative_responses = _find_negative_responses(frames)
+    if frames and negative_responses and len(negative_responses) == len(frames):
+        status = "negative_response"
+    elif frames:
         status = "ok"
     elif incomplete:
         status = "incomplete"
     else:
         status = "text"
+    marker = "; ".join(
+        f"7F {service:02X} {code:02X} ({negative_response_name(code)})"
+        for service, code in negative_responses
+    )
     return AdapterReply(raw=raw, lines=lines, frames=frames, status=status,
-                        headers=header_hex, incomplete=len(incomplete))
+                        marker=marker, headers=header_hex,
+                        incomplete=len(incomplete),
+                        negative_responses=negative_responses)
+
+
+def _find_negative_responses(frames: list[bytes]) -> list[tuple[int, int]]:
+    """Extract ``7F <service> <NRC>`` from raw or length-prefixed frames."""
+    found: list[tuple[int, int]] = []
+    for frame in frames:
+        # Auto-formatted replies begin at 7F. Header-preserving ELM replies
+        # retain their one-byte ISO-TP length first (for example 03 7F 01 22).
+        for offset in (0, 1):
+            if len(frame) >= offset + 3 and frame[offset] == 0x7F:
+                found.append((frame[offset + 1], frame[offset + 2]))
+                break
+    return found
 
 
 _SEGMENT = re.compile(r"^([0-9A-Fa-f]):\s*(.*)$")
@@ -285,10 +333,19 @@ def decode_pid(pid: str, reply: AdapterReply) -> PidValue:
 
 def supported_pids(reply: AdapterReply, base_pid: str) -> list[str]:
     """Decode a support bitmap reply (PID 00/20/40/60/80/A0/C0)."""
+    return _supported_pids_for_mode(reply, 0x01, base_pid)
+
+
+def supported_service09_pids(reply: AdapterReply, base_pid: str = "00") -> list[str]:
+    """Decode a Service 09 support bitmap (normally the ``0900`` reply)."""
+    return _supported_pids_for_mode(reply, 0x09, base_pid)
+
+
+def _supported_pids_for_mode(reply: AdapterReply, mode: int, base_pid: str) -> list[str]:
     base = int(base_pid, 16)
     found: list[str] = []
     for frame in reply.frames:
-        data = _payload_after(frame, 0x01, base)
+        data = _payload_after(frame, mode, base)
         if data is None or len(data) < 4:
             continue
         bits = int.from_bytes(data[:4], "big")
@@ -375,16 +432,40 @@ def mask_vin(vin: Optional[str]) -> str:
 
 def decode_ascii_item(reply: AdapterReply, pid: int) -> Optional[str]:
     """Decode a printable-ASCII service 09 item such as CALID or ECU name."""
-    out: list[bytes] = []
+    values = decode_ascii_items(reply, pid)
+    return " / ".join(values) if values else None
+
+
+def decode_ascii_items(reply: AdapterReply, pid: int) -> list[str]:
+    """Decode one printable Service 09 value per responding ECU."""
+    values: list[str] = []
     for frame in reply.frames:
         data = _payload_after(frame, 0x09, pid)
         if data is None:
             continue
         if data and data[0] in (0x00, 0x01, 0x02, 0x03, 0x04):
             data = data[1:]
-        out.append(data)
-    if not out:
-        return None
-    joined = b"".join(out)
-    text = "".join(chr(b) for b in joined if 0x20 <= b <= 0x7E).strip()
-    return text or None
+        text = "".join(chr(b) for b in data if 0x20 <= b <= 0x7E).strip()
+        if text:
+            values.append(text)
+    return values
+
+
+def decode_cvns(reply: AdapterReply) -> list[str]:
+    """Decode Service 09 PID 06 calibration verification numbers.
+
+    CVNs are four-byte binary values, not text. The byte before them is the
+    message count on standard responses and is intentionally discarded.
+    """
+    values: list[str] = []
+    for frame in reply.frames:
+        data = _payload_after(frame, 0x09, 0x06)
+        if data is None:
+            continue
+        if len(data) % 4 == 1:
+            data = data[1:]
+        for offset in range(0, len(data), 4):
+            chunk = data[offset:offset + 4]
+            if len(chunk) == 4:
+                values.append(chunk.hex().upper())
+    return values

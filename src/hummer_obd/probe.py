@@ -22,8 +22,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import load_config
-from .decode import PID_DECODERS, mask_vin
+from .decode import PID_DECODERS, decode_vin, mask_vin, parse_reply
 from .rawlog import RawLog
+from .safety import UnsafeCommandError, validate_all
 from .session import AdapterSession
 from .storage import Storage
 from .transport import SerialTransport, TransportError
@@ -158,6 +159,79 @@ def run_probe(args) -> int:
     return 0
 
 
+def run_command_set(args) -> int:
+    """Run exactly the operator-supplied, prevalidated read-only commands.
+
+    The entire set is validated before the serial device is opened. This makes
+    the operation all-or-nothing: one unsafe or malformed entry prevents every
+    transmission. Raw TX/RX bytes are still recorded by :class:`SerialTransport`.
+    """
+    try:
+        commands = validate_all(args.commands)
+    except UnsafeCommandError as exc:
+        print(f"REFUSED before opening serial transport: {exc}", file=sys.stderr)
+        return 2
+
+    cfg = load_config(args.config, root=args.root) if args.config else load_config(root=args.root)
+    device = args.device or cfg.adapter.device
+    session_uid = f"command-probe-{_stamp()}"
+    raw_dir = cfg.path(cfg.collector.raw_log_dir)
+    raw_path = Path(raw_dir) / f"{session_uid}.jsonl"
+    summary: dict = {
+        "session": session_uid,
+        "device": device,
+        "raw_log": str(raw_path),
+        "commands": [],
+    }
+
+    print(f"# session {session_uid}")
+    print(f"# device  {device}")
+    print(f"# rawlog  {raw_path}")
+
+    with RawLog(raw_path, session_uid, meta={"device": device, "command_probe": True}) as rawlog:
+        transport = SerialTransport(
+            device,
+            rawlog,
+            baudrate=cfg.adapter.baudrate,
+            read_timeout_s=cfg.adapter.read_timeout_s,
+            command_timeout_s=cfg.adapter.command_timeout_s,
+        )
+        try:
+            transport.open()
+            for command in commands:
+                timeout = args.protocol_timeout if not command.startswith(("AT", "ST")) else 6.0
+                response = transport.send(command, timeout=timeout)
+                reply = parse_reply(response.data)
+                item = {
+                    "command": command,
+                    "status": reply.status,
+                    "timed_out": response.timed_out,
+                    "elapsed_s": round(response.elapsed_s, 3),
+                }
+                if command == "0902":
+                    item["vin_masked"] = mask_vin(decode_vin(reply))
+                    display = f"VIN {item['vin_masked']}"
+                else:
+                    item["lines"] = reply.lines
+                    display = " / ".join(reply.lines) or "(empty)"
+                summary["commands"].append(item)
+                print(f"  {command:6s} [{reply.status}] {display}")
+        except TransportError as exc:
+            summary["error"] = str(exc)
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return_code = 2
+        else:
+            return_code = 0
+        finally:
+            transport.close()
+
+    if args.summary:
+        Path(args.summary).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.summary).write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+        print(f"# summary written to {args.summary}")
+    return return_code
+
+
 def replay(paths) -> int:
     """Summarise an existing raw log without touching hardware."""
     from .rawlog import decode_record, iter_records
@@ -191,10 +265,17 @@ def main(argv=None) -> int:
     parser.add_argument("--summary", help="write a JSON summary here (VIN masked)")
     parser.add_argument("--database", help="also record the session in this SQLite database")
     parser.add_argument("--protocol-timeout", type=float, default=20.0)
-    parser.add_argument("--replay", nargs="+", help="summarise existing raw logs and exit")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--replay", nargs="+", help="summarise existing raw logs and exit")
+    mode.add_argument(
+        "--commands", nargs="+", metavar="COMMAND",
+        help="run exactly this prevalidated read-only command set and exit",
+    )
     args = parser.parse_args(argv)
     if args.replay:
         return replay(args.replay)
+    if args.commands:
+        return run_command_set(args)
     return run_probe(args)
 
 

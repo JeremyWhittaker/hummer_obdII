@@ -81,6 +81,7 @@ _ALLOWED_AT_EXACT: Final[frozenset[str]] = frozenset(
         "ATL0", "ATL1",      # linefeeds
         "ATS0", "ATS1",      # spaces in responses
         "ATH0", "ATH1",      # headers off/on
+        "ATAL",               # allow long (>7 byte) receive messages
         "ATI",               # adapter identification
         "AT@1", "AT@2",      # device description / device identifier
         "ATRV",              # read battery voltage at the connector

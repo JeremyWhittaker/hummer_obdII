@@ -4,12 +4,15 @@ import unittest
 
 from hummer_obd.decode import (
     decode_ascii_item,
+    decode_ascii_items,
+    decode_cvns,
     decode_dtcs,
     decode_pid,
     decode_vin,
     mask_vin,
     parse_reply,
     supported_pids,
+    supported_service09_pids,
 )
 
 
@@ -31,6 +34,24 @@ class TestParseReply(unittest.TestCase):
         reply = parse_reply(b"7E8 06 41 0C 1A F8 00 00\r>")
         self.assertEqual(reply.headers, ["7E8"])
         self.assertEqual(reply.frames[0][0], 0x06)
+
+    def test_29_bit_negative_response_is_not_reported_as_ok(self):
+        reply = parse_reply(b"18DAF128037F0122\r>")
+        self.assertEqual(reply.status, "negative_response")
+        self.assertEqual(reply.negative_responses, [(0x01, 0x22)])
+        self.assertIn("conditionsNotCorrect", reply.marker)
+
+    def test_auto_formatted_negative_response_is_recognized(self):
+        reply = parse_reply(b"7F 09 11\r>")
+        self.assertEqual(reply.status, "negative_response")
+        self.assertEqual(reply.negative_responses, [(0x09, 0x11)])
+        self.assertIn("serviceNotSupported", reply.marker)
+
+    def test_positive_and_negative_multi_ecu_mix_keeps_positive_status(self):
+        reply = parse_reply(b"18DAF14504414233B3\r18DAF128037F0122\r>")
+        self.assertEqual(reply.status, "ok")
+        self.assertEqual(reply.negative_responses, [(0x01, 0x22)])
+        self.assertAlmostEqual(decode_pid("42", reply).value, 13.235, places=3)
 
 
 class TestServiceOne(unittest.TestCase):
@@ -98,6 +119,19 @@ class TestServiceNine(unittest.TestCase):
     def test_ascii_item(self):
         raw = b"014\r0: 49 04 01 41 42 43\r1: 44 45 46 47 48 49\r>"
         self.assertEqual(decode_ascii_item(parse_reply(raw), 0x04), "ABCDEFGHI")
+
+    def test_ascii_items_remain_separate_per_ecu(self):
+        raw = b"7E8 06 49 04 01 41 42 43\r7E9 06 49 04 01 44 45 46\r>"
+        self.assertEqual(decode_ascii_items(parse_reply(raw), 0x04), ["ABC", "DEF"])
+
+    def test_service09_support_bitmap(self):
+        reply = parse_reply(b"7E8 06 49 00 C0 00 00 00\r>")
+        self.assertEqual(supported_service09_pids(reply), ["01", "02"])
+
+    def test_calibration_verification_numbers_are_binary_hex(self):
+        raw = (b"7E8 07 49 06 01 12 34 56 78\r"
+               b"7E9 07 49 06 01 9A BC DE F0\r>")
+        self.assertEqual(decode_cvns(parse_reply(raw)), ["12345678", "9ABCDEF0"])
 
 
 

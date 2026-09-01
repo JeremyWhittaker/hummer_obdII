@@ -11,13 +11,15 @@ from __future__ import annotations
 import sys
 
 from hummer_obd.decode import (
-    decode_ascii_item,
+    decode_ascii_items,
+    decode_cvns,
     decode_dtcs,
     decode_pid,
     decode_vin,
     mask_vin,
     parse_reply,
     supported_pids,
+    supported_service09_pids,
 )
 from hummer_obd.rawlog import decode_record, iter_records
 from hummer_obd.safety import is_safe
@@ -49,17 +51,18 @@ def review(path: str) -> int:
 
     print("\n### adapter identity and link")
     for want in ("ATI", "AT@1", "AT@2", "STI", "STDI", "ATRV", "ATDP", "ATDPN"):
-        for cmd, raw in pairs:
-            if cmd == want:
-                print(f"  {want:6s} -> {' / '.join(parse_reply(raw).lines)}")
-                break
+        matches = [raw for cmd, raw in pairs if cmd == want]
+        for index, raw in enumerate(matches, start=1):
+            suffix = f" #{index}" if len(matches) > 1 else ""
+            print(f"  {want + suffix:9s} -> {' / '.join(parse_reply(raw).lines)}")
 
     print("\n### protocol negotiation and PID support")
     for cmd, raw in pairs:
         if cmd in ("0100", "0120", "0140", "0160", "0180", "01A0", "01C0"):
             reply = parse_reply(raw)
             pids = supported_pids(reply, cmd[2:4]) if reply.ok else []
-            print(f"  {cmd} [{reply.status}] {len(pids)} pids: {' '.join(pids) if pids else '-'}")
+            detail = f" negative={reply.marker}" if reply.negative_responses else ""
+            print(f"  {cmd} [{reply.status}] {len(pids)} pids: {' '.join(pids) if pids else '-'}{detail}")
 
     print("\n### current data")
     for cmd, raw in pairs:
@@ -72,23 +75,39 @@ def review(path: str) -> int:
         if cmd in ("03", "07", "0A"):
             reply = parse_reply(raw)
             codes = decode_dtcs(cmd, reply) or "(none)"
-            print(f"  mode {cmd} [{reply.status}] codes={codes} raw={' / '.join(reply.lines)}")
+            if reply.negative_responses:
+                codes = "not read"
+            print(f"  mode {cmd} [{reply.status}] codes={codes} raw={' / '.join(reply.lines)}"
+                  f"{f' negative={reply.marker}' if reply.negative_responses else ''}")
 
     print("\n### vehicle information (service 09)")
     for cmd, raw in pairs:
         if cmd.startswith("09"):
             reply = parse_reply(raw)
-            if cmd == "0902":
-                print(f"  {cmd} [{reply.status}] VIN {mask_vin(decode_vin(reply))}")
+            if cmd == "0900":
+                pids = supported_service09_pids(reply)
+                print(f"  {cmd} [{reply.status}] supported PIDs:"
+                      f" {' '.join(pids) if pids else '-'}"
+                      f"{f' negative={reply.marker}' if reply.negative_responses else ''}")
+            elif cmd == "0902":
+                print(f"  {cmd} [{reply.status}] VIN {mask_vin(decode_vin(reply))}"
+                      f"{f' negative={reply.marker}' if reply.negative_responses else ''}")
+            elif cmd == "0906":
+                values = decode_cvns(reply)
+                print(f"  {cmd} [{reply.status}] CVNs: {values or '-'}"
+                      f" ({len(reply.frames)} responding ECU frame(s))"
+                      f"{f' negative={reply.marker}' if reply.negative_responses else ''}")
             else:
-                text = decode_ascii_item(reply, int(cmd[2:4], 16))
+                values = decode_ascii_items(reply, int(cmd[2:4], 16))
                 label = {"04": "calibration ID", "0A": "ECU name"}.get(cmd[2:4], "item")
-                print(f"  {cmd} [{reply.status}] {label}: {text!r}"
-                      f" ({len(reply.frames)} responding ECU frame(s))")
+                print(f"  {cmd} [{reply.status}] {label}: {values or '-'}"
+                      f" ({len(reply.frames)} responding ECU frame(s))"
+                      f"{f' negative={reply.marker}' if reply.negative_responses else ''}")
 
     print("\n### NO DATA / error responses")
     misses = [(cmd, parse_reply(raw).marker or parse_reply(raw).status)
-              for cmd, raw in pairs if parse_reply(raw).status in ("no_data", "error")]
+              for cmd, raw in pairs
+              if parse_reply(raw).status in ("no_data", "negative_response", "error")]
     print("   ", misses if misses else "none - every request was answered")
 
     print("\n### safety audit of the whole transcript")

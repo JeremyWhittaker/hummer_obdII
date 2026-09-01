@@ -100,6 +100,47 @@ class TestProbeEndToEnd(unittest.TestCase):
         log = sorted((self.root / "logs" / "raw").glob("probe-*.jsonl"))[0]
         self.assertEqual(probe.main(["--replay", str(log)]), 0)
 
+    def test_exact_command_mode_preserves_order_and_masks_vin_summary(self):
+        commands = [
+            "ATZ", "ATE0", "ATL0", "ATS0", "ATH1", "ATAL", "ATSP0",
+            "ATDP", "ATDPN", "ATRV", "0100", "0120", "0140", "0160",
+            "0180", "0900", "0902", "0904", "0906", "03", "07", "0A",
+            "0142", "010D", "015B",
+        ]
+        summary_path = self.root / "commands-summary.json"
+        rc = probe.main([
+            "--device", self.sim.device,
+            "--root", str(self.root),
+            "--summary", str(summary_path),
+            "--protocol-timeout", "5",
+            "--commands", *commands,
+        ])
+        self.assertEqual(rc, 0)
+        self.assertEqual(self.sim.received, commands)
+        summary = json.loads(summary_path.read_text())
+        self.assertEqual([item["command"] for item in summary["commands"]], commands)
+        vin_item = next(item for item in summary["commands"] if item["command"] == "0902")
+        self.assertIn("vin_masked", vin_item)
+        self.assertNotIn("lines", vin_item)
+        self.assertNotIn("1G1JC5444R7252367", summary_path.read_text())
+        log = next((self.root / "logs" / "raw").glob("command-probe-*.jsonl"))
+        tx = [
+            decode_record(record).decode("ascii").strip()
+            for record in iter_records(log)
+            if record.get("kind") == "io" and record["dir"] == "tx"
+        ]
+        self.assertEqual(tx, commands)
+
+    def test_exact_command_mode_rejects_whole_set_before_open(self):
+        rc = probe.main([
+            "--device", self.sim.device,
+            "--root", str(self.root),
+            "--commands", "0100", "04", "ATRV",
+        ])
+        self.assertEqual(rc, 2)
+        self.assertEqual(self.sim.received, [])
+        self.assertFalse(list((self.root / "logs" / "raw").glob("command-probe-*.jsonl")))
+
 
 if __name__ == "__main__":
     unittest.main()

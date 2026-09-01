@@ -17,7 +17,10 @@ class TestAllowedCommands(unittest.TestCase):
         self.assertEqual(validate_command(" atrv "), "ATRV")
 
     def test_adapter_commands(self):
-        for command in ("ATZ", "ATE0", "ATH1", "ATSP0", "ATDPN", "ATRV", "STI", "STDI", "ATST64"):
+        for command in (
+            "ATZ", "ATE0", "ATH1", "ATAL", "ATSP0", "ATDPN", "ATRV",
+            "STI", "STDI", "ATST64",
+        ):
             with self.subTest(command=command):
                 self.assertTrue(is_safe(command))
 
