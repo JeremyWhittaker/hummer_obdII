@@ -1,0 +1,18 @@
+[Unit]
+Description=Bind /dev/rfcomm0 to the paired OBDLink adapter
+After=bluetooth.service
+Requires=bluetooth.service
+
+# Installed but NOT enabled until the adapter has been paired and its Serial
+# Port Profile channel confirmed by SDP.  ADAPTER_MAC and SPP_CHANNEL come
+# from /etc/default/hummer-rfcomm, written during pairing.
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=/etc/default/hummer-rfcomm
+ExecStart=/usr/bin/rfcomm bind /dev/rfcomm0 ${ADAPTER_MAC} ${SPP_CHANNEL}
+ExecStop=/usr/bin/rfcomm release /dev/rfcomm0
+
+[Install]
+WantedBy=multi-user.target

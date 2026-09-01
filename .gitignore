@@ -1,0 +1,35 @@
+# Local Raspberry Pi provisioning credentials; never commit this file.
+hummer_pi_sd.env
+.hummer_pi_sd.env.swp
+
+# Foreman runtime state is local orchestration metadata.
+.foreman/
+FOREMAN_ASSIGNMENT.md
+IMPLEMENTATION_CHECKLIST.md
+
+# Provisioning transcripts contain host, network, and nearby-device metadata.
+# A sanitized validation summary is published in docs/VALIDATION.md instead.
+evidence/*.txt
+evidence/*.log
+evidence/*.png
+
+# Runtime vehicle data and logs may contain VINs and diagnostic responses.
+data/
+logs/
+*.jsonl
+*.sqlite3
+
+# Vendored third-party driver (installed by scripts/install_waveshare_driver.sh)
+vendor/
+
+# Python bytecode and tool caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+dist/
+build/
+*.egg-info/

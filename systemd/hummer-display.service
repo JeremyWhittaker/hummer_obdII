@@ -1,0 +1,21 @@
+[Unit]
+Description=Hummer Pi e-paper status display (Waveshare 2.13" V4)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jeremy
+WorkingDirectory=/home/jeremy/hummer-obd
+Environment=PYTHONPATH=/home/jeremy/hummer-obd/src:/home/jeremy/hummer-obd/vendor/waveshare
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m hummer_obd.display.status --config /home/jeremy/hummer-obd/config/hummer.toml --root /home/jeremy/hummer-obd
+Restart=on-failure
+RestartSec=30
+# The display only reads system state; it never touches the vehicle bus.
+NoNewPrivileges=true
+ProtectHome=read-only
+ReadWritePaths=/home/jeremy/hummer-obd
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,43 @@
+[Unit]
+Description=Fail-closed OBDLink recovery watcher (binds an already-paired adapter)
+Documentation=file:/home/jeremy/hummer-obd/docs/RUNBOOK.md
+After=bluetooth.service
+Requires=bluetooth.service
+
+# What this unit may do: find the single OBDLink that BlueZ already reports as
+# Paired + Bonded + Trusted, discover its Serial Port Profile channel by SDP,
+# and bind /dev/rfcomm0.  It CANNOT pair, trust or remove a device — no code
+# path in hummer_obd.btdiscover issues those commands, and a test asserts it.
+# First pairing needs a person: this adapter refuses unattended association
+# (NoInputNoOutput gives org.bluez.Error.AuthenticationFailed) and wants
+# interactive Secure Simple Pairing with a KeyboardDisplay agent.
+#
+# It refuses ambiguity (two bonded OBDLinks, or an SDP result without exactly
+# one Serial Port channel), never opens the serial port, never sends a vehicle
+# command, does not run the probe and does not enable the collector.  It exits
+# 0 once /dev/rfcomm0 is bound.
+#
+# Root is required to write /etc/default/hummer-rfcomm and bind the RFCOMM
+# device; the command allowlist inside the module keeps that privilege narrow.
+#
+# Currently disabled on purpose: /dev/rfcomm0 is already bound, so there is
+# nothing to recover.  Re-enable if the bind is ever lost:
+#   sudo systemctl enable --now hummer-btdiscover.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/jeremy/hummer-obd
+Environment=PYTHONPATH=/home/jeremy/hummer-obd/src
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m hummer_obd.btdiscover --root /home/jeremy/hummer-obd --interval 45
+Restart=on-failure
+RestartSec=30
+NoNewPrivileges=true
+ProtectSystem=true
+ProtectHome=read-only
+ReadWritePaths=/home/jeremy/hummer-obd /etc/default
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

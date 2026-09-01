@@ -1,0 +1,151 @@
+# Future maintainer handoff
+
+This is the durable starting point for the next human or coding agent. Read
+[Safety](SAFETY.md) first, then check this file against the live node before
+making a change.
+
+## Mission
+
+Maintain a small, read-only Hummer EV telemetry node without expanding vehicle
+control authority. The current release proves standard OBD-II transport,
+logging, decoding, storage, Bluetooth recovery, and e-paper status. It does not
+authorize enhanced PID exploration or continuous polling until the remaining
+power test is complete.
+
+## Non-negotiable invariants
+
+1. Never send Mode 04 or any DTC-clear command.
+2. Never send Mode 08 or a UDS write/control/security/reset/routine command.
+3. Keep Mode 22 rejected until an exact identifier set is independently
+   validated for the exact vehicle and accepted through the safety process.
+4. Every command must pass `safety.validate_command()` immediately before
+   serial I/O; do not add a bypass.
+5. Preserve raw TX/RX bytes append-only before parsing.
+6. Never commit credentials, private network identifiers, adapter addresses,
+   an unmasked VIN, JSONL transcripts, SQLite databases, or provisioning
+   captures.
+7. Treat a sleeping vehicle as a wait condition. Do not increase traffic to
+   wake it.
+8. Keep the continuous collector disabled until the physical power gate is
+   satisfied.
+
+## Last verified deployment state
+
+| Component | State |
+|---|---|
+| Pi | Raspberry Pi Zero 2 W, Debian 13, headless multi-user target |
+| Network | mobile 2.4 GHz profile preferred; stationary profile retained as fallback; SSH key login works |
+| Display | Waveshare 2.13-inch V4; service enabled and active; shows host/network/uptime/temperature/OBD state |
+| Adapter | OBDLink MX+ paired, bonded, trusted |
+| Transport | one SDP-confirmed Serial Port channel; `/dev/rfcomm0`; persistent service enabled |
+| Protocol | AUTO, ISO 15765-4 (CAN 29-bit / 500 kbit/s) |
+| Probe | completed and reviewed; raw transcript remains private on the Pi |
+| Collector | one-shot proven; continuous unit disabled and config flag false |
+| Upload | disabled, endpoint empty |
+| Tests | 126 passed / 150 subtests under both test runners |
+
+The final controlled reboot was also accepted: both SSH paths returned in about
+36 seconds, all required infrastructure/display/RFCOMM services were active,
+the bond and channel survived, transcript hashes were unchanged, the collector
+remained off, and the full on-Pi suite passed.
+
+The public repository intentionally omits the Pi's address, tailnet name,
+adapter MAC, SSIDs, and VIN. Discover live values locally rather than adding
+them to this file.
+
+## Start-of-work checklist
+
+From a trusted checkout:
+
+```bash
+git status -sb
+git pull --ff-only
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[dev]'
+python -m pytest -q
+```
+
+On the Pi, using a private SSH target:
+
+```bash
+hostname
+uptime
+systemctl --failed --no-pager
+systemctl is-enabled hummer-display hummer-rfcomm hummer-btdiscover hummer-collector
+systemctl is-active hummer-display hummer-rfcomm hummer-btdiscover hummer-collector
+rfcomm
+ls -l /dev/rfcomm0
+```
+
+Do not run a probe simply to discover state. First inspect existing private
+logs, SQLite sessions, and journals.
+
+## Safe next milestone
+
+The next meaningful milestone is a power/sleep experiment, not a new decoder:
+
+1. confirm whether the Pi supply is ignition-switched or always live;
+2. measure baseline 12 V current with the vehicle asleep;
+3. observe a complete vehicle sleep/wake cycle with the Pi and OBDLink attached
+   while the continuous collector remains off;
+4. if safe, run a time-bounded polling trial and verify the vehicle still
+   sleeps; and
+5. record measurements, duration, service state, and rollback criteria.
+
+Only a successful physical result permits changing both
+`collector.enabled = true` and the systemd enable state. If the result is
+uncertain, leave both off.
+
+## Change procedure
+
+For any code change:
+
+1. state which safety invariant and data path are affected;
+2. add focused tests before live deployment;
+3. run the full hardware-free suite;
+4. deploy without restarting the collector;
+5. run `scripts/pi_smoke.sh` (it sends no vehicle commands);
+6. verify the relevant systemd unit loaded the new bytes; and
+7. update README and the applicable document in `docs/`.
+
+For a command-set change, also follow the five-part change-control process in
+[Safety](SAFETY.md). The first live request must be supervised and preserved in
+a byte-exact transcript.
+
+## Private state locations
+
+```text
+/home/jeremy/hummer-obd/config/hummer.toml
+/home/jeremy/hummer-obd/logs/raw/
+/home/jeremy/hummer-obd/data/hummer_obd.sqlite3
+/home/jeremy/hummer-obd/evidence/
+/etc/default/hummer-rfcomm
+```
+
+These paths are operational state, not source. Back them up privately and do
+not solve a missing-source problem by copying them into Git.
+
+## Known pitfalls
+
+- The Pi Zero 2 W is 2.4 GHz-only. A saved 5 GHz hotspot SSID never associates.
+- NetworkManager priority does not preempt an already healthy connection; use
+  the guarded switch script for a deliberate move.
+- The validated OBDLink requires interactive six-digit pairing confirmation;
+  a headless BlueZ agent fails.
+- A bonded adapter may no longer be discoverable. Recovery must inspect known
+  BlueZ devices, not assume a fresh scan will find it.
+- The adapter exposes a non-SPP service as well as Serial Port. Bind only the
+  channel under the Serial Port / `STN-SPP` record.
+- 29-bit CAN replies have a four-byte identifier before the ISO-TP PCI byte and
+  must be reassembled independently per ECU.
+- Large package purges can make a Zero 2 W appear offline for a long time due
+  to SD-card I/O and thermal throttling. Never interrupt `apt`/`dpkg` blindly.
+- An unchanged e-paper screen may be intentional; identical frames are skipped.
+
+## Definition of done
+
+A future change is complete only when tests pass, the deployed process has
+loaded the changed code, private/runtime files remain untracked, documentation
+matches reality, the commit is pushed, and any intentionally disabled safety
+gate remains disabled unless its exact prerequisite was proven.

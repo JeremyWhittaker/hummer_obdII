@@ -1,0 +1,7 @@
+# Evidence is local terminal output from provisioning and live validation.
+# It can contain network/device metadata and never belongs in the public repo.
+*.txt
+*.log
+*.png
+*.jsonl
+*.b64

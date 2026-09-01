@@ -1,0 +1,59 @@
+# Hummer Pi OBD node configuration.
+#
+# Copy to config/hummer.toml on the Pi and edit.  Every value here is the
+# built-in default, so an empty file behaves identically.
+
+[adapter]
+# RFCOMM tty bound to the OBDLink's Serial Port Profile channel.
+device = "/dev/rfcomm0"
+baudrate = 115200
+read_timeout_s = 2.0
+command_timeout_s = 5.0
+reconnect_initial_s = 2.0
+reconnect_max_s = 120.0
+# Recorded for evidence only.  Nothing in this project pairs automatically.
+bluetooth_address = ""
+
+[collector]
+# The collector stays off until a raw probe has been reviewed.  Turning this
+# on is a deliberate act; the systemd unit is installed but not enabled.
+enabled = false
+poll_interval_s = 2.0
+# Service 01 PIDs polled each cycle.  Each one passes the safety gate at
+# start-up, so a typo fails immediately instead of reaching the bus.
+#
+# Narrowed to what this vehicle actually answers.  Its service 01 support
+# bitmaps advertise 14 PIDs (01 0D 1C 1F 20 21 30 31 40 42 60 80 A0 A6), and a
+# supervised one-shot on 2026-09-01 confirmed 010D (speed), 011F (run time) and
+# 0142 (control module voltage) return values.  0105, 010C, 015B and 0146 were
+# not advertised by this VIN and answered NO DATA — note that 015B is the
+# hybrid/EV battery remaining-life PID and 0146 is ambient air temperature, so
+# this is about what this vehicle exposes over standard OBD, not about which
+# PIDs are "combustion only".  Asking for unadvertised PIDs every cycle is bus
+# traffic that buys nothing.
+pids = ["010D", "011F", "0142"]
+# Re-read stored/pending/permanent DTCs this often (seconds); 0 disables.
+dtc_interval_s = 900.0
+database = "data/hummer_obd.sqlite3"
+raw_log_dir = "logs/raw"
+# When the vehicle stops answering (asleep), wait this long before the next
+# cycle.  Never probe harder to "wake" the vehicle.
+idle_backoff_s = 60.0
+max_consecutive_errors = 20
+
+[upload]
+# Disabled by default and refuses to start without an endpoint.  With upload
+# off, samples accumulate locally in SQLite and nothing leaves the Pi.
+enabled = false
+endpoint = ""
+batch_size = 200
+interval_s = 300.0
+
+[display]
+enabled = true
+# Full refreshes only, and no more often than this, to limit panel wear.
+refresh_interval_s = 300.0
+sleep_between_updates = true
+# Set to a PNG path to render without the panel (development).
+simulate_path = ""
+rotate = 0

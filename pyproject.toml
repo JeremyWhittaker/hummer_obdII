@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hummer-obd-node"
+version = "0.1.0"
+description = "Fail-closed, read-only OBD-II telemetry for a Raspberry Pi vehicle node"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{name = "Jeremy Whittaker"}]
+dependencies = [
+    "Pillow>=9.2",
+    "pyserial>=3.5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+hummer-obd-probe = "hummer_obd.probe:main"
+hummer-obd-collector = "hummer_obd.collector:main"
+hummer-obd-display = "hummer_obd.display.status:main"
+hummer-obd-recover = "hummer_obd.btdiscover:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]

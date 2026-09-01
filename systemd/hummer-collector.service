@@ -1,0 +1,25 @@
+[Unit]
+Description=Hummer Pi read-only OBD collector
+Documentation=file:/home/jeremy/hummer-obd/docs/RUNBOOK.md
+After=network-online.target bluetooth.service hummer-rfcomm.service
+Wants=hummer-rfcomm.service
+
+# NOTE: this unit is installed but deliberately NOT enabled.  It must not be
+# enabled until a raw probe has run and its logs have been reviewed, and
+# collector.enabled must be true in config/hummer.toml.
+
+[Service]
+Type=simple
+User=jeremy
+WorkingDirectory=/home/jeremy/hummer-obd
+Environment=PYTHONPATH=/home/jeremy/hummer-obd/src
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m hummer_obd.collector --config /home/jeremy/hummer-obd/config/hummer.toml --root /home/jeremy/hummer-obd
+Restart=on-failure
+RestartSec=60
+NoNewPrivileges=true
+ProtectHome=read-only
+ReadWritePaths=/home/jeremy/hummer-obd
+
+[Install]
+WantedBy=multi-user.target
