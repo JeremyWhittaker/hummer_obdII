@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 from hummer_obd.battery import (
+    ACTIONS,
     I2C_ADDRESS,
     IP5209,
     IP5312,
@@ -188,13 +189,76 @@ class TestItOnlyEverReads(unittest.TestCase):
         watch.run(max_cycles=6)
         self.assertEqual(calls, [])
 
-    def test_a_real_run_powers_off_once_the_streak_is_met(self):
+    def test_a_real_run_acts_once_the_streak_is_met(self):
         calls = []
         watch = BatteryWatch(reader=volts_reader(3.1), chip=IP5209, consecutive=2,
-                             interval_s=0.01, logger=lambda *_: None,
+                             interval_s=0.01, action="poweroff",
+                             logger=lambda *_: None,
                              shutdown=lambda: calls.append("off"))
         self.assertEqual(watch.run(max_cycles=10), 0)
         self.assertEqual(calls, ["off"])
+
+
+class TestTheDefaultActionDoesNotStrandTheNode(unittest.TestCase):
+    """A PiSugar2 cannot power the Pi back on.
+
+    Its own library says so: ``toggle_power_restore`` is implemented for the
+    PiSugar 3 and returns "not supported" for the IP5209.  The documented way
+    to restore output after a shutdown is to toggle the physical switch by
+    hand.  Halting therefore strands an unattended node in a vehicle, which is
+    worse than the flat cell it was meant to prevent -- so halting is not the
+    default, and the default is not silently a halt either.
+    """
+
+    def test_the_default_stops_the_collector_rather_than_halting(self):
+        watch = BatteryWatch(reader=volts_reader(4.0), chip=IP5209,
+                             logger=lambda *_: None)
+        self.assertEqual(watch.action, "stop-collector")
+        self.assertEqual(watch._shutdown.__name__, "_stop_collector")
+
+    def test_poweroff_remains_available_but_must_be_asked_for(self):
+        watch = BatteryWatch(reader=volts_reader(4.0), chip=IP5209,
+                             action="poweroff", logger=lambda *_: None)
+        self.assertEqual(watch._shutdown.__name__, "_poweroff")
+
+    def test_an_unknown_action_is_refused(self):
+        for bad in ("halt", "reboot", "", "shutdown"):
+            with self.assertRaises(ValueError):
+                BatteryWatch(reader=volts_reader(4.0), chip=IP5209, action=bad)
+
+    def test_stopping_the_collector_keeps_watching(self):
+        """The node stays up, so the watch has to carry on.
+
+        If the cell recovers nothing more is needed; if it does not, saying so
+        again is the only useful thing left to do.  Returning after one action
+        would leave the node running blind.
+        """
+        calls = []
+        watch = BatteryWatch(reader=volts_reader(3.1), chip=IP5209, consecutive=2,
+                             interval_s=0.01, logger=lambda *_: None,
+                             shutdown=lambda: calls.append("stop"))
+        watch.run(max_cycles=6)
+        self.assertGreater(len(calls), 1, "the watch stopped watching after acting")
+        self.assertEqual(watch.low_streak, [])
+
+    def test_poweroff_stops_the_loop_because_the_node_is_going_away(self):
+        calls = []
+        watch = BatteryWatch(reader=volts_reader(3.1), chip=IP5209, consecutive=2,
+                             interval_s=0.01, action="poweroff",
+                             logger=lambda *_: None,
+                             shutdown=lambda: calls.append("off"))
+        self.assertEqual(watch.run(max_cycles=10), 0)
+        self.assertEqual(calls, ["off"])
+
+    def test_the_stop_uses_a_signal_the_collector_handles(self):
+        # SIGTERM, because the collector installs a handler that closes the
+        # SQLite session and flushes the raw log.  SIGKILL would lose that.
+        import inspect
+        from hummer_obd import battery
+        source = inspect.getsource(battery.BatteryWatch._stop_collector)
+        self.assertIn("-TERM", source)
+        self.assertNotIn("-KILL", source)
+
 
 
 if __name__ == "__main__":

@@ -15,11 +15,15 @@ BATTERY_INTERVAL_S=30
 # the bias is deliberately towards waiting.
 BATTERY_CONSECUTIVE=5
 
-# Extra arguments. Ships as --dry-run deliberately.
+# What to do when the cell is genuinely low.
 #
-# A shutdown today halts the OS without cutting PiSugar power, and a halted Pi
-# does not restart itself: the node would be stranded until somebody pressed
-# the button. Until that is resolved (see "Known limitation" in
-# docs/RUNBOOK.md) the watch should observe and log, not act. Clear this only
-# once the node is proven to come back on its own.
-BATTERY_EXTRA=--dry-run
+# stop-collector (default) ends vehicle polling -- the thing actually drawing
+# power and holding the serial port -- and leaves the node up and reachable. A
+# node you can still talk to can be told what to do next.
+#
+# poweroff halts the OS, and on a PiSugar2 that STRANDS the node: this hardware
+# cannot power itself back on. The vendor's own library implements
+# toggle_power_restore for the PiSugar 3 and returns "not supported" for the
+# IP5209, and the documented way to restore output is to toggle the physical
+# switch by hand. Do not set this without solving the return first.
+BATTERY_EXTRA=--on-low stop-collector

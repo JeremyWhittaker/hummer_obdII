@@ -306,7 +306,7 @@ fault", which otherwise look identical.
 | Bluetooth recovery for an already-bonded adapter; cannot pair, trust or remove | `btdiscover.py` | Proven |
 | E-paper status page, full refreshes only, unchanged frames skipped | `display/status.py` | Proven |
 | PiSugar2 cell monitoring | `battery.py` | Proven — reads the live pack; chip identified by measurement, not by label |
-| Graceful shutdown on low battery | `battery.py` | **Held in dry-run**: a halt does not cut PiSugar power and the node would not restart itself. See the known limitation in [RUNBOOK](RUNBOOK.md) |
+| Low-battery response | `battery.py` | Proven — stops vehicle polling and leaves the node reachable. Halting is available but **not** the default: a PiSugar2 cannot power the Pi back on |
 | Hardware-free PTY/ELM simulator | `tests/elm_simulator.py` | Proven |
 
 ## 5. Not available

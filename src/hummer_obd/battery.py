@@ -14,8 +14,29 @@ So:
 * the shutdown threshold is a **measured voltage**, not a modelled percentage;
 * an implausible reading is refused rather than acted on;
 * one low reading does nothing -- a run of them, over minutes, is required;
-* a cell that is charging is never shut down, even below the threshold; and
+* a cell that is charging is never acted on, even below the threshold; and
 * nothing here ever writes to the power IC.  Every I2C access is a read.
+
+Why the default action is *not* a shutdown
+------------------------------------------
+A PiSugar2 cannot power the Pi back on by itself.  Its own library says so:
+``toggle_power_restore`` returns "not supported" for the IP5209 and IP5312 and
+is implemented only for the PiSugar 3.  The vendor's feature table lists
+automatic power-on for this series only with the footnote "two independent
+power supplies are required", and the documented way to restore output after a
+shutdown is to toggle the physical switch by hand.
+
+Halting also does not cut power on its own: the vendor's ``pisugar-poweroff``
+service exists precisely because something must tell the chip to cut, during
+shutdown, over I2C.  So a bare ``systemctl poweroff`` leaves the Pi halted and
+still drawing from the cell.
+
+Both outcomes strand an unattended node in a vehicle until somebody walks out
+to it, which is worse than the flat cell they were meant to prevent.  The
+default action is therefore to stop the *collector* -- the thing actually
+drawing power and holding the serial port -- and leave the operating system up
+and reachable.  ``--poweroff`` is available for a node whose return has been
+solved, and says in its help that it has not been solved here.
 
 Hardware identification was done by measurement rather than by the label on the
 box.  A PiSugar2 carries an IP5209 and a PiSugar2 Pro carries an IP5312, and
@@ -36,6 +57,7 @@ from dataclasses import dataclass
 from typing import Callable, Final, Optional
 
 __all__ = [
+    "ACTIONS",
     "BatteryReading",
     "ChipProfile",
     "IP5209",
@@ -49,6 +71,10 @@ __all__ = [
     "BatteryWatch",
     "main",
 ]
+
+#: What to do when the cell is genuinely low.  ``stop-collector`` is the
+#: default because this hardware cannot power itself back on.
+ACTIONS: Final[frozenset[str]] = frozenset({"stop-collector", "poweroff"})
 
 #: The PiSugar2 power IC.  The SD3078 real-time clock sits at 0x32 and is not
 #: touched by this module.
@@ -179,6 +205,7 @@ class BatteryWatch:
                  interval_s: float = 30.0,
                  consecutive: int = 5,
                  dry_run: bool = False,
+                 action: str = "stop-collector",
                  shutdown: Optional[Callable[[], None]] = None,
                  logger=print) -> None:
         if not PLAUSIBLE_MIN_V <= shutdown_v <= PLAUSIBLE_MAX_V:
@@ -188,13 +215,17 @@ class BatteryWatch:
             raise ValueError("interval_s must be greater than zero")
         if consecutive < 1:
             raise ValueError("consecutive must be at least 1")
+        if action not in ACTIONS:
+            raise ValueError(f"action must be one of {sorted(ACTIONS)}")
         self.reader = reader
         self.chip = chip
         self.shutdown_v = shutdown_v
         self.interval_s = interval_s
         self.consecutive = consecutive
         self.dry_run = dry_run
-        self._shutdown = shutdown or self._poweroff
+        self.action = action
+        self._shutdown = shutdown or (
+            self._poweroff if action == "poweroff" else self._stop_collector)
         self.log = logger
         self.running = True
         #: The run of consecutive low readings, and what they were.
@@ -205,7 +236,20 @@ class BatteryWatch:
 
     @staticmethod
     def _poweroff() -> None:
+        """Halt the OS.  Strands this node -- see the module docstring."""
         subprocess.run(["/usr/bin/systemctl", "poweroff"], check=False)
+
+    @staticmethod
+    def _stop_collector() -> None:
+        """Stop vehicle polling and leave the node up and reachable.
+
+        SIGTERM rather than a service stop: the collector installs a handler
+        that closes the SQLite session and flushes the raw log, it runs as this
+        same user, and signalling it needs no privilege.  A node that is still
+        reachable can be told what to do next; a halted one cannot.
+        """
+        subprocess.run(["/usr/bin/pkill", "-TERM", "-f", "hummer_obd.collector"],
+                       check=False)
 
     def _charging(self) -> bool:
         """True when the cell is gaining charge across the low streak.
@@ -250,7 +294,7 @@ class BatteryWatch:
                 f"(last {self.low_streak[-1]:.3f} V)")
 
     def run(self, max_cycles: int = 0) -> int:
-        self.log(f"battery watch: shutdown below {self.shutdown_v:.2f} V after "
+        self.log(f"battery watch: {self.action} below {self.shutdown_v:.2f} V after "
                  f"{self.consecutive} readings {self.interval_s:g}s apart"
                  f"{' [DRY RUN]' if self.dry_run else ''}")
         cycles = 0
@@ -263,13 +307,19 @@ class BatteryWatch:
                 self.log(f"  unusable reading: {reading.detail}")
             reason = self.evaluate(reading)
             if reason:
-                self.log(f"SHUTDOWN: {reason}")
+                self.log(f"LOW BATTERY ({self.action}): {reason}")
                 if self.dry_run:
-                    self.log("  dry run: not powering off")
+                    self.log("  dry run: taking no action")
                     self.low_streak.clear()
                 else:
                     self._shutdown()
-                    return 0
+                    if self.action == "poweroff":
+                        return 0
+                    # The node stays up, so the streak is cleared and the watch
+                    # keeps going: if the cell recovers, nothing more is needed,
+                    # and if it does not, saying so again is the only useful
+                    # thing left to do.
+                    self.low_streak.clear()
             if max_cycles and cycles >= max_cycles:
                 return 0
             end = time.monotonic() + self.interval_s
@@ -290,7 +340,12 @@ def main(argv=None) -> int:
     parser.add_argument("--once", action="store_true",
                         help="report one reading and exit; never shuts down")
     parser.add_argument("--dry-run", action="store_true",
-                        help="log the decision but never power off")
+                        help="log the decision but take no action")
+    parser.add_argument("--on-low", choices=sorted(ACTIONS), default="stop-collector",
+                        help="stop-collector (default) ends vehicle polling and "
+                             "leaves the node reachable; poweroff halts the OS, "
+                             "which on a PiSugar2 STRANDS the node -- this "
+                             "hardware cannot power itself back on")
     args = parser.parse_args(argv)
     try:
         reader = open_i2c_reader(args.bus)
@@ -307,7 +362,7 @@ def main(argv=None) -> int:
         return 0
     watch = BatteryWatch(reader=reader, shutdown_v=args.shutdown_v,
                          interval_s=args.interval_s, consecutive=args.consecutive,
-                         dry_run=args.dry_run)
+                         dry_run=args.dry_run, action=args.on_low)
     import signal
     signal.signal(signal.SIGTERM, watch.stop)
     signal.signal(signal.SIGINT, watch.stop)

@@ -394,32 +394,41 @@ journalctl -u hummer-battery -n 20
 sudoedit /etc/default/hummer-battery          # threshold, interval, streak
 ```
 
-### Known limitation: the node does not come back by itself
+### Why it stops the collector instead of shutting down
 
-**`systemctl poweroff` halts the operating system. It does not tell the PiSugar
-to cut power, and a halted Pi does not restart itself.** So if this watch fires
-today, the outcome is:
+**A PiSugar2 cannot power the Pi back on.** That single fact decides the
+design, and it is the vendor's own position rather than an inference:
 
-- the Pi halts and keeps drawing a small current, so the cell keeps draining,
-  just more slowly;
-- power returning does **not** boot it, because power was never removed; and
-- somebody has to walk out to the vehicle and press the button.
-
-That protects the SD card and strands the node, which is the wrong trade for an
-unattended vehicle node. Until it is resolved the service runs with
-`--dry-run` on the reference node: it reads the cell, logs what it would do,
-and never powers off.
-
-Resolving it means choosing one of:
-
-| Option | What it costs |
+| Question | Answer |
 |---|---|
-| Vehicle power, read-only root filesystem, battery as a UPS that never cuts power | a filesystem change; accepts bounded data loss on a dirty cut, which WAL and `fsync` already limit to seconds rather than corruption |
-| Tell the PiSugar to cut power after halt, and rely on auto-boot when power returns | requires writing to the IP5209 power IC and confirming auto-boot behaviour; both need evidence this project does not yet have |
-| Stop the collector cleanly on low battery and leave the OS running | keeps the node reachable and never strands it, but does not protect against the cell actually reaching cutoff |
+| Does a bare `systemctl poweroff` cut PiSugar power? | **No.** The vendor ships a `pisugar-poweroff` service precisely because something must tell the chip to cut, over I2C, during shutdown. Without it the Pi sits halted and still draws from the cell |
+| Can the pack power the Pi back on when USB returns? | **No.** `toggle_power_restore` is implemented for the PiSugar 3 and returns "not supported" for the IP5209. The feature table lists automatic power-on for this series only with the footnote "two independent power supplies are required" |
+| Can GPIO3 wake a halted Pi Zero 2 W? | **Unknown.** `WAKE_ON_GPIO` is a bootloader-EEPROM setting, and Raspberry Pi documents the Zero 2 W as having no EEPROM. GPIO3 wake for non-EEPROM boards is a community claim, not a documented feature |
+| What does restore output? | Toggling the **physical switch** by hand, or a scheduled RTC alarm |
 
-The third is the smallest safe step and is the likely default: halting the OS is
-only the right move once its return is guaranteed.
+So both halting paths strand an unattended node in a vehicle until somebody
+walks out to it, which is worse than the flat cell they were meant to prevent.
+
+The default action is therefore `stop-collector`: it ends vehicle polling --
+the thing actually drawing power and holding the serial port -- and leaves the
+operating system up and reachable. A node you can still talk to can be told
+what to do next; a halted one cannot. The watch keeps running afterwards, so a
+recovering cell needs no intervention.
+
+`--on-low poweroff` remains available for a node whose return has been solved.
+It has not been solved here.
+
+**If you want the node to survive vehicle power loss unattended**, the answer
+is not a better shutdown, it is not needing one: run from vehicle power with a
+read-only root filesystem, keep the pack as a UPS that never cuts, and accept
+that a dirty cut costs seconds of data rather than the filesystem. WAL and
+`fsync` already bound the loss to seconds; a read-only root removes the
+corruption risk that a battery shutdown was protecting against.
+
+There is one documented alternative worth knowing: the SD3078 RTC on this pack
+supports a **scheduled wake**, so a node that shut down could be brought back
+at a fixed time. That is a timed return, not a power-triggered one, and it is
+not implemented here.
 
 ### Why it is hard to make it fire wrongly
 

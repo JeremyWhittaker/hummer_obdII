@@ -33,7 +33,7 @@ endorsed by General Motors, GMC, OBD Solutions, or Waveshare.
   and persistent RFCOMM binding.
 - Reconnect-aware polling, WAL-mode SQLite buffering, masked vehicle identity,
   and an uploader that is disabled by default.
-- A hardware-free PTY/ELM simulator and 366 tests (328 subtests) covering the
+- A hardware-free PTY/ELM simulator and 372 tests (328 subtests) covering the
   safety boundary, transport, decoding, storage, recovery, display, and
   end-to-end probe flow.
 - Conservative e-paper operation: full refreshes only, unchanged frames are
@@ -82,7 +82,7 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | OnStar / GM cloud data | A different system. Belongs in a separate broker with isolated credentials |
 | Raw transcript upload | Refused at config load: raw logs can contain an unmasked VIN |
 | Continuous collector autostart | Gated on two unproven physical results: overnight 12 V stability, and sleep while actively polling |
-| Automatic shutdown on low battery | Implemented and held in dry-run: halting does not cut PiSugar power, so the node would not restart itself |
+| Automatic power-off on low battery | Deliberately not the default. A PiSugar2 cannot power the Pi back on, so halting would strand the node; the watch stops vehicle polling instead |
 
 Report the live state of a node at any time, without touching the vehicle:
 

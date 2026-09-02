@@ -12,6 +12,11 @@ After=multi-user.target
 #   sudo systemctl enable --now hummer-battery
 #
 # Settings live in /etc/default/hummer-battery.
+#
+# BATTERY_EXTRA is written $BATTERY_EXTRA, without braces, deliberately.
+# systemd expands ${VAR} to a SINGLE argument and $VAR to whitespace-separated
+# words, so the braced form passes "--on-low stop-collector" as one token and
+# argparse rejects it.
 
 [Service]
 Type=simple
@@ -23,7 +28,7 @@ EnvironmentFile=/etc/default/hummer-battery
 ExecStart=/usr/bin/python3 -m hummer_obd.battery \
     --shutdown-v ${BATTERY_SHUTDOWN_V} \
     --interval-s ${BATTERY_INTERVAL_S} \
-    --consecutive ${BATTERY_CONSECUTIVE} ${BATTERY_EXTRA}
+    --consecutive ${BATTERY_CONSECUTIVE} $BATTERY_EXTRA
 
 # The watch losing its I2C bus must not stop it watching: it declines to act on
 # an unreadable cell, so restarting is always the safer response than exiting.
