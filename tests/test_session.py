@@ -224,6 +224,22 @@ class TestEverythingTheVehicleAdvertises(unittest.TestCase):
         # one-module vehicle, and nothing downstream reports the difference.
         self.assertEqual(transport.sent[-1], RECEIVE_FILTER_CLEAR)
 
+    def test_the_filter_clear_is_an_all_zero_twenty_nine_bit_mask(self):
+        # Pinned as a literal on purpose.  Every other assertion in this file
+        # compares the sent command against the constant, and the fakes reset
+        # their filter on whatever the constant says -- so the constant could
+        # be changed to a command that does not actually clear anything and the
+        # whole suite would still pass.  The value is load-bearing on real
+        # hardware: the filter being cleared was set by an eight-digit (29-bit)
+        # ATCRA, so an eleven-bit mask like "ATCM000" would leave the adapter
+        # deaf to every module but one for the rest of the session, and a
+        # non-zero mask would still filter.
+        self.assertEqual(RECEIVE_FILTER_CLEAR, "ATCM00000000")
+        self.assertEqual(validate_command(RECEIVE_FILTER_CLEAR), RECEIVE_FILTER_CLEAR)
+        mask = RECEIVE_FILTER_CLEAR[len("ATCM"):]
+        self.assertEqual(len(mask), 8, "a 29-bit filter needs a 29-bit mask to clear it")
+        self.assertEqual(int(mask, 16), 0, "a non-zero mask still filters")
+
     def test_no_new_read_transmits_anything_the_gate_would_refuse(self):
         self.session.supported_monitor_mids()
         self.session.read_monitor_tests("01")

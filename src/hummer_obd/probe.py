@@ -32,6 +32,7 @@ from .config import load_config
 from .decode import (
     PID_DECODERS,
     decode_cvns,
+    decode_pid,
     decode_vin,
     ecu_from_header,
     mask_vin,
@@ -142,6 +143,11 @@ def run_probe(args) -> int:
             print("## current data")
             samples = {}
             per_ecu: dict[str, list] = {}
+            # The decoded objects themselves, kept so --database can store the
+            # per-module readings.  Without this, the richest data the probe
+            # produces would exist only in a JSON file nobody queries.
+            decoded_samples: list = []
+            decoded_monitors: list = []
             # Which modules spoke at all.  This is free -- it comes out of
             # replies the probe already asked for -- so it is collected whether
             # or not the extra questions were requested.
@@ -161,9 +167,7 @@ def run_probe(args) -> int:
             for pid in targets:
                 if thorough:
                     # The same single request, read for every answer it drew
-                    # rather than only the first.  values[0] is that first
-                    # answer, which is exactly what read_pid would have
-                    # returned, so the samples map keeps its existing meaning.
+                    # rather than only the first.
                     values, reply = session.read_pid_per_ecu(pid)
                     per_ecu[pid] = [
                         {
@@ -176,9 +180,19 @@ def run_probe(args) -> int:
                         }
                         for item in values
                     ]
-                    value = values[0]
+                    # `samples` has to mean the same thing whether or not --max
+                    # was given, so it is decoded exactly as read_pid decodes
+                    # it: the first module's value, with *every* module's frame
+                    # kept as the evidence behind it.  values[0] is the same
+                    # number but carries only its own frame, so using it here
+                    # would make --max the one mode that narrows the record.
+                    # This is a second decode of a reply already in hand -- no
+                    # extra bus traffic.
+                    value = decode_pid(pid, reply)
+                    decoded_samples.extend(values)
                 else:
                     value, reply = session.read_pid(pid)
+                    decoded_samples.append(value)
                 responders.update(_responding_ecus(reply))
                 samples[pid] = {
                     "name": value.name,
@@ -218,6 +232,7 @@ def run_probe(args) -> int:
                         # rather than a hand-picked subset of it.
                         "tests": [asdict(test) for test in tests],
                     }
+                    decoded_monitors.extend(tests)
                     print(f"  MID {mid}: {len(tests)} test(s) [{reply.status}]")
                 summary["monitors"] = {"supported_mids": mids, "results": monitors}
                 if not mids:
@@ -302,6 +317,25 @@ def run_probe(args) -> int:
                 notes="raw read-only probe",
             )
             store.add_vehicle_info(sid, "VIN", summary.get("vin_masked", ""), "see raw log")
+            # Everything the probe actually decoded.  A probe that prints eight
+            # per-module voltages and stores none of them is a probe whose best
+            # output survives only outside the database.
+            if decoded_samples:
+                store.add_samples(sid, decoded_samples)
+            if decoded_monitors:
+                store.add_monitor_tests(sid, decoded_monitors)
+            for mode, read in summary.get("dtcs", {}).items():
+                store.add_dtc_read(sid, mode, read.get("codes", []), "")
+            # The module map is vehicle identity rather than a reading: it says
+            # which address is which module, which is what any later per-ECU
+            # request has to be addressed by.
+            # ``ecus`` is {"addresses": [...], "names": {addr: name}}, so the
+            # names map is what carries the per-module identity.  Iterating the
+            # outer dict instead would store two rows holding the repr of a
+            # list and of a dict, and no row for any actual module.
+            ecu_names = summary.get("ecus", {}).get("names", {})
+            for address in summary.get("ecus", {}).get("addresses", []):
+                store.add_vehicle_info(sid, f"ecu:{address}", ecu_names.get(address, ""), "")
             store.end_session(sid)
     return 0
 

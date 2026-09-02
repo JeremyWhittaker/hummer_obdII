@@ -607,18 +607,28 @@ class TestScalingIsClaimedOnlyWhereItIsKnown(unittest.TestCase):
         """
         self.assertEqual(
             {uasid: (s.unit, s.multiplier) for uasid, s in UAS_SCALINGS.items()},
-            {0x01: ("", 1.0), 0x24: ("", 1.0)},
+            {0x01: ("", 1.0)},
         )
 
-    def test_a_scaled_value_equals_the_raw_count_for_a_unit_multiplier(self):
-        # Both known rows are plain counts at multiplier 1, so scaling must not
-        # move the magnitude.  UASID 24 is otherwise asserted nowhere.
+    def test_uasid_24_is_reported_unscaled_because_it_was_never_verified(self):
+        """0x24 was in this table with a multiplier of 1.0 and was removed.
+
+        The argument for keeping it was that a multiplier of 1 cannot change a
+        magnitude, which is circular: it only holds if 1.0 is the correct
+        multiplier, and that could not be confirmed against the J1979 UAS
+        table.  If 0x24 is really 0.1, or signed, an entry claiming 1.0 would
+        have produced a wrong number that looked exactly like a measurement.
+        """
         third = decode_monitor_tests(parse_reply(TestOnBoardMonitoringTests.TWO_ECUS))[2]
         self.assertEqual(third.uasid, 0x24)
-        self.assertEqual(
-            (third.scaled_value, third.scaled_min, third.scaled_max),
-            (float(third.value), float(third.min_limit), float(third.max_limit)),
-        )
+        self.assertIsNone(third.scaled_value)
+        self.assertIsNone(third.scaled_min)
+        self.assertIsNone(third.scaled_max)
+        self.assertEqual(third.unit, "")
+        # The raw counts are still there: an unknown scaling loses nothing.
+        self.assertIsInstance(third.value, int)
+        self.assertIsInstance(third.min_limit, int)
+        self.assertIsInstance(third.max_limit, int)
 
     def test_a_bitmap_mid_stops_the_record_walk(self):
         # Two supported-MID bitmaps concatenated in one reply: long enough to

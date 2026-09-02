@@ -25,8 +25,8 @@ reference node.
 Latest result:
 
 ```text
-pytest:   337 passed
-unittest: 342 tests / 327 subtests passed
+pytest:   346 passed
+unittest: 346 tests / 326 subtests passed
 shell:    all repository shell scripts pass bash -n
 compile:  all Python modules compile
 ```
@@ -562,6 +562,97 @@ when a DTC read actually returned codes. The default probe path is unchanged.
 
 This has **not been run on the vehicle yet.** It is the highest-value
 outstanding action and needs the truck awake.
+
+## Maximal probe on a live vehicle, 2026-09-01
+
+`hummer-obd-probe --max` was run against the awake vehicle. Charging keeps the
+modules up, so the diagnostic bus answered even though the truck was parked.
+
+### The definitive module map
+
+This was the prerequisite for any future per-module work, and it is now
+measured rather than inferred. Each address was queried behind its own
+`ATCRA18DAF1<addr>` receive filter, so every name is attributed with certainty:
+
+| Address | Module |
+|---|---|
+| `17` | `DMCM-DriveMotorCtrl` |
+| `1D` | `DMC2-DriveMotorCtrl2` |
+| `1E` | `DMC3-DriveMotorCtrl3` |
+| `28` | `BSCM-BrakeSystem` |
+| `40` | `BCM-BodyControl` |
+| `45` | `Gateway Module - GWM` |
+| `CB` | `BSM-BatterySysMngr` |
+| `CD` | `BSM-BatterySysMngr` |
+
+**Correction to an earlier record.** This document previously stated that
+address `28` was the gateway, inferred from it being the only module answering
+`7F <service> 22` while the vehicle shut down. That was wrong. `28` is the
+**brake system control module**; the gateway is `45`. The inference was
+confirmed wrong twice: by the name map above, and again when the vehicle
+returned to sleep during a later run and `28` was once more the sole responder.
+So the module that stays reachable longest during shutdown is the brake system
+controller, which is a more interesting fact than the one that replaced it.
+
+### Service 06: supported, and empty
+
+`0600` returned a **positive response advertising zero monitor IDs**. Service 06
+is therefore proven to work on this vehicle and this vehicle exposes no
+on-board monitors through it. That is a real answer, not a failure: an empty
+supported-MID bitmap is the ECU saying it has nothing to report.
+
+### Service 02: still unproven, and possibly unprovable here
+
+Freeze frame was **correctly skipped**, because all three DTC reads returned
+zero codes and a freeze frame only exists because a code was set. The
+behavioural gate worked exactly as designed. It also means service 02 cannot be
+proven on this vehicle while it stays healthy, which is the right problem to
+have.
+
+### Per-module readings, stored
+
+Control module voltage from all eight modules in one request, now written to
+SQLite with the module recorded against each row:
+
+```text
+ecu 28  13.957 V     ecu 40  13.861 V
+ecu CD  13.720 V     ecu 45  13.719 V
+ecu CB  13.678 V     ecu 17  13.555 V
+ecu 1E  13.510 V     ecu 1D  13.493 V
+```
+
+A 0.464 V spread, highest at the brake controller and lowest at a drive motor
+controller. The database now holds 23 rows carrying a module address across
+eight distinct modules.
+
+### Calibration verification numbers
+
+`0906` returned **42 CVNs**, correctly rendered as four-byte hex values.
+Previously these went through the ASCII item decoder and came back as
+unreadable noise that looked like a decode failure on a perfectly good reply.
+
+### Two malformed rows, disclosed rather than deleted
+
+A transient bug in the probe's database path wrote two `vehicle_info` rows
+holding the Python `repr` of a list and of a dict (`ecu:addresses`,
+`ecu:names`) instead of one row per module. The bug is fixed and the correct
+form is one `ecu:<address>` row per module. The two bad rows remain in the
+reference database: this storage layer never deletes, and quietly removing
+evidence of a mistake is a worse habit than leaving two identifiable rows.
+
+### Review outcome: one scaling row removed
+
+The adversarial review could not confirm unit-and-scaling identifier `0x24`
+against the J1979 table. The argument for keeping it was that a multiplier of
+1.0 cannot change a magnitude, which is circular — it only holds if 1.0 is
+correct. It was removed. An identifier the table does not know now yields a
+null scaled value with the raw counts intact, which is the whole point of
+keeping the table deliberately partial.
+
+The review also established that monitor values are read big-endian
+**unsigned**, that J1979 defines some identifiers as signed, and that none of
+those is currently in the table. That is documented rather than guessed at; a
+future signed row must carry its own signedness.
 
 ## Resource result
 

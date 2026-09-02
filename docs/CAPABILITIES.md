@@ -191,11 +191,24 @@ addresses answered services 03 and 07:
 17  1D  1E  28  40  45  CB  CD
 ```
 
-Five answered service 0A: `28 40 45 CB CD`. Address `28` is the gateway — it is
-the module that answers alone with `7F <service> 22` while the rest of the
-vehicle is shutting down.
+Every address is now named, measured behind a per-address receive filter:
 
-**The remaining gap is the pairing.** The order of the `090A` reply is not
+| Address | Module | | Address | Module |
+|---|---|---|---|---|
+| `17` | `DMCM-DriveMotorCtrl` | | `40` | `BCM-BodyControl` |
+| `1D` | `DMC2-DriveMotorCtrl2` | | `45` | `Gateway Module - GWM` |
+| `1E` | `DMC3-DriveMotorCtrl3` | | `CB` | `BSM-BatterySysMngr` |
+| `28` | `BSCM-BrakeSystem` | | `CD` | `BSM-BatterySysMngr` |
+
+An earlier version of this document called address `28` the gateway, inferred
+from it being the only module still answering while the vehicle shut down.
+That was wrong: `28` is the brake system controller and `45` is the gateway.
+The module that stays reachable longest during shutdown is the brake
+controller.
+
+**The pairing is closed.** What follows is kept as the record of how.
+
+Previously: The order of the `090A` reply is not
 guaranteed to match the order in which modules answered service 03, so address
 `45` cannot yet be called `BCM-BodyControl` or anything else with certainty. An
 enhanced-PID request has to be addressed to a specific ECU, so a definitive
@@ -217,8 +230,8 @@ needs the vehicle awake.
 
 | Service | What it returns | Tier |
 |---|---|---|
-| `02` freeze frame | the snapshot an ECU stored alongside a DTC | Available, unproven |
-| `06` on-board monitoring | per-monitor test results: test ID, value, and the ECU's own min/max limits | Available, unproven |
+| `02` freeze frame | the snapshot an ECU stored alongside a DTC | Available, unproven — and unprovable while the vehicle has no DTCs |
+| `06` on-board monitoring | per-monitor test results | **Proven** — answers, and advertises **zero** monitor IDs on this vehicle |
 
 Both are standard SAE J1979 *read* services from the same specification as
 `01`/`03`/`07`/`09`/`0A`. Unlike Mode 22 they need no vendor identifier to be

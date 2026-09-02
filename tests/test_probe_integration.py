@@ -10,8 +10,9 @@ import unittest
 from pathlib import Path
 
 from hummer_obd import probe
+from hummer_obd.storage import Storage
 from hummer_obd.rawlog import decode_record, iter_records
-from hummer_obd.decode import ecu_from_header
+from hummer_obd.decode import ecu_from_header, parse_reply
 from hummer_obd.safety import ALLOWED_OBD_MODES, FORBIDDEN_SERVICES, is_safe
 from hummer_obd.session import RECEIVE_FILTER_CLEAR
 
@@ -332,11 +333,89 @@ class TestThoroughProbe(unittest.TestCase):
         self.assertEqual(snapshot["value"], 50.0)
         self.assert_every_command_is_a_read(self.sim.received)
 
+    def test_everything_decoded_reaches_the_database_not_just_the_summary(self):
+        """A probe that prints eight readings and stores one is losing seven.
+
+        ``--database`` used to write only a session row and a masked VIN, so the
+        richest output of ``--max`` -- per-module values, monitor results and
+        the address-to-name map -- survived only in a JSON file nobody queries.
+        """
+        db = self.root / "data" / "probe.sqlite3"
+        summary = self.probe_run("--max", "--database", str(db))
+        self.assertTrue(db.exists())
+        with Storage(db) as store:
+            rows = store.conn.execute(
+                "SELECT pid, ecu, value, status FROM samples ORDER BY id").fetchall()
+            info = store.conn.execute(
+                "SELECT item, value_masked FROM vehicle_info ORDER BY id").fetchall()
+            dtcs = store.conn.execute("SELECT mode FROM dtc_reads").fetchall()
+
+        self.assertTrue(rows, "no samples were stored at all")
+        # Every module that answered has its own row, not just the first.
+        by_ecu = {r["ecu"] for r in rows if r["ecu"]}
+        self.assertGreater(len(by_ecu), 1,
+                           f"only one module was recorded: {by_ecu}")
+        # The per-ECU rows in the database match what the summary reported.
+        for pid, entries in summary.get("samples_by_ecu", {}).items():
+            stored = {(r["ecu"], r["value"]) for r in rows if r["pid"] == pid}
+            for entry in entries:
+                self.assertIn((entry["ecu"], entry["value"]), stored,
+                              f"{pid} from ecu {entry['ecu']} never reached the database")
+
+        # The module map is stored as vehicle identity, and the VIN stays masked.
+        items = {row["item"]: row["value_masked"] for row in info}
+        self.assertIn("VIN", items)
+        # Masked, never the 17 characters themselves.
+        self.assertIn("*", items["VIN"])
+        # One row per responding module, carrying that module's own name.
+        # Iterating summary["ecus"] itself walks its two container keys --
+        # "addresses" and "names" -- so it would pass while the database held
+        # nothing but the repr of a list and the repr of a dict, and no row
+        # named after any module actually on the bus.
+        self.assertEqual(summary["ecus"]["addresses"], ["10", "45"])
+        for address, name in summary["ecus"]["names"].items():
+            self.assertEqual(items.get(f"ecu:{address}"), name)
+        self.assertNotIn("ecu:addresses", items)
+        self.assertNotIn("ecu:names", items)
+
+        self.assertEqual({row["mode"] for row in dtcs}, {"03", "07", "0A"})
+
     def test_the_vin_is_masked_on_the_thorough_path_too(self):
         summary = self.probe_run("--max")
         self.assertTrue(summary["vin_masked"].startswith("1G1"))
         self.assertNotIn("1G1JC5444R7252367", json.dumps(summary))
         self.assertNotIn("1G1JC5444R7252367", (self.root / "summary.json").read_text())
+
+    def test_the_samples_map_means_the_same_thing_with_and_without_max(self):
+        # --max is supposed to *add* answers, never narrow one.  Reporting
+        # values[0] into `samples` would quietly swap its raw evidence from
+        # every module's frame to only the frame the value came from, so two
+        # probe runs of the same truck would disagree about what was on the
+        # bus for no reason a reader could see.
+        thorough = self.probe_run("--max")
+        plain = self.probe_run()
+        self.assertEqual(thorough["samples"], plain["samples"])
+        # 0105 is answered by two modules, so this is the case that would
+        # differ if the single-value entry kept only its own frame.
+        self.assertEqual(thorough["samples"]["05"]["raw"], "0341055a 0341055c")
+        # ...while the per-module rows each carry their own frame and nothing
+        # else, which is what makes them attributable in the first place.
+        self.assertEqual([e["raw"] for e in thorough["samples_by_ecu"]["05"]],
+                         ["0341055a", "0341055c"])
+
+
+class TestRespondingModules(unittest.TestCase):
+    def test_a_module_whose_reply_was_truncated_still_counts_as_present(self):
+        # 18DAF145 opens a multi-frame answer whose consecutive frames never
+        # arrive, so its bytes are dropped as incomplete.  It still spoke, and
+        # "which modules are on this bus" must not depend on whose bytes
+        # survived reassembly -- which is why this reads `headers` and not the
+        # frame-aligned `frame_headers`.
+        reply = parse_reply(b"18DAF110 03 41 05 5A\r"
+                            b"18DAF145 10 14 49 02 01 31 47 31\r>")
+        self.assertEqual(reply.incomplete, 1)
+        self.assertEqual(reply.frame_headers, ["18DAF110"])
+        self.assertEqual(sorted(set(probe._responding_ecus(reply))), ["10", "45"])
 
 
 if __name__ == "__main__":

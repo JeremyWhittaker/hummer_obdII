@@ -280,7 +280,16 @@ class AdapterSession:
         # Only a 29-bit module address can be turned into a receive filter.  An
         # 11-bit identifier such as 7E8 would build a command the safety gate
         # rejects, so it is skipped rather than mangled into a valid-looking one.
-        wanted = sorted({a for a in (ecu_from_header(x) for x in addresses) if len(a) == 2})
+        # Only 29-bit sources, which are two hex digits.  The receive filter
+        # below is built as ``ATCRA18DAF1<addr>``, a 29-bit response identifier;
+        # feeding an 11-bit source ("7E8") into that shape would transmit a
+        # filter that matches nothing and quietly return a map of empty names.
+        # Supporting 11-bit needs its own verified filter form, not a reused
+        # one, so those addresses are skipped and reported rather than mangled.
+        seen = {a for a in (ecu_from_header(x) for x in addresses) if a}
+        wanted = sorted({a for a in seen if len(a) == 2})
+        for skipped in sorted(seen - set(wanted)):
+            self._say(f"090A @{skipped}: skipped (11-bit source; filter here is 29-bit)")
         if not wanted:
             return names
         try:

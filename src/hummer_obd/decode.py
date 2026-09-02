@@ -605,7 +605,11 @@ class UnitAndScaling:
 #: meant to grow that way, one verified row at a time.
 UAS_SCALINGS: dict[int, UnitAndScaling] = {
     0x01: UnitAndScaling("", 1.0),
-    0x24: UnitAndScaling("", 1.0),
+    # 0x24 was here with a multiplier of 1.0 and was removed on review: the
+    # entry could not be confirmed against the J1979 UAS table, and "a
+    # multiplier of 1 changes no magnitude" is circular -- it only holds if 1.0
+    # is the right multiplier.  An identifier this table does not know yields a
+    # null scaled value with the raw counts intact, which is the honest answer.
 }
 
 #: Bytes per service 06 test record on CAN: MID, TID, UASID, then the test
@@ -621,8 +625,12 @@ _BITMAP_MIDS = frozenset({0x00, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0})
 class MonitorTest:
     """One on-board monitor test result, as the module reported it.
 
-    ``value``, ``min_limit`` and ``max_limit`` are the raw 16-bit counts off
-    the wire and are always populated.  The ``scaled_*`` fields and ``unit``
+    ``value``, ``min_limit`` and ``max_limit`` are the two bytes off the wire
+    read big-endian and **unsigned**, and are always populated.  J1979 defines
+    some unit-and-scaling identifiers as signed; none of those is in
+    :data:`UAS_SCALINGS`, so no scaled value can currently be wrong because of
+    it, but a future signed row must carry its signedness rather than inherit
+    this reading.  The ``scaled_*`` fields and ``unit``
     are populated only when :data:`UAS_SCALINGS` knows ``uasid``; otherwise
     they stay ``None``/``""`` and the raw counts are the whole of what is
     claimed.  ``mid``, ``tid`` and ``uasid`` are kept as integers because they
