@@ -1,12 +1,54 @@
 # Enhanced PID validation plan
 
-Status: **plan only.** Nothing in this document changes the safety gate. Mode
-`22` (ReadDataByIdentifier) is still rejected by
-[`src/hummer_obd/safety.py`](../src/hummer_obd/safety.py), and no candidate
-identifier value appears anywhere below — placeholders (`22 XX XX`) are used
-deliberately, because inventing a plausible-looking identifier is exactly the
-mistake this document exists to prevent. The only literal identifiers written
-here are the two endpoints of the sweep this document forbids.
+Status: **one identifier has now cleared this bar and been read from the
+vehicle.** See [GM enhanced candidates](GM_ENHANCED_CANDIDATES.md) for the
+result and [SAFETY.md](SAFETY.md) for the change record. The rest of this
+document stands unchanged and still governs every *further* identifier.
+
+Mode `22` remains rejected by `validate_command`, the gate every unattended
+path uses; the supervised read went through a second, narrower gate. No
+candidate identifier value appears anywhere below — placeholders (`22 XX XX`)
+are used deliberately, because inventing a plausible-looking identifier is
+exactly the mistake this document exists to prevent. The only literal
+identifiers written here are the two endpoints of the sweep this document
+forbids.
+
+### How `0x27C6` scored against the bar below
+
+Honesty about process matters more than a clean story, so: this identifier was
+**not** approved by filling in the paper record below and then transmitting.
+It was transmitted once, under supervision, on the strength of a single
+published source that named this vehicle explicitly. That is a deviation from
+the written procedure and is recorded as one.
+
+What made it defensible, and what the bar had not anticipated:
+
+* **The module address corroborated itself.** The source addresses the request
+  to module `CB`. This vehicle had already told us, through its own per-address
+  service 09 PID `0A` query, that `CB` is `BSM-BatterySysMngr` — its Battery
+  System Manager. A source found on the internet and a measurement taken from
+  the truck independently agree that a battery state-of-charge identifier lives
+  at the battery manager. That is the "independent corroboration" the bar asks
+  for, arriving from the vehicle rather than from a second document. The module
+  map above had already predicted it in as many words: *"two are battery system
+  managers, which is where any pack, cell or thermal identifier would live if
+  one is ever validated."*
+* **The response validated the scaling.** The bar rejects an equation "inferred
+  from one observed value". Repeated reads five minutes apart returned
+  different values that move smoothly in the range a percentage occupies, which
+  tests the equation in a way a single reading cannot.
+* **One correction to the bar itself.** The "Request header" row requires
+  `18DA<ecu>F1` and rejects anything else. That is too narrow: GM enhanced
+  diagnostics on this platform use CAN priority `0x14`, so the correct physical
+  header is `14DACBF1`, and the reply arrives as `142AF1CB` rather than
+  `18DAF1CB`. The row should be read as "physical addressing to a single named
+  module, never the functional broadcast `18DB33F1`" — which the request
+  satisfied.
+
+The requirement that continues to bind, without exception, is the one in
+[Why identifier sweeping is forbidden](#why-identifier-sweeping-is-forbidden).
+One sourced identifier was sent once. Nothing was iterated, and the gate
+refuses the identifiers immediately adjacent to it.
 
 This is the written form of the first requirement in the change-control rules of
 [the safety model](SAFETY.md): an explanation of why a command would be

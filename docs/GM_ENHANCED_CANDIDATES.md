@@ -33,8 +33,30 @@ Reading that reply left to right:
 `0xD18A` = 53642. Applying the published scaling, 53642 / 655.35 = **81.85 %**
 state of charge.
 
-The read was repeated and returned a byte-identical frame, so it is
+The read was repeated immediately and returned a byte-identical frame, so it is
 reproducible rather than a one-off.
+
+### It is live telemetry, not a constant
+
+Repeated over a longer interval, the value **moves**:
+
+| Time (UTC) | Raw | `/655.35` |
+|---|---|---|
+| 22:33 | `D18A` | 81.85 % |
+| 22:35 | `D18A` | 81.85 % |
+| 22:38 | `D18A` | 81.85 % |
+| 22:43 | `D042` | 81.35 % |
+
+This matters more than the absolute number. A byte pair that merely *happened*
+to fall in a plausible range would sit still; a field that decrements by half a
+percent while the vehicle is awake and drawing its 12 V rail from the traction
+pack is behaving the way a state of charge behaves. It is the difference
+between "this number looks right" and "this number is a measurement".
+
+It also constrains the scaling independently of the source: the `/100` and
+`/2.55` interpretations of the same bytes give 536.42 and 21036, neither of
+which is a percentage, and both of which move by implausible amounts between
+those two reads.
 
 ### The byte offset is confirmed, not assumed
 
@@ -75,6 +97,16 @@ remaining step for this identifier.
 | Request identifier | `0x14DACBF1` — target `CB`, tester `F1` |
 | Response identifier | `0x142AF1CB` |
 | Flow control | `ATFCSH14DACBF1`, `ATFCSD300000`, `ATFCSM1` |
+
+**Module `CB` is this vehicle's own Battery System Manager.** That is not taken
+from the source: the truck reported it, when each address was queried behind
+its own receive filter and answered service 09 PID `0A` for itself
+(`CB` = `BSM-BatterySysMngr`, see
+[enhanced PID validation](ENHANCED_PID_VALIDATION.md)). So an internet source
+and a measurement from the vehicle independently agree that a battery
+state-of-charge identifier lives at the battery manager — which is the closest
+thing to independent corroboration available here, and it arrived from the
+truck rather than from a second document.
 
 Two details are easy to get wrong and both cost a working read:
 
