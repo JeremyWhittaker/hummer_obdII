@@ -38,7 +38,8 @@ reproducible rather than a one-off.
 
 ### It is live telemetry, not a constant
 
-Repeated over a longer interval, the value **moves**:
+Eight supervised reads over thirty minutes, vehicle awake and parked at 13.8 V
+throughout:
 
 | Time (UTC) | Raw | `/655.35` |
 |---|---|---|
@@ -46,17 +47,37 @@ Repeated over a longer interval, the value **moves**:
 | 22:35 | `D18A` | 81.85 % |
 | 22:38 | `D18A` | 81.85 % |
 | 22:43 | `D042` | 81.35 % |
+| 22:48 | `D042` | 81.35 % |
+| 22:53 | `D042` | 81.35 % |
+| 22:58 | `D042` | 81.35 % |
+| 23:03 | `D042` | 81.35 % |
 
 This matters more than the absolute number. A byte pair that merely *happened*
-to fall in a plausible range would sit still; a field that decrements by half a
-percent while the vehicle is awake and drawing its 12 V rail from the traction
-pack is behaving the way a state of charge behaves. It is the difference
-between "this number looks right" and "this number is a measurement".
+to fall in a plausible range would sit still; a field that steps downward while
+the vehicle is awake and drawing its 12 V rail from the traction pack is
+behaving the way a state of charge behaves. It is the difference between "this
+number looks right" and "this number is a measurement".
 
-It also constrains the scaling independently of the source: the `/100` and
-`/2.55` interpretations of the same bytes give 536.42 and 21036, neither of
-which is a percentage, and both of which move by implausible amounts between
-those two reads.
+Three things follow from the shape of the series.
+
+**The field is quantised to 0.5 %.** The step is `0xD18A - 0xD042` = 328 counts,
+and 328 / 655.35 = 0.5004 %. That is why five consecutive reads return identical
+bytes and then the value moves all at once: the module reports state of charge
+in half-percent increments, not continuously.
+
+**The scaling is now constrained by the data, not only by the source.** A
+328-count step landing on exactly one half of one percent is what `/655.35`
+predicts. The competing interpretations of the same bytes give 536.42 (`/100`)
+and 21036 (`/2.55`), and the same step becomes 3.28 and 128.6 respectively --
+neither a round figure in any unit this signal could plausibly carry.
+
+**The discharge rate is physically sensible.** One step occurred, somewhere
+between 22:38 and 22:43, with no further movement in the following twenty
+minutes. That is at most about 1 % per hour, which for a pack of this size is
+on the order of a couple of kilowatts -- the right magnitude for an awake,
+parked vehicle running its DC-DC converter and cabin electronics. A signal that
+decoded to a plausible-looking percentage but implied an absurd power draw
+would be a reason to doubt the decode; this one does not.
 
 ### The byte offset is confirmed, not assumed
 
