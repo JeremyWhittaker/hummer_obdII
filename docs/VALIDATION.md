@@ -25,8 +25,8 @@ reference node.
 Latest result:
 
 ```text
-pytest:   243 passed
-unittest: 243 tests / 223 subtests passed
+pytest:   252 passed
+unittest: 252 tests / 223 subtests passed
 shell:    all repository shell scripts pass bash -n
 compile:  all Python modules compile
 ```
@@ -316,6 +316,86 @@ configuration polling `010D`, `0142`, `011F`, `01A6` and `0131` every two
 seconds, with `duration_s` set so the run stops itself. The deployed
 `config/hummer.toml` was not modified, and `collector.enabled` in it remains
 false.
+
+## Drive trial and odometer cross-validation
+
+On 2026-09-01 the collector ran for the first time against a **moving** vehicle,
+in two bounded sessions totalling about twenty minutes. Polling a vehicle that
+is awake and running its DC-DC converter does not interact with the sleep gate;
+the gate is about parasitic drain on a *sleeping* vehicle, which is why the run
+was time-boxed and stopped the moment the truck parked.
+
+| Measurement | Result |
+|---|---|
+| Vehicle speed | 0 to **94 km/h**, 539 valid samples |
+| Odometer (`A6`) | 2146.6 to **2157.2 km** |
+| Distance since codes cleared (`31`) | 19 to **29 km** |
+| Control module voltage (`42`) | **12.55 to 13.781 V** (dips under load) |
+| Warm-ups since codes cleared (`30`) | incremented 2 to 3 during the drive |
+| Distance with MIL on (`21`) | constant 0 km |
+| OBD standard code (`1C`) | constant 5 |
+| DTC reads | 4 each of services 03/07/0A, **zero codes throughout** |
+
+### The odometer decoder is now independently corroborated
+
+Two unrelated counters moved together:
+
+```text
+A6 odometer                    2146.6 -> 2157.2 km   delta 10.6 km
+31 distance since codes cleared    19 ->      29 km   delta 10   km
+```
+
+`A6` has 0.1 km resolution and `31` has 1 km resolution, so a 0.6 km
+disagreement is exactly what agreement looks like at those resolutions. The
+four-byte, 0.1 km-per-bit scaling was written from the SAE definition *before*
+any reading was taken, and it now matches a second, independently-scaled
+counter over a real distance. That is stronger evidence than a single
+plausible-looking value.
+
+Speed distribution over the drive, in 10 km/h bands:
+
+```text
+  0-  9  ######################################## 237
+ 10- 19  ######## 32
+ 20- 29  ######## 32
+ 30- 39  ###### 27
+ 40- 49  ###### 27
+ 50- 59  ######## 33
+ 60- 69  ########## 43
+ 70- 79  ################ 67
+ 80- 89  ######## 32
+ 90- 99  ## 9
+```
+
+PID `01` was polled 220 times and recorded 220 times with status `undecoded`.
+That is the intended behaviour: the raw bytes are preserved and no value is
+invented for a composite the sample shape cannot represent.
+
+### Honest note on collection continuity
+
+There was an approximately three minute gap between the two sessions. The
+operator's access point dropped, and the command that was meant to restart the
+collector with a wider PID set was cut off after stopping the old one and
+before the new one detached. Nothing was lost from the first session, but no
+samples were taken during the gap. Subsequent remote changes were sent as a
+single atomic payload so they cannot half-apply.
+
+## Sleep observation
+
+With the vehicle parked, all vehicle polling was stopped and a **zero-CAN-traffic**
+watch started instead (`hummer-obd-voltage`). It sends only `ATZ`, `ATE0`,
+`ATRV` and `ATCS` — adapter commands that never reach the bus — every five
+minutes.
+
+Baseline immediately after parking:
+
+```text
+2026-09-02T00:50:29Z  13.9 V  T:00 R:00  ok
+```
+
+13.9 V is the DC-DC converter still running. The measurement of interest is
+where the voltage settles once the vehicle sleeps, and whether it continues to
+decay with the Pi and adapter attached to an always-live port.
 
 ## Resource result
 

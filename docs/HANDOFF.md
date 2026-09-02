@@ -42,7 +42,7 @@ power test is complete.
 | Probe | completed and reviewed; raw transcript remains private on the Pi |
 | Collector | one-shot proven; continuous unit disabled and config flag false |
 | Upload | disabled, endpoint empty |
-| Tests | 243 passed / 223 subtests under both test runners |
+| Tests | 252 passed / 223 subtests under both test runners |
 
 The final controlled reboot was also accepted: both SSH paths returned in about
 36 seconds, all required infrastructure/display/RFCOMM services were active,
@@ -111,7 +111,9 @@ The next meaningful milestone is a power/sleep experiment, not a new decoder:
    voltage trend with **zero CAN traffic** and is the cheapest first version of
    this measurement;
 3. observe a complete vehicle sleep/wake cycle with the Pi and OBDLink attached
-   while the continuous collector remains off;
+   while the continuous collector remains off. `hummer-obd-voltage` does this
+   without transmitting to the vehicle; a first observation began 2026-09-01
+   with a 13.9 V awake baseline;
 4. if safe, run a time-bounded polling trial and verify the vehicle still
    sleeps; and
 5. record measurements, duration, service state, and rollback criteria.

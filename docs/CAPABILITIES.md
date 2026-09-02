@@ -96,7 +96,7 @@ The vehicle's own support bitmaps advertise exactly **14** PIDs:
 | PID | Meaning | Tier |
 |---|---|---|
 | `01` | monitor status since DTCs cleared | **Proven** — answered; deliberately left undecoded |
-| `0D` | vehicle speed | **Proven** |
+| `0D` | vehicle speed | **Proven** — 0 to 94 km/h over a real drive |
 | `1C` | OBD standard conformance code | **Proven** — `5` |
 | `1F` | run time since engine start | **Proven** — 1144 s |
 | `20` | support bitmap for PIDs 21–40 | **Proven** |
@@ -108,7 +108,7 @@ The vehicle's own support bitmaps advertise exactly **14** PIDs:
 | `60` | support bitmap for PIDs 61–80 | **Proven** |
 | `80` | support bitmap for PIDs 81–A0 | **Proven** |
 | `A0` | support bitmap for PIDs A1–C0 | **Proven** |
-| `A6` | **odometer** | **Proven** — 2146.6 km |
+| `A6` | **odometer** | **Proven** — 2146.6 to 2157.2 km, corroborated by PID `31` |
 
 All fourteen advertised PIDs have now been read. `01` is the one deliberate
 omission from decoding: it is a composite of MIL state and readiness monitors,
@@ -228,7 +228,8 @@ fault", which otherwise look identical.
 | WAL-mode SQLite with a local upload-queue marker | `storage.py` | Proven |
 | One-shot collector cycle | `collector.py --once` | Proven |
 | Sleeping-vehicle idle backoff instead of escalation | `collector.py` | Proven |
-| Bounded self-stopping collector trial | `collector.py --max-cycles/--duration-s` | Available, unproven |
+| Bounded self-stopping collector trial | `collector.py --max-cycles/--duration-s` | Proven — two bounded drive sessions |
+| Zero-CAN-traffic 12 V watch | `voltage.py` | Proven — running during a sleep observation |
 | Sanitized offline capabilities report | `capabilities.py` | Available, unproven |
 | Local export for external/AI ingestion | `export.py` | Available, unproven |
 | Bluetooth recovery for an already-bonded adapter; cannot pair, trust or remove | `btdiscover.py` | Proven |
@@ -290,8 +291,9 @@ hummer-collector.service = disabled / inactive
 1. ~~Read the advertised PIDs we never asked for~~ — **done 2026-09-01.** All
    fourteen now read; odometer decodes at 2146.6 km.
 2. ~~Decode `0900` and read the advertised service 09 items~~ — **done.**
-3. **Trend `ATRV` across a sleep cycle.** Zero CAN traffic, directly measures
-   the parasitic-drain question that gates everything else.
+3. **Trend `ATRV` across a sleep cycle** with `hummer-obd-voltage`. Zero CAN
+   traffic, directly measures the parasitic-drain question that gates
+   everything else. First observation started 2026-09-01.
 4. **Build the definitive ECU address-to-name map** with `ATCRA` and a
    per-address `090A`. No new command authority needed, and it unblocks any
    future enhanced-PID work.

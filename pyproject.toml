@@ -24,6 +24,7 @@ hummer-obd-display = "hummer_obd.display.status:main"
 hummer-obd-recover = "hummer_obd.btdiscover:main"
 hummer-obd-capabilities = "hummer_obd.capabilities:main"
 hummer-obd-export = "hummer_obd.export:main"
+hummer-obd-voltage = "hummer_obd.voltage:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
