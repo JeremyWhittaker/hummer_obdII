@@ -1,0 +1,16 @@
+# Settings for hummer-battery.service.
+# Install to /etc/default/hummer-battery.
+#
+# Cell voltage at or below which the node shuts down.  A PiSugar2 lithium cell
+# is nominally 3.7 V and its converter cuts off near 3.0 V, so 3.40 V leaves
+# real headroom to close SQLite and flush the raw log before power goes.
+BATTERY_SHUTDOWN_V=3.40
+
+# Seconds between readings.
+BATTERY_INTERVAL_S=30
+
+# Consecutive low readings required before acting.  One low reading is noise;
+# five of them 30 s apart is two minutes of sustained evidence.  A shutdown
+# that fires wrongly leaves the node dead until somebody walks out to it, so
+# the bias is deliberately towards waiting.
+BATTERY_CONSECUTIVE=5

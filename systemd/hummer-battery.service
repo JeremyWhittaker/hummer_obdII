@@ -1,0 +1,41 @@
+[Unit]
+Description=Hummer Pi PiSugar2 battery watch and graceful shutdown
+Documentation=file:/home/jeremy/hummer-obd/docs/RUNBOOK.md
+After=multi-user.target
+
+# Runs continuously and is safe to enable at boot: it only reads the PiSugar
+# power IC over I2C and powers the node down cleanly when the cell is genuinely
+# low.  An unexpected power loss can corrupt the SD card mid-write, and the
+# SQLite database and append-only transcript on it hold readings nobody can
+# take again.
+#
+#   sudo systemctl enable --now hummer-battery
+#
+# Settings live in /etc/default/hummer-battery.
+
+[Service]
+Type=simple
+User=jeremy
+WorkingDirectory=/home/jeremy/hummer-obd
+Environment=PYTHONPATH=/home/jeremy/hummer-obd/src
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/etc/default/hummer-battery
+ExecStart=/usr/bin/python3 -m hummer_obd.battery \
+    --shutdown-v ${BATTERY_SHUTDOWN_V} \
+    --interval-s ${BATTERY_INTERVAL_S} \
+    --consecutive ${BATTERY_CONSECUTIVE}
+
+# The watch losing its I2C bus must not stop it watching: it declines to act on
+# an unreadable cell, so restarting is always the safer response than exiting.
+Restart=always
+RestartSec=30
+
+# Powering the node off is the entire job, so this unit needs that one
+# privilege and nothing else.  It reads the power IC through group membership
+# (i2c) rather than as root.
+NoNewPrivileges=true
+ProtectHome=read-only
+ReadWritePaths=/home/jeremy/hummer-obd
+
+[Install]
+WantedBy=multi-user.target

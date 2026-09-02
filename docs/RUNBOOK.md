@@ -377,6 +377,54 @@ hummer-obd-voltage --root . --interval-s 300 --duration-s 3600   # no CAN traffi
 hummer-obd-capabilities --root .                                 # opens no serial device
 ```
 
+## Battery watch and graceful shutdown
+
+The node runs on a PiSugar2 pack. `hummer-battery.service` watches the cell and
+powers the node down cleanly before it runs flat.
+
+The reason is data, not tidiness: an unexpected power loss can corrupt the SD
+card mid-write, and the SQLite database and append-only transcript on it hold
+readings nobody can take again.
+
+```bash
+python3 -m hummer_obd.battery --once          # one reading, never shuts down
+python3 -m hummer_obd.battery --dry-run       # log the decision, never act
+systemctl status hummer-battery
+journalctl -u hummer-battery -n 20
+sudoedit /etc/default/hummer-battery          # threshold, interval, streak
+```
+
+### Why it is hard to make it fire wrongly
+
+A shutdown that fires when it should not leaves the node dead until somebody
+walks out to the vehicle, which is worse than the flat battery it was meant to
+prevent. So:
+
+| Guard | Behaviour |
+|---|---|
+| Measured voltage, not a modelled percentage | the threshold is a number the hardware reports, not one derived from a discharge curve |
+| Implausible reading | refused, and it **clears** the low streak rather than extending it |
+| I2C bus failure | never counts towards a shutdown |
+| One low reading | does nothing; five consecutive at 30 s apart are required |
+| A cell that is rising | never shut down — below the threshold but recovering means it is on a charger |
+| Writes to the power IC | none exist; a test asserts the module contains no I2C write |
+
+### Hardware identification
+
+A PiSugar2 carries an IP5209 and a PiSugar2 Pro carries an IP5312, and they
+report battery voltage from different registers. The chip was identified by
+measurement rather than from the label: on this node the IP5209 registers read
+4.05 V while the IP5312 registers read 2.60 V — and 2.60 V is below the voltage
+at which the Pi could have taken the reading at all, so it cannot be the cell.
+`identify_chip()` repeats that check at run time and refuses to guess if both
+profiles look plausible.
+
+I2C on the GPIO header was not enabled on this node. `dtparam=i2c_arm=on` was
+appended to `/boot/firmware/config.txt` (with a backup) so it survives a
+reboot, and enabled at run time so no reboot was needed. The reader uses only
+the standard library over `/dev/i2c-1` and needs group membership rather than
+root.
+
 ## Troubleshooting
 
 ### Pi appears online but SSH times out

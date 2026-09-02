@@ -33,7 +33,7 @@ endorsed by General Motors, GMC, OBD Solutions, or Waveshare.
   and persistent RFCOMM binding.
 - Reconnect-aware polling, WAL-mode SQLite buffering, masked vehicle identity,
   and an uploader that is disabled by default.
-- A hardware-free PTY/ELM simulator and 347 tests (328 subtests) covering the
+- A hardware-free PTY/ELM simulator and 366 tests (328 subtests) covering the
   safety boundary, transport, decoding, storage, recovery, display, and
   end-to-end probe flow.
 - Conservative e-paper operation: full refreshes only, unchanged frames are
@@ -68,6 +68,7 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | Bounded collection | self-stopping trials by cycle count or wall-clock duration, under systemd supervision |
 | Offline reporting | sanitized capability report that never opens the serial device |
 | Node health | e-paper status page, Bluetooth recovery, reboot-safe services |
+| Battery safety | PiSugar2 cell watched over I2C; the node powers down cleanly before the pack runs flat, so an unexpected cut cannot corrupt the SD card mid-write |
 
 ### Deliberately not available
 
@@ -155,12 +156,13 @@ src/hummer_obd/
   capabilities.py    sanitized offline capability report; never opens the port
   export.py          local export of stored telemetry for external ingestion
   voltage.py         12 V watch that provably transmits nothing to the vehicle
+  battery.py         PiSugar2 cell watch and graceful shutdown
   probe.py           supervised one-shot probe and offline replay
   btdiscover.py      recovery/binding for an already bonded adapter
   display/status.py  hardware-free renderer and Waveshare panel writer
 config/              safe example configuration
 scripts/             deployment, pairing, SD-card, Wi-Fi, trial, and smoke tooling
-systemd/             display, RFCOMM, recovery, collector, and trial units
+systemd/             display, RFCOMM, recovery, collector, trial, and battery units
 tests/               unit and PTY-backed integration tests
 docs/                architecture, build, operations, safety, and handoff notes
 ```

@@ -25,8 +25,8 @@ reference node.
 Latest result:
 
 ```text
-pytest:   347 passed
-unittest: 347 tests / 328 subtests passed
+pytest:   366 passed
+unittest: 366 tests / 328 subtests passed
 shell:    all repository shell scripts pass bash -n
 compile:  all Python modules compile
 ```
@@ -764,6 +764,13 @@ Until both are answered the correct state is:
 collector.enabled = false
 hummer-collector.service = disabled / inactive
 ```
+
+**The PiSugar2 pack does not change this measurement.** `ATRV` reads voltage at
+the J1962 connector, which is the vehicle's 12 V rail, not the Pi's cell; the
+drain question is unaffected. What the pack does change is the *consequence* of
+a sag: the Pi now rides it out on its own cell and shuts down cleanly instead
+of losing power mid-write, so the SD card and the SQLite database are no longer
+hostage to the vehicle's rail.
 
 This is an electrical/power-management gate, not a software test failure. The
 tooling for the next step exists: `hummer-collector-trial.service` runs a

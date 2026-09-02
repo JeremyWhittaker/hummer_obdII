@@ -45,8 +45,9 @@ power test is complete.
 | Protocol | AUTO, ISO 15765-4 (CAN 29-bit / 500 kbit/s) |
 | Probe | completed and reviewed; raw transcript remains private on the Pi |
 | Collector | one-shot proven; continuous unit disabled and config flag false |
+| Battery | PiSugar2 (IP5209) on I2C bus 1; `hummer-battery` enabled and active, shuts down below 3.40 V sustained |
 | Upload | disabled, endpoint empty |
-| Tests | 347 passed / 328 subtests under both test runners |
+| Tests | 366 passed / 328 subtests under both test runners |
 
 The final controlled reboot was also accepted: both SSH paths returned in about
 36 seconds, all required infrastructure/display/RFCOMM services were active,
