@@ -354,6 +354,22 @@ What the unit guarantees:
 | A trial silently becomes permanent | the unit has no `[Install]` section, so it cannot be enabled at boot |
 | A trial leaves config changed | `TRIAL_CONFIG` is a separate file; `config/hummer.toml` is never touched |
 
+### When the systemd unit cannot be installed
+
+Installing the unit needs root, and a `sudo` invocation over an unreliable link
+is the fragile step the unit exists to remove. If the link will not hold long
+enough (it failed twice during a drive on a phone hotspot), use the shell
+supervisor instead. It mirrors the same guarantees without root:
+
+```bash
+cd ~/hummer-obd && setsid ./scripts/run_trial.sh >/dev/null 2>&1 </dev/null &
+```
+
+Keep the launch command **short**. The original incident was not the link
+dropping; it was a long remote command that stopped the old collector, then
+lost the link before starting the new one. Stage anything longer as a file
+first, then invoke it in one short command.
+
 After a trial, confirm the vehicle still sleeps before considering another:
 
 ```bash

@@ -149,7 +149,7 @@ src/hummer_obd/
   btdiscover.py      recovery/binding for an already bonded adapter
   display/status.py  hardware-free renderer and Waveshare panel writer
 config/              safe example configuration
-scripts/             deployment, pairing, SD-card, Wi-Fi, and smoke tooling
+scripts/             deployment, pairing, SD-card, Wi-Fi, trial, and smoke tooling
 systemd/             display, RFCOMM, recovery, collector, and trial units
 tests/               unit and PTY-backed integration tests
 docs/                architecture, build, operations, safety, and handoff notes
