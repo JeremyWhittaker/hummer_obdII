@@ -239,15 +239,28 @@ def run_probe(args) -> int:
                     print("  (the vehicle advertises no monitor IDs)")
 
                 print("## freeze frame (service 02)")
+                # One request is always worth making, code or no code: the
+                # support bitmap says what a freeze frame *would* hold.  It
+                # exercises the whole service 02 path -- request, frame byte,
+                # parse -- on a healthy vehicle, which otherwise could never
+                # demonstrate the service at all without first developing a
+                # fault.  Inducing one to test a decoder is not on the table.
+                ff_supported = session.supported_freeze_frame_pids()
+                print(f"  020000 supported: "
+                      f"{' '.join(ff_supported) if ff_supported else '(none advertised)'}")
                 if not stored_codes:
-                    # A freeze frame only exists because a code was set.  With no
-                    # codes, every one of these requests is guaranteed to answer
-                    # "no data", so asking would be nothing but bus traffic --
-                    # and the reason for not asking belongs in the record.
+                    # The per-PID reads are a different matter.  A frame only
+                    # exists because a code was set, so with no codes every one
+                    # of those requests is guaranteed to answer "no data" and
+                    # asking would be nothing but bus traffic.
                     reason = ("no stored, pending or permanent DTCs, so no module "
                               "is holding a freeze frame to read")
-                    summary["freeze_frames"] = {"skipped": reason, "frames": {}}
-                    print(f"  skipped: {reason}")
+                    summary["freeze_frames"] = {
+                        "skipped": reason,
+                        "supported_pids": ff_supported,
+                        "frames": {},
+                    }
+                    print(f"  frame reads skipped: {reason}")
                 else:
                     frames = {}
                     for pid in targets:
@@ -262,7 +275,8 @@ def run_probe(args) -> int:
                         }
                         print(f"  {pid} frame 0: {value.value} {value.unit} "
                               f"[{value.status}]")
-                    summary["freeze_frames"] = {"skipped": "", "frames": frames}
+                    summary["freeze_frames"] = {
+                        "skipped": "", "supported_pids": ff_supported, "frames": frames}
 
             print("## vehicle information (service 09)")
             vin, vin_reply = session.read_vin()

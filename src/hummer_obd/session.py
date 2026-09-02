@@ -29,6 +29,7 @@ from .decode import (
     decode_ascii_items,
     decode_dtcs,
     decode_freeze_frame,
+    supported_freeze_frame_pids as _decode_freeze_frame_support,
     decode_monitor_tests,
     decode_pid,
     decode_pid_per_ecu,
@@ -232,6 +233,19 @@ class AdapterSession:
         """
         reply = self.ask(f"06{mid.upper()}", timeout=timeout)
         return decode_monitor_tests(reply), reply
+
+    def supported_freeze_frame_pids(self) -> list[str]:
+        """Ask what a freeze frame would hold, without needing one to exist.
+
+        Worth asking even with no stored codes: it proves the service 02 path
+        end to end and records which readings a future frame would carry.  A
+        vehicle with nothing stored may answer with an empty bitmap or with no
+        data at all, and both are recorded rather than treated as failures.
+        """
+        reply = self.ask("020000", timeout=8.0)
+        pids = _decode_freeze_frame_support(reply)
+        self._say(f"020000: {reply.status} -> {len(pids)} pids")
+        return pids
 
     def read_freeze_frame(self, pid: str, frame: int = 0, timeout: float = 8.0):
         """Read the stored freeze frame value of *pid* from snapshot *frame*.

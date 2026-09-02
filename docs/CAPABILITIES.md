@@ -230,7 +230,7 @@ needs the vehicle awake.
 
 | Service | What it returns | Tier |
 |---|---|---|
-| `02` freeze frame | the snapshot an ECU stored alongside a DTC | Available, unproven — and unprovable while the vehicle has no DTCs |
+| `02` freeze frame | the snapshot an ECU stored alongside a DTC | Partly proven — the request is recognised (`7F 02 22`, not `7F 02 11`); no positive response while the vehicle has no DTCs |
 | `06` on-board monitoring | per-monitor test results | **Proven** — answers, and advertises **zero** monitor IDs on this vehicle |
 
 Both are standard SAE J1979 *read* services from the same specification as

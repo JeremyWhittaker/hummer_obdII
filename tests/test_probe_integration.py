@@ -271,6 +271,7 @@ class TestThoroughProbe(unittest.TestCase):
             "0104", "0105",
             "03", "07", "0A",
             "0600", "0601", "0602",
+            "020000",
             "0902", "0900",
             "ATCRA18DAF110", "090A", "ATCRA18DAF145", "090A", RECEIVE_FILTER_CLEAR,
         ])
@@ -312,12 +313,23 @@ class TestThoroughProbe(unittest.TestCase):
         # The bitmap points at no further bank, so no further bank is asked for.
         self.assertNotIn("0620", self.sim.received)
 
-    def test_freeze_frames_are_not_requested_when_no_code_is_stored(self):
+    def test_the_support_bitmap_is_asked_for_even_with_no_code_stored(self):
+        """The one service 02 request worth making on a healthy vehicle.
+
+        A frame only exists because a code was set, so the per-PID reads are
+        pointless without one.  The support bitmap is different: it says what a
+        frame *would* hold, which exercises the whole service 02 path on a
+        truck that has never had a fault.  The alternative -- inducing a fault
+        to demonstrate a decoder -- is not something this project will do.
+        """
         summary = self.probe_run("--max")
         self.assertEqual(summary["dtcs"]["03"]["codes"], [])
         self.assertEqual(summary["freeze_frames"]["frames"], {})
         self.assertIn("DTC", summary["freeze_frames"]["skipped"])
-        self.assertEqual([c for c in self.sim.received if c.startswith("02")], [])
+        # Exactly one service 02 request: the bitmap, never a frame read.
+        self.assertEqual([c for c in self.sim.received if c.startswith("02")],
+                         ["020000"])
+        self.assertIn("supported_pids", summary["freeze_frames"])
 
     def test_freeze_frames_are_requested_once_a_code_is_stored(self):
         self.sim.responses["03"] = "18DAF110 04 43 01 01 33"
@@ -326,7 +338,7 @@ class TestThoroughProbe(unittest.TestCase):
         self.assertEqual(summary["freeze_frames"]["skipped"], "")
         self.assertEqual(sorted(summary["freeze_frames"]["frames"]), ["04", "05"])
         self.assertEqual([c for c in self.sim.received if c.startswith("02")],
-                         ["020400", "020500"])
+                         ["020000", "020400", "020500"])
         snapshot = summary["freeze_frames"]["frames"]["05"]
         self.assertEqual(snapshot["status"], "ok")
         self.assertEqual(snapshot["ecu"], "10")

@@ -40,6 +40,7 @@ __all__ = [
     "supported_pids",
     "supported_service09_pids",
     "supported_mids",
+    "supported_freeze_frame_pids",
     "MonitorTest",
     "UnitAndScaling",
     "UAS_SCALINGS",
@@ -560,12 +561,35 @@ def supported_mids(reply: AdapterReply, base_mid: str = "00") -> list[str]:
     return _supported_pids_for_mode(reply, 0x06, base_mid)
 
 
-def _supported_pids_for_mode(reply: AdapterReply, mode: int, base_pid: str) -> list[str]:
+def supported_freeze_frame_pids(reply: AdapterReply, base_pid: str = "00") -> list[str]:
+    """Decode a service 02 support bitmap (the ``020000`` reply).
+
+    This is the one service 02 request worth making when no trouble code is
+    stored.  It asks what a freeze frame *would* contain rather than what one
+    does contain, so it exercises the whole request/parse path -- and tells us
+    which readings a future frame would carry -- without needing the vehicle to
+    have a fault first.
+    """
+    return _supported_pids_for_mode(reply, 0x02, base_pid, skip=1)
+
+
+def _supported_pids_for_mode(reply: AdapterReply, mode: int, base_pid: str,
+                             skip: int = 0) -> list[str]:
+    """Walk a 32-bit support bitmap.
+
+    *skip* discards leading payload bytes that are not part of the bitmap.
+    Service 02 needs one: its response is ``42 <PID> <frame> <bitmap…>``, so
+    reading the first four bytes after the PID would take the frame number as
+    the top bitmap byte and advertise a set of PIDs the vehicle never claimed.
+    """
     base = int(base_pid, 16)
     found: list[str] = []
     for frame in reply.frames:
         data = _payload_after(frame, mode, base)
-        if data is None or len(data) < 4:
+        if data is None:
+            continue
+        data = data[skip:]
+        if len(data) < 4:
             continue
         bits = int.from_bytes(data[:4], "big")
         for i in range(32):

@@ -654,6 +654,48 @@ The review also established that monitor values are read big-endian
 those is currently in the table. That is documented rather than guessed at; a
 future signed row must carry its own signedness.
 
+## Service 02 on a vehicle with no faults
+
+Service 02 could not be demonstrated by the maximal probe, because a freeze
+frame only exists if a trouble code was set and this vehicle has none. That is
+not a defect to fix; it is a property of a healthy truck. **Inducing a fault to
+exercise a decoder is not something this project will do.**
+
+There is one request that is still worth making, and the probe now always makes
+it: `020000`, the freeze-frame support bitmap. It asks what a frame *would*
+contain rather than what one does contain, so it exercises the whole service 02
+path — request shaping, the frame byte, parsing — without needing a fault
+first. Only the per-PID frame reads stay conditional on a code existing.
+
+Requested live on 2026-09-01 while the vehicle was shutting down:
+
+```text
+0100    18DAF128 03 7F 01 22
+020000  18DAF128 03 7F 02 22
+0202    18DAF128 03 7F 02 22
+```
+
+This is more informative than it looks. `7F 02 22` is a negative response to
+**service 02** with code `conditionsNotCorrect` — the same code service 01 got
+in the same breath, and service 01 is definitely supported on this vehicle.
+An unsupported service answers `7F 02 11` (`serviceNotSupported`), which is
+**not** what came back.
+
+So the request is transmitted, reaches the vehicle, and is recognised by the
+responding module as service 02; it is declined for vehicle-state reasons
+exactly as service 01 is. That is not a positive response and does not make
+service 02 "proven", but it does establish that nothing between this code and
+the ECU is wrong. The remaining gap is a vehicle condition, not a code path.
+
+Full proof needs either a stored code (which would arrive on its own if the
+truck ever develops a fault) or a positive `020000` from an awake vehicle,
+which the next `--max` run on a live bus will attempt automatically.
+
+The decode side is separately verified offline: a service 02 bitmap carries an
+extra frame byte before the four bitmap bytes, and a test asserts that the same
+bitmap bytes decode identically through service 01 and service 02. Reading them
+one byte out would have advertised a set of PIDs the vehicle never claimed.
+
 ## Resource result
 
 The reference image was reduced from a desktop installation to a conservative
