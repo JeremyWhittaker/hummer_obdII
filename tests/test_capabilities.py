@@ -571,5 +571,39 @@ class TestCommandLine(CapabilitiesFixture):
         self.assertEqual(rc, 2)
 
 
+class TestRootIsInferredFromTheConfig(unittest.TestCase):
+    """``--config`` without ``--root`` must not describe the wrong node.
+
+    Defaulting the root to the working directory made
+    ``--config /opt/hummer/config/hummer.toml`` report "nothing has been
+    recorded on this node" from anywhere else -- an answer that is wrong in the
+    most misleading possible direction, because it looks like a finding.
+    """
+
+    def test_the_project_root_comes_from_the_config_location(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "opt" / "hummer"
+            (project / "config").mkdir(parents=True)
+            (project / "config" / "hummer.toml").write_text(
+                '[collector]\ndatabase = "data/hummer_obd.sqlite3"\n'
+            )
+            cfg, source = capabilities._load(
+                str(project / "config" / "hummer.toml"), None)
+            self.assertEqual(Path(cfg.root).resolve(), project.resolve())
+            self.assertTrue(source.endswith("hummer.toml"))
+
+    def test_an_explicit_root_still_wins(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "opt" / "hummer"
+            (project / "config").mkdir(parents=True)
+            (project / "config" / "hummer.toml").write_text("[collector]\n")
+            override = Path(tmp) / "elsewhere"
+            override.mkdir()
+            cfg, _ = capabilities._load(
+                str(project / "config" / "hummer.toml"), str(override))
+            self.assertEqual(Path(cfg.root), override)
+
+
+
 if __name__ == "__main__":
     unittest.main()

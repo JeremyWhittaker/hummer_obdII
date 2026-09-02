@@ -12,7 +12,8 @@ from pathlib import Path
 from unittest import mock
 
 from hummer_obd.collector import Collector, main as collector_main
-from hummer_obd.config import Config
+from hummer_obd.collector import RunLimits
+from hummer_obd.config import CollectorConfig, Config
 from hummer_obd.safety import UnsafeCommandError
 from hummer_obd.storage import Storage
 from hummer_obd.transport import Response, TransportError
@@ -200,6 +201,22 @@ class TestBoundedRun(unittest.TestCase):
         self.assertEqual(collector.cycles, 2)
         self.assertEqual(self._events(cfg, "idle_backoff"), ["no data this cycle"])
         self.assertEqual(self._events(cfg, "stopped"), ["max_cycles reached"])
+
+    def test_a_zero_max_cycles_override_is_rejected_not_treated_as_unlimited(self):
+        """The one input where a typo would remove a bound instead of adding one.
+
+        ``max_cycles = 0`` means "no limit" in the config file.  Accepting the
+        same value from the command line would let ``--max-cycles 0`` turn a
+        config that said ``20`` into an unbounded run on a real vehicle, which
+        is the opposite of what every other check here does.
+        """
+        collector_cfg = CollectorConfig()
+        collector_cfg.max_cycles = 20
+        with self.assertRaises(ValueError) as caught:
+            RunLimits.from_config(collector_cfg, max_cycles=0)
+        self.assertIn("--max-cycles", str(caught.exception))
+        # Omitting the flag still uses the configured bound.
+        self.assertEqual(RunLimits.from_config(collector_cfg).max_cycles, 20)
 
     def test_duration_stops_without_overshooting_a_long_backoff(self):
         cfg = make_config(self.root)

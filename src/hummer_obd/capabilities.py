@@ -124,6 +124,11 @@ _IPV6_RE = re.compile(
 )
 _IPV4_RE = re.compile(r"(?<![0-9A-Za-z.])((?:\d{1,3}\.){3}\d{1,3})(?![0-9A-Za-z.])")
 #: A VIN is 17 characters with I, O and Q excluded to avoid digit confusion.
+# Uppercase only, deliberately.  Every VIN that can reach this report comes
+# from decode.decode_vin, which builds it from response bytes and emits
+# uppercase.  Matching case-insensitively would additionally catch any 17-char
+# lowercase token -- session ids, file names, digests -- and mangling real
+# evidence is a worse outcome than a lowercase VIN that no code path produces.
 _VIN_RE = re.compile(r"(?<![A-Z0-9])[A-HJ-NPR-Z0-9]{17}(?![A-Z0-9])")
 #: A standalone run of ten or more digits: an adapter serial, an IMEI, an epoch.
 #: The lookarounds keep it from biting a hex digest that happens to contain a
@@ -1049,17 +1054,28 @@ def render_text(report: dict[str, Any]) -> str:
 # -- entry point ---------------------------------------------------------
 
 
-def _load(config_arg: Optional[str], root: str) -> tuple[Config, str]:
+def _load(config_arg: Optional[str], root: Optional[str]) -> tuple[Config, str]:
     """Load the configuration this node actually runs on.
 
     With no ``--config``, the on-disk config is still preferred over defaults:
     a report that silently described built-in defaults while a real
     ``config/hummer.toml`` sat next to it would be worse than no report, so the
     source is discovered and then named in the output.
+
+    With a ``--config`` but no ``--root``, the root is taken from the config's
+    own location the way :func:`load_config` does.  Defaulting to the working
+    directory instead made ``--config /opt/hummer/config/hummer.toml`` report
+    "nothing has been recorded on this node" from any other directory, which is
+    the most misleading answer this tool can give.
     """
-    root_path = Path(root)
     if config_arg:
-        return load_config(config_arg, root=root_path), str(config_arg)
+        if root is None:
+            # load_config resolves the root as the config's grandparent
+            # (config/hummer.toml -> the project directory).
+            cfg = load_config(config_arg)
+            return cfg, str(config_arg)
+        return load_config(config_arg, root=Path(root)), str(config_arg)
+    root_path = Path(root if root is not None else ".")
     discovered = root_path / "config" / "hummer.toml"
     if discovered.is_file():
         return load_config(discovered, root=root_path), str(discovered)
@@ -1071,7 +1087,12 @@ def main(argv=None) -> int:
         description="Offline capabilities report; never opens the adapter or the vehicle"
     )
     parser.add_argument("--config", help="path to hummer.toml (default: <root>/config/hummer.toml)")
-    parser.add_argument("--root", default=".", help="project root for relative paths")
+    parser.add_argument(
+        "--root",
+        default=None,
+        help="project root for relative paths (default: the parent of the "
+             "config file's directory, or the working directory)",
+    )
     parser.add_argument("--json", dest="json_path",
                         help=f"write the JSON report here (default: <root>/evidence/{DEFAULT_JSON_NAME})")
     parser.add_argument("--no-json", action="store_true", help="do not write a JSON report")

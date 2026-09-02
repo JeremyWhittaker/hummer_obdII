@@ -40,7 +40,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
-from .config import Config, load_config
+from .config import Config, load_config, redacted_endpoint
 from .decode import mask_vin
 from .storage import Storage
 
@@ -100,6 +100,16 @@ def _spelled_out(raw_hex: str) -> str:
     Unprintable bytes become spaces, which also breaks up runs that are not
     text in the first place.  A string that is not valid hex is not frame data
     at all, so it is handed back unchanged and scanned as-is.
+
+    This is **best-effort defence in depth, not a guarantee**.  A real
+    multi-frame ISO-TP reply interleaves consecutive-frame sequence bytes
+    (``0x21``, ``0x22``, ...) which are themselves printable, so they split the
+    17-character run and a VIN spread across frames will not match.  Compacting
+    those out before scanning would trade this gap for false positives that
+    refuse ordinary batches, which is the worse failure direction.  The real
+    control is structural: ``UPLOADABLE_TABLES`` is ``samples`` only, and
+    service 09 VIN data is written to ``vehicle_info``, which nothing here
+    reads.
     """
     try:
         data = bytes.fromhex(raw_hex.replace(" ", ""))
@@ -207,7 +217,7 @@ class Uploader:
             )
         if upload.require_https and not upload.endpoint.lower().startswith("https://"):
             raise UploadDisabled(
-                f"upload.endpoint {upload.endpoint!r} is not https, and vehicle "
+                f"upload.endpoint {redacted_endpoint(upload.endpoint)} is not https, and vehicle "
                 "telemetry is private data; set upload.require_https = false only "
                 "to aim the Pi at a local test endpoint"
             )

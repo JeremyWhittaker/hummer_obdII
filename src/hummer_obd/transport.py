@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 from .rawlog import RawLog
 from .safety import UnsafeCommandError, describe_command, validate_command
@@ -56,6 +56,7 @@ class SerialTransport(Transport):
         reconnect_initial_s: float = 2.0,
         reconnect_max_s: float = 120.0,
         serial_module=None,
+        sleeper: Optional[Callable[[float], None]] = None,
     ) -> None:
         self.device = device
         self.rawlog = rawlog
@@ -66,6 +67,12 @@ class SerialTransport(Transport):
         self.reconnect_max_s = reconnect_max_s
         self._serial = None
         self._backoff = reconnect_initial_s
+        #: How the reconnect backoff waits.  A long-running caller injects its
+        #: own waiter so a 120 s backoff cannot outlive a bounded run or
+        #: swallow a SIGTERM; ``None`` means plain ``time.sleep``, which is
+        #: right for a one-shot.  Resolved at call time, not here, so the
+        #: default really is "whatever time.sleep is now".
+        self._sleeper = sleeper
         if serial_module is None:  # imported lazily so tests need no pyserial
             import serial as serial_module  # type: ignore
         self._serial_module = serial_module
@@ -100,11 +107,18 @@ class SerialTransport(Transport):
                 self.rawlog.write_event("close", {"device": self.device})
 
     def reconnect(self, attempt: int = 0) -> None:
-        """Close and reopen the link, sleeping for the current backoff first."""
+        """Close and reopen the link, waiting out the current backoff first.
+
+        The wait goes through :attr:`_sleeper` rather than ``time.sleep``.  It
+        is the third and longest sleep in a collector cycle -- up to
+        ``reconnect_max_s`` -- so leaving it uninterruptible would let a
+        time-boxed run overshoot by two minutes and would make a stop request
+        look ignored for just as long.
+        """
         self.close()
         delay = min(self._backoff, self.reconnect_max_s)
         self.rawlog.write_event("reconnect_wait", {"attempt": attempt, "delay_s": delay})
-        time.sleep(delay)
+        (self._sleeper or time.sleep)(delay)
         self._backoff = min(self._backoff * 2, self.reconnect_max_s)
         self.open()
 

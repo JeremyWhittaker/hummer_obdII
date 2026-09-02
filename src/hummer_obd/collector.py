@@ -83,8 +83,15 @@ class RunLimits:
                 raise ValueError("poll_interval_s must be greater than zero")
             limits.poll_interval_s = float(poll_interval_s)
         if max_cycles is not None:
-            if int(max_cycles) < 0:
-                raise ValueError("max_cycles must not be negative")
+            if int(max_cycles) < 1:
+                # 0 means "no limit" in the config file, but on the command
+                # line it is the one input where a typo would *remove* a bound
+                # that the config had set.  Everything else here fails closed;
+                # so does this.  Omit the flag to use the configured value.
+                raise ValueError(
+                    "--max-cycles must be 1 or more; omit it to use the "
+                    "configured collector.max_cycles"
+                )
             limits.max_cycles = int(max_cycles)
         if duration_s is not None:
             if float(duration_s) < 0:
@@ -118,6 +125,8 @@ class Collector:
         #: Completed passes over the PID list, and why the run ended.
         self.cycles = 0
         self.stop_reason = ""
+        #: Set for the duration of :meth:`run`; ``None`` means no time limit.
+        self._deadline: float | None = None
         # Validate the configured PID list before opening anything at all: a
         # typo in the config must fail loudly, not reach the bus.  Entries are
         # full service 01 requests ("010C"), never bare PIDs, so a stray "04"
@@ -172,6 +181,10 @@ class Collector:
                 return
             time.sleep(min(_SLEEP_SLICE_S, remaining))
 
+    def _wait(self, seconds: float) -> None:
+        """Sliced wait bound to this run's deadline; handed to the transport."""
+        self._sleep(seconds, self._deadline)
+
     def _summary(self) -> str:
         if self.stop_reason:
             return self.stop_reason
@@ -190,6 +203,7 @@ class Collector:
         # to it: they exist for the step after it.
         bounded = self.limits.duration_s and not self.once
         deadline = time.monotonic() + self.limits.duration_s if bounded else None
+        self._deadline = deadline
         with RawLog(raw_path, self.session_uid, meta={"role": "collector"}) as rawlog, \
                 Storage(db_path) as store:
             sid = store.start_session(self.session_uid, raw_log_path=str(raw_path), notes="collector")
@@ -203,6 +217,10 @@ class Collector:
                 command_timeout_s=self.cfg.adapter.command_timeout_s,
                 reconnect_initial_s=self.cfg.adapter.reconnect_initial_s,
                 reconnect_max_s=self.cfg.adapter.reconnect_max_s,
+                # The reconnect backoff is the longest sleep in the loop.  Route
+                # it through the same sliced wait as the others so a bounded
+                # trial and a SIGTERM are honoured during a link flap too.
+                sleeper=self._wait,
             )
             session = AdapterSession(transport, logger=self.log)
             next_dtc = 0.0

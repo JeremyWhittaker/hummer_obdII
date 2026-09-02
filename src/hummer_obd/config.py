@@ -12,8 +12,33 @@ import tomllib
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlsplit
 
-__all__ = ["Config", "AdapterConfig", "CollectorConfig", "UploadConfig", "DisplayConfig", "load_config"]
+__all__ = ["Config", "AdapterConfig", "CollectorConfig", "UploadConfig",
+           "DisplayConfig", "load_config", "redacted_endpoint"]
+
+
+def redacted_endpoint(endpoint: str) -> str:
+    """Return *endpoint* with userinfo and query removed.
+
+    Error messages naming a bad endpoint are printed to stderr and pasted into
+    issues.  An endpoint is exactly the kind of string that carries a token in
+    its query or a password in its userinfo, so nothing that echoes one back to
+    a human may echo it whole.
+    """
+    if not endpoint:
+        return "(none)"
+    try:
+        parts = urlsplit(endpoint)
+    except ValueError:
+        return "[unparsable-endpoint]"
+    if not parts.scheme or not parts.netloc:
+        return "[endpoint]"
+    host = parts.netloc.rsplit("@", 1)[-1]
+    if host != parts.netloc:
+        host = f"[redacted-credentials]@{host}"
+    trimmed = f"{parts.scheme}://{host}{parts.path}"
+    return trimmed + "?[redacted-query]" if (parts.query or parts.fragment) else trimmed
 
 
 @dataclass
@@ -93,8 +118,9 @@ class UploadConfig:
             raise ValueError("upload.enabled is true but upload.endpoint is empty")
         if self.require_https and not self.endpoint.lower().startswith("https://"):
             raise ValueError(
-                f"upload.endpoint {self.endpoint!r} is not https; set "
-                "upload.require_https = false only for a local test endpoint"
+                f"upload.endpoint {redacted_endpoint(self.endpoint)} is not "
+                "https; set upload.require_https = false only for a local test "
+                "endpoint"
             )
 
 

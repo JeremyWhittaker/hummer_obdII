@@ -1,8 +1,10 @@
 """Transport tests: the gate runs before I/O, and raw bytes are always logged."""
 
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from hummer_obd.rawlog import RawLog, decode_record, iter_records
 from hummer_obd.safety import UnsafeCommandError
@@ -99,6 +101,50 @@ class TestTransport(unittest.TestCase):
         self.transport.close()
         with self.assertRaises(TransportError):
             self.transport.send("010C")
+
+
+class TestReconnectBackoffIsInterruptible(unittest.TestCase):
+    """The backoff wait is the longest sleep in a collector cycle.
+
+    ``reconnect_max_s`` defaults to 120 s.  If that wait were a bare
+    ``time.sleep`` a time-boxed trial could overshoot by two minutes and a
+    stop request would look ignored for the same window, which is exactly what
+    the collector's sliced wait exists to prevent everywhere else.
+    """
+
+    def _transport(self, sleeper=None):
+        rawlog = mock.MagicMock()
+        serial_module = mock.MagicMock()
+        return SerialTransport(
+            "/dev/null-device",
+            rawlog,
+            reconnect_initial_s=90.0,
+            reconnect_max_s=120.0,
+            serial_module=serial_module,
+            sleeper=sleeper,
+        )
+
+    def test_the_backoff_wait_goes_through_the_injected_sleeper(self):
+        waited = []
+        transport = self._transport(sleeper=waited.append)
+        with mock.patch.object(time, "sleep", side_effect=AssertionError("bare sleep")):
+            transport.reconnect(attempt=1)
+        self.assertEqual(waited, [90.0])
+
+    def test_an_injected_sleeper_can_cut_the_wait_short(self):
+        # A caller that is out of time returns immediately instead of waiting
+        # out the full backoff.
+        transport = self._transport(sleeper=lambda seconds: None)
+        started = time.monotonic()
+        transport.reconnect(attempt=3)
+        self.assertLess(time.monotonic() - started, 1.0)
+
+    def test_the_default_is_still_plain_time_sleep(self):
+        transport = self._transport()
+        with mock.patch.object(time, "sleep") as slept:
+            transport.reconnect(attempt=0)
+        slept.assert_called_once_with(90.0)
+
 
 
 if __name__ == "__main__":

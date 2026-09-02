@@ -25,8 +25,8 @@ reference node.
 Latest result:
 
 ```text
-pytest:   237 passed
-unittest: 237 tests / 223 subtests passed
+pytest:   243 passed
+unittest: 243 tests / 223 subtests passed
 shell:    all repository shell scripts pass bash -n
 compile:  all Python modules compile
 ```
