@@ -393,9 +393,35 @@ Baseline immediately after parking:
 2026-09-02T00:50:29Z  13.9 V  T:00 R:00  ok
 ```
 
-13.9 V is the DC-DC converter still running. The measurement of interest is
-where the voltage settles once the vehicle sleeps, and whether it continues to
-decay with the Pi and adapter attached to an always-live port.
+13.9 V is the DC-DC converter still running. The second sample, five minutes
+later, caught the transition:
+
+```text
+2026-09-02T00:50:29Z  13.9 V  T:00 R:00  ok    DC-DC running
+2026-09-02T00:55:34Z  12.7 V  T:00 R:00  ok    DC-DC off, vehicle asleep
+```
+
+**The vehicle reached sleep normally, roughly five minutes after parking, with
+the Pi and the OBDLink attached and drawing from an always-live port.** No CAN
+traffic was generated to observe it: the drop from an alternator/DC-DC voltage
+to a resting battery voltage is visible from the connector alone.
+
+This answers step 3 of the safe-next-milestone list for the *attached hardware*
+case. It does **not** open the gate, and two questions remain:
+
+1. does the 12 V rail hold at rest, or decay measurably over hours with the Pi
+   and adapter attached? That is the parasitic-drain question, and it needs
+   wall-clock time rather than more instrumentation; and
+2. does the vehicle still reach sleep while the collector is *actively
+   polling*? Tonight's observation had polling stopped, which is the correct
+   control but is not the condition the gate is really about.
+
+Until both are answered the accepted state is unchanged:
+
+```text
+collector.enabled = false
+hummer-collector.service = disabled / inactive
+```
 
 ## Resource result
 

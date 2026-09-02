@@ -111,9 +111,11 @@ The next meaningful milestone is a power/sleep experiment, not a new decoder:
    voltage trend with **zero CAN traffic** and is the cheapest first version of
    this measurement;
 3. observe a complete vehicle sleep/wake cycle with the Pi and OBDLink attached
-   while the continuous collector remains off. `hummer-obd-voltage` does this
-   without transmitting to the vehicle; a first observation began 2026-09-01
-   with a 13.9 V awake baseline;
+   while the continuous collector remains off. **Partly answered 2026-09-01**:
+   with polling stopped, the vehicle reached sleep about five minutes after
+   parking (13.9 V to 12.7 V), observed by `hummer-obd-voltage` with zero CAN
+   traffic. Still open: whether the rail holds at rest over hours, and whether
+   the vehicle still sleeps while the collector is actively polling;
 4. if safe, run a time-bounded polling trial and verify the vehicle still
    sleeps; and
 5. record measurements, duration, service state, and rollback criteria.
