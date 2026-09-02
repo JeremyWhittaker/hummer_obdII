@@ -10,6 +10,7 @@ from pathlib import Path
 from hummer_obd.config import load_config
 from hummer_obd.decode import PidValue
 from hummer_obd.display.status import StatusData, render_status_image
+from hummer_obd import storage
 from hummer_obd.storage import SCHEMA_VERSION, Storage, migrate
 
 #: The version-1 schema, copied from the build that is running on the reference
@@ -322,6 +323,74 @@ class TestStorage(unittest.TestCase):
         self.assertEqual(self.store.latest_monitor_tests(), [])
 
 
+
+#: The reference node's v2 layout, built the way the node's really was: the v1
+#: schema, then ALTER TABLE.  A flat "V2_SCHEMA" string would declare ``ecu`` in
+#: the middle of ``samples`` and the byte-identity test would then be proving a
+#: shape the node does not have.  Confirmed against the live database, where
+#: ``samples.ecu`` sits after ``uploaded_at``.
+V2_SAMPLE_COLUMNS = ("id, session_id, ts, pid, name, value, unit, status, raw_hex, ecu,"
+                     " uploaded_at")
+
+
+def build_v2_database(path: Path) -> None:
+    """Create a version-2 database shaped exactly like the reference node's."""
+    build_v1_database(path)
+    conn = sqlite3.connect(str(path))
+    try:
+        conn.execute("ALTER TABLE samples ADD COLUMN ecu TEXT NOT NULL DEFAULT ''")
+        for statement in storage._MONITOR_TESTS_DDL:
+            conn.execute(statement)
+        conn.execute("UPDATE schema_version SET version=2")
+        # Per-module rows across the vehicle's real addresses, with the real
+        # voltage spread: this is the data the upgrade must not disturb.
+        conn.executemany(
+            "INSERT INTO samples(session_id, ts, pid, name, value, unit, status, raw_hex, ecu)"
+            " VALUES (1,?,?,?,?,?,?,?,?)",
+            [("2026-09-01T22:59:05+00:00", "42", "control module voltage", v, "V", "ok",
+              "0441423675", e)
+             for e, v in (("45", 13.747), ("17", 13.571), ("40", 13.875), ("CB", 13.693),
+                          ("1D", 13.500), ("1E", 13.524), ("CD", 13.726), ("28", 13.910))],
+        )
+        # PID 01 stays undecoded on purpose; its raw bytes are the evidence.
+        conn.execute(
+            "INSERT INTO samples(session_id, ts, pid, name, value, unit, status, raw_hex, ecu)"
+            " VALUES (1,?,?,?,?,?,?,?,?)",
+            ("2026-09-01T22:59:06+00:00", "01", "PID 01", None, "", "undecoded",
+             "06410183076504", "45"),
+        )
+        # An unknown unit-and-scaling identifier stores NULL, never a guess.
+        conn.execute(
+            "INSERT INTO monitor_tests(session_id, ts, ecu, mid, tid, uasid, value, min_limit,"
+            " max_limit, unit, scaled_value, scaled_min, scaled_max, raw_hex)"
+            " VALUES (1,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("2026-09-01T22:59:07+00:00", "45", 1, 2, 0x24, 4660, 16, 8192, "",
+             None, None, None, "4601022412340010"),
+        )
+        # The eight real module rows, plus the two malformed rows a transient
+        # bug wrote on the node.  The backfill filter exists for exactly these.
+        conn.executemany(
+            "INSERT INTO vehicle_info(session_id, ts, item, value_masked, raw_hex)"
+            " VALUES (1,?,?,?,'')",
+            [("2026-09-01T22:59:08+00:00", f"ecu:{a}", n) for a, n in (
+                ("17", "DMCM-DriveMotorCtrl"), ("1D", "DMC2-DriveMotorCtrl2"),
+                ("1E", "DMC3-DriveMotorCtrl3"), ("28", "BSCM-BrakeSystem"),
+                ("40", "BCM-BodyControl"), ("45", "Gateway Module - GWM"),
+                ("CB", "BSM-BatterySysMngr"), ("CD", "BSM-BatterySysMngr"))]
+            + [("2026-09-01T22:59:08+00:00", "ecu:addresses", "['17', '1D', '1E']"),
+               ("2026-09-01T22:59:08+00:00", "ecu:names", "{'17': 'DMCM-DriveMotorCtrl'}")],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+#: Tables an upgrade reaches with ALTER TABLE, so their column *order* differs
+#: between a fresh database and a migrated one.  The column *sets* must match,
+#: and nothing in this project selects by position.
+ALTERED_TABLES = frozenset({"samples", "monitor_tests", "dtc_reads"})
+
+
 class TestSchemaMigration(unittest.TestCase):
     """Version 2 has to reach a node that is already holding a vehicle's history."""
 
@@ -354,7 +423,12 @@ class TestSchemaMigration(unittest.TestCase):
         return {
             "samples": self.read(f"SELECT {V1_SAMPLE_COLUMNS} FROM samples ORDER BY id", path),
             "sessions": self.read("SELECT * FROM sessions ORDER BY id", path),
-            "dtc_reads": self.read("SELECT * FROM dtc_reads ORDER BY id", path),
+            # Named, not SELECT *: dtc_reads gains cycle_id at v3, and a
+            # star-select would report that as a difference and look exactly
+            # like data loss when nothing was lost.
+            "dtc_reads": self.read(
+                "SELECT id, session_id, ts, mode, codes, raw_hex, uploaded_at"
+                " FROM dtc_reads ORDER BY id", path),
             "vehicle_info": self.read("SELECT * FROM vehicle_info ORDER BY id", path),
             "events": self.read("SELECT * FROM events ORDER BY id", path),
         }
@@ -362,12 +436,16 @@ class TestSchemaMigration(unittest.TestCase):
     def test_a_fresh_database_is_created_at_the_current_version(self):
         with Storage(self.path):
             pass
-        self.assertEqual(SCHEMA_VERSION, 2)
-        self.assertEqual(self.version(), 2)
+        self.assertEqual(SCHEMA_VERSION, 3)
+        self.assertEqual(self.version(), 3)
         self.assertIn("ecu", self.columns("samples"))
         self.assertIn("monitor_tests", self.tables())
+        for table in ("cycles", "ecu_modules", "dtc_ecu_reads", "monitor_status",
+                      "monitor_readiness", "ecu_info"):
+            self.assertIn(table, self.tables())
+        self.assertIn("cycle_id", self.columns("samples"))
         self.assertEqual(
-            self.columns("monitor_tests"),
+            [c for c in self.columns("monitor_tests") if c != "cycle_id"],
             ["id", "session_id", "ts", "ecu", "mid", "tid", "uasid", "value", "min_limit",
              "max_limit", "unit", "scaled_value", "scaled_min", "scaled_max", "raw_hex",
              "uploaded_at"],
@@ -394,7 +472,7 @@ class TestSchemaMigration(unittest.TestCase):
         # The point of the test: not one recorded value moved.  These rows came
         # off a vehicle that will not repeat them.
         self.assertEqual(self.snapshot(), before)
-        self.assertEqual(self.version(), 2)
+        self.assertEqual(self.version(), 3)
         self.assertIn("ecu", self.columns("samples"))
         self.assertIn("monitor_tests", self.tables())
         # The upgrade cannot invent attribution for readings taken before it.
@@ -437,19 +515,17 @@ class TestSchemaMigration(unittest.TestCase):
         self.assertEqual(sorted(upgraded_objects), sorted(fresh_objects))
         for name in sorted(fresh_objects):
             with self.subTest(object=name):
-                if name == "samples":
-                    # The one documented difference: ADD COLUMN appends, so the
-                    # upgraded table carries ``ecu`` last.  The columns must
-                    # still be the same columns -- only their order may differ,
+                if name in ALTERED_TABLES:
+                    # The documented difference: ADD COLUMN appends, so an
+                    # upgraded table carries its added columns last.  They must
+                    # still be the *same* columns -- only the order may differ,
                     # which is why nothing in this project selects by position.
                     self.assertEqual(
-                        sorted(self.columns("samples")),
-                        sorted(self.columns("samples", fresh)),
-                    )
-                    self.assertNotEqual(self.columns("samples"), self.columns("samples", fresh))
+                        sorted(self.columns(name)), sorted(self.columns(name, fresh)))
                     continue
                 self.assertEqual(upgraded_objects[name], fresh_objects[name])
-        for table in ("monitor_tests", "sessions", "dtc_reads", "vehicle_info", "events"):
+        for table in ("sessions", "vehicle_info", "events", "cycles", "ecu_modules",
+                      "dtc_ecu_reads", "monitor_status", "monitor_readiness", "ecu_info"):
             with self.subTest(table=table):
                 self.assertEqual(self.columns(table), self.columns(table, fresh))
 
@@ -470,10 +546,10 @@ class TestSchemaMigration(unittest.TestCase):
             conn.close()
         self.assertEqual(self.snapshot(), before)
         self.assertEqual(self.columns("samples").count("ecu"), 1)
-        self.assertEqual(self.version(), 2)
+        self.assertEqual(self.version(), 3)
 
     def test_an_unknown_schema_version_is_refused_and_nothing_is_written(self):
-        for unknown in (0, 3, 99):
+        for unknown in (0, 4, 99):
             with self.subTest(version=unknown):
                 path = Path(tempfile.mkdtemp()) / "db.sqlite3"
                 build_v1_database(path)
@@ -569,6 +645,187 @@ class TestDisplay(unittest.TestCase):
     def test_missing_values_do_not_crash(self):
         image = render_status_image(StatusData())
         self.assertEqual(image.size, (250, 122))
+
+
+class TestVersionTwoToThree(unittest.TestCase):
+    """The upgrade the reference node actually performs.
+
+    That node holds thousands of readings nobody can take again, so the bar is
+    not "the migration runs" but "every row and every original column comes
+    through untouched".
+    """
+
+    def setUp(self):
+        self.path = Path(tempfile.mkdtemp()) / "v2.sqlite3"
+        build_v2_database(self.path)
+
+    def read(self, sql):
+        conn = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True)
+        try:
+            return conn.execute(sql).fetchall()
+        finally:
+            conn.close()
+
+    def snapshot(self):
+        """Every original column of every v2 table, named explicitly.
+
+        Never ``SELECT *``: v3 appends columns, and a star-select would report
+        that as a difference and look exactly like data loss when nothing was
+        lost. That mistake was made once against the live node and wasted real
+        diagnosis time.
+        """
+        return {
+            "samples": self.read(f"SELECT {V2_SAMPLE_COLUMNS} FROM samples ORDER BY id"),
+            "sessions": self.read("SELECT * FROM sessions ORDER BY id"),
+            "dtc_reads": self.read(
+                "SELECT id, session_id, ts, mode, codes, raw_hex, uploaded_at"
+                " FROM dtc_reads ORDER BY id"),
+            "vehicle_info": self.read("SELECT * FROM vehicle_info ORDER BY id"),
+            "events": self.read("SELECT * FROM events ORDER BY id"),
+            "monitor_tests": self.read(
+                "SELECT id, session_id, ts, ecu, mid, tid, uasid, value, min_limit,"
+                " max_limit, unit, scaled_value, scaled_min, scaled_max, raw_hex,"
+                " uploaded_at FROM monitor_tests ORDER BY id"),
+        }
+
+    def test_every_original_row_and_column_survives(self):
+        before = self.snapshot()
+        with Storage(self.path):
+            pass
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(
+            self.read("SELECT version FROM schema_version")[0][0], 3)
+
+    def test_history_gets_a_null_cycle_not_a_fabricated_one(self):
+        # A zero would be a group id that reads exactly like a real one. NULL
+        # is the truth: these rows were recorded before cycles existed.
+        with Storage(self.path):
+            pass
+        self.assertEqual(self.read("SELECT DISTINCT cycle_id FROM samples"), [(None,)])
+        self.assertEqual(self.read("SELECT DISTINCT cycle_id FROM dtc_reads"), [(None,)])
+
+    def test_nulls_stay_null(self):
+        with Storage(self.path):
+            pass
+        rows = self.read("SELECT value, unit FROM samples WHERE pid='5B'")
+        self.assertEqual(rows, [(None, None)])
+        self.assertEqual(
+            self.read("SELECT scaled_value, scaled_min, scaled_max FROM monitor_tests"),
+            [(None, None, None)])
+
+    def test_the_backfill_takes_the_real_modules_and_rejects_the_malformed_rows(self):
+        with Storage(self.path):
+            pass
+        rows = self.read("SELECT address, name, name_source FROM ecu_modules ORDER BY address")
+        self.assertEqual([r[0] for r in rows],
+                         ["17", "1D", "1E", "28", "40", "45", "CB", "CD"])
+        self.assertEqual(dict(zip([r[0] for r in rows], [r[1] for r in rows]))["45"],
+                         "Gateway Module - GWM")
+        self.assertTrue(all(r[2] == "backfill:vehicle_info" for r in rows))
+        # A backfilled name is an earlier inference, not a measurement, and the
+        # source column is what keeps the two distinguishable.
+        self.assertNotIn("addresses", [r[0] for r in rows])
+        self.assertNotIn("names", [r[0] for r in rows])
+
+    def test_the_backfill_leaves_vehicle_info_untouched(self):
+        before = self.read("SELECT * FROM vehicle_info ORDER BY id")
+        with Storage(self.path):
+            pass
+        self.assertEqual(self.read("SELECT * FROM vehicle_info ORDER BY id"), before)
+
+    def test_the_backfill_never_overwrites_a_live_observation(self):
+        with Storage(self.path) as store:
+            store.note_ecu("45", name="Measured Name", name_source="090A")
+        with Storage(self.path):   # migrate again
+            pass
+        rows = self.read("SELECT name, name_source FROM ecu_modules WHERE address='45'")
+        self.assertEqual(rows, [("Measured Name", "090A")])
+
+    def test_the_migration_is_idempotent(self):
+        with Storage(self.path):
+            pass
+        after_first = self.snapshot()
+        modules = self.read("SELECT COUNT(*) FROM ecu_modules")[0][0]
+        with Storage(self.path):
+            pass
+        self.assertEqual(self.snapshot(), after_first)
+        self.assertEqual(self.read("SELECT COUNT(*) FROM ecu_modules")[0][0], modules)
+
+
+class TestCycleAndModuleWriters(unittest.TestCase):
+    def setUp(self):
+        self.path = Path(tempfile.mkdtemp()) / "v3.sqlite3"
+
+    def test_a_cycle_is_open_before_the_pass_and_closed_after(self):
+        with Storage(self.path) as store:
+            sid = store.start_session("collect-x")
+            cid = store.begin_cycle(sid, seq=1, policy="awake")
+            row = store.conn.execute(
+                "SELECT ended_at, completed FROM cycles WHERE id=?", (cid,)).fetchone()
+            # Open on purpose: a crash here must leave a visible partial cycle,
+            # not an invisible gap.
+            self.assertIsNone(row["ended_at"])
+            self.assertEqual(row["completed"], 0)
+            store.end_cycle(cid, completed=True, had_data=True, interval_s=5.0)
+            row = store.conn.execute(
+                "SELECT ended_at, completed, had_data, interval_s, policy"
+                " FROM cycles WHERE id=?", (cid,)).fetchone()
+            self.assertIsNotNone(row["ended_at"])
+            self.assertEqual((row["completed"], row["had_data"]), (1, 1))
+            self.assertEqual(row["interval_s"], 5.0)
+            self.assertEqual(row["policy"], "awake")
+
+    def test_a_pass_that_saw_nothing_is_still_a_row(self):
+        # A sleeping vehicle produces exactly this, and it is the case a
+        # cycle_id column alone could never represent.
+        with Storage(self.path) as store:
+            sid = store.start_session("collect-y")
+            cid = store.begin_cycle(sid, seq=1)
+            store.end_cycle(cid, completed=True, had_data=False)
+            rows = store.conn.execute(
+                "SELECT had_data FROM cycles WHERE session_id=?", (sid,)).fetchall()
+            self.assertEqual([r["had_data"] for r in rows], [0])
+
+    def test_an_empty_name_never_erases_a_known_one(self):
+        # ecu_name_map returns "" when its receive filter did not take, because
+        # it will not guess. That refusal must not wipe a proven name.
+        with Storage(self.path) as store:
+            store.note_ecu("45", name="Gateway Module - GWM", name_source="090A")
+            store.note_ecu("45", name="", name_source="responder")
+            row = store.conn.execute(
+                "SELECT name, name_source FROM ecu_modules WHERE address='45'").fetchone()
+            self.assertEqual((row["name"], row["name_source"]), ("Gateway Module - GWM", "090A"))
+
+    def test_a_changed_name_updates_and_is_recorded_as_an_event(self):
+        with Storage(self.path) as store:
+            store.note_ecu("45", name="Old Name", name_source="090A")
+            store.note_ecu("45", name="New Name", name_source="090A")
+            row = store.conn.execute(
+                "SELECT name FROM ecu_modules WHERE address='45'").fetchone()
+            self.assertEqual(row["name"], "New Name")
+            events = store.conn.execute(
+                "SELECT detail FROM events WHERE kind='ecu_name_changed'").fetchall()
+            self.assertEqual(len(events), 1)
+            self.assertIn("Old Name", events[0]["detail"])
+
+    def test_service_09_item_02_is_refused_structurally(self):
+        # That is the VIN, and ecu_info is exported. Making it impossible beats
+        # a rule someone has to remember.
+        with Storage(self.path) as store:
+            sid = store.start_session("probe-z")
+            with self.assertRaises(ValueError) as caught:
+                store.add_ecu_info(sid, "45", "02", ["1GT40FDA5RU100123"])
+            self.assertIn("VIN", str(caught.exception))
+
+    def test_service_09_values_keep_the_order_the_module_gave_them(self):
+        with Storage(self.path) as store:
+            sid = store.start_session("probe-z")
+            store.add_ecu_info(sid, "45", "06", ["0329201E", "0000BB7B", "00001460"])
+            rows = store.conn.execute(
+                "SELECT seq, value FROM ecu_info ORDER BY seq").fetchall()
+            self.assertEqual([(r["seq"], r["value"]) for r in rows],
+                             [(0, "0329201E"), (1, "0000BB7B"), (2, "00001460")])
+
 
 
 if __name__ == "__main__":

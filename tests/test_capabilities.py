@@ -578,7 +578,7 @@ class TestSections(CapabilitiesFixture):
         self.assertTrue(db["present"])
         # Literal on purpose, for the same reason as the gate list above: a
         # schema change should have to be acknowledged here.
-        self.assertEqual(db["schema_version"], 2)
+        self.assertEqual(db["schema_version"], 3)
         self.assertEqual(db["tables"]["samples"], 4)
         self.assertEqual(db["upload_queue_depth"], 4)  # upload is off; nothing is stamped
         self.assertEqual(db["dtc_summary"]["03"]["reads"], 1)
