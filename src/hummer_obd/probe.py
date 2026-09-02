@@ -10,7 +10,13 @@ Nothing here is allowed to write to the vehicle: every command goes through
 Usage::
 
     python3 -m hummer_obd.probe --device /dev/rfcomm0
+    python3 -m hummer_obd.probe --device /dev/rfcomm0 --max        # ask for everything
     python3 -m hummer_obd.probe --replay logs/raw/probe-*.jsonl   # offline review
+
+``--max`` widens the questions, never the permissions: it adds service 02 and
+service 06 (both on the read-only allowlist), keeps every module's answer to a
+PID instead of the first, and asks each module for its own name.  It is opt-in
+because it costs bus time, and because the quick probe has to stay quick.
 """
 
 from __future__ import annotations
@@ -18,11 +24,19 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import load_config
-from .decode import PID_DECODERS, decode_cvns, decode_vin, mask_vin, parse_reply
+from .decode import (
+    PID_DECODERS,
+    decode_cvns,
+    decode_vin,
+    ecu_from_header,
+    mask_vin,
+    parse_reply,
+)
 from .rawlog import RawLog
 from .safety import UnsafeCommandError, validate_all
 from .session import AdapterSession
@@ -46,6 +60,16 @@ def _stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
+def _responding_ecus(reply) -> list[str]:
+    """Addresses of the modules that answered, in the order they answered.
+
+    ``headers`` rather than ``frame_headers``: a module whose multi-frame reply
+    arrived truncated still spoke, and the question here is who is on the bus,
+    not whose bytes survived reassembly.
+    """
+    return [ecu_from_header(header) for header in reply.headers if header]
+
+
 def run_probe(args) -> int:
     cfg = load_config(args.config, root=args.root) if args.config else load_config(root=args.root)
     device = args.device or cfg.adapter.device
@@ -57,7 +81,16 @@ def run_probe(args) -> int:
     print(f"# device  {device}")
     print(f"# rawlog  {raw_path}")
 
-    summary: dict = {"session": session_uid, "device": device, "raw_log": str(raw_path)}
+    # Opt-in, because the extra questions cost bus time.  Read through getattr so
+    # an older caller that builds its own argument object still runs.
+    thorough = bool(getattr(args, "max", False))
+
+    summary: dict = {
+        "session": session_uid,
+        "device": device,
+        "raw_log": str(raw_path),
+        "max": thorough,
+    }
     with RawLog(raw_path, session_uid, meta={"device": device, "probe": True}) as rawlog:
         transport = SerialTransport(
             device,
@@ -108,6 +141,11 @@ def run_probe(args) -> int:
 
             print("## current data")
             samples = {}
+            per_ecu: dict[str, list] = {}
+            # Which modules spoke at all.  This is free -- it comes out of
+            # replies the probe already asked for -- so it is collected whether
+            # or not the extra questions were requested.
+            responders: set[str] = set()
             for pid in skipped:
                 # Record the "vehicle does not have this" answer in the same
                 # shape as a reading, so the absence is evidence too.
@@ -121,7 +159,27 @@ def run_probe(args) -> int:
                 }
                 print(f"  {pid} {meta.get('name', '')}: not advertised by the vehicle")
             for pid in targets:
-                value, reply = session.read_pid(pid)
+                if thorough:
+                    # The same single request, read for every answer it drew
+                    # rather than only the first.  values[0] is that first
+                    # answer, which is exactly what read_pid would have
+                    # returned, so the samples map keeps its existing meaning.
+                    values, reply = session.read_pid_per_ecu(pid)
+                    per_ecu[pid] = [
+                        {
+                            "ecu": item.ecu,
+                            "name": item.name,
+                            "value": item.value,
+                            "unit": item.unit,
+                            "status": item.status,
+                            "raw": item.raw_hex,
+                        }
+                        for item in values
+                    ]
+                    value = values[0]
+                else:
+                    value, reply = session.read_pid(pid)
+                responders.update(_responding_ecus(reply))
                 samples[pid] = {
                     "name": value.name,
                     "value": value.value,
@@ -130,15 +188,66 @@ def run_probe(args) -> int:
                     "raw": value.raw_hex,
                 }
                 print(f"  {pid} {value.name}: {value.value} {value.unit} [{value.status}]")
+                if thorough and len(per_ecu[pid]) > 1:
+                    for item in per_ecu[pid]:
+                        print(f"      ecu {item['ecu'] or '?'}: {item['value']} [{item['status']}]")
             summary["samples"] = samples
+            if thorough:
+                summary["samples_by_ecu"] = per_ecu
 
             print("## diagnostic trouble codes (read-only)")
             dtcs = {}
             for mode in ("03", "07", "0A"):
                 codes, reply = session.read_dtcs(mode)
+                responders.update(_responding_ecus(reply))
                 dtcs[mode] = {"codes": codes, "status": reply.status, "lines": reply.lines}
                 print(f"  mode {mode}: {codes if codes else '(none)'} [{reply.status}]")
             summary["dtcs"] = dtcs
+            stored_codes = sorted({code for read in dtcs.values() for code in read["codes"]})
+
+            if thorough:
+                print("## on-board monitoring test results (service 06)")
+                mids = session.supported_monitor_mids()
+                monitors: dict[str, dict] = {}
+                for mid in mids:
+                    tests, reply = session.read_monitor_tests(mid)
+                    monitors[mid] = {
+                        "status": reply.status,
+                        # Written out field for field as the decoder defines
+                        # them, so the summary reports the decode that happened
+                        # rather than a hand-picked subset of it.
+                        "tests": [asdict(test) for test in tests],
+                    }
+                    print(f"  MID {mid}: {len(tests)} test(s) [{reply.status}]")
+                summary["monitors"] = {"supported_mids": mids, "results": monitors}
+                if not mids:
+                    print("  (the vehicle advertises no monitor IDs)")
+
+                print("## freeze frame (service 02)")
+                if not stored_codes:
+                    # A freeze frame only exists because a code was set.  With no
+                    # codes, every one of these requests is guaranteed to answer
+                    # "no data", so asking would be nothing but bus traffic --
+                    # and the reason for not asking belongs in the record.
+                    reason = ("no stored, pending or permanent DTCs, so no module "
+                              "is holding a freeze frame to read")
+                    summary["freeze_frames"] = {"skipped": reason, "frames": {}}
+                    print(f"  skipped: {reason}")
+                else:
+                    frames = {}
+                    for pid in targets:
+                        value, reply = session.read_freeze_frame(pid, frame=0)
+                        frames[pid] = {
+                            "ecu": value.ecu,
+                            "name": value.name,
+                            "value": value.value,
+                            "unit": value.unit,
+                            "status": value.status,
+                            "raw": value.raw_hex,
+                        }
+                        print(f"  {pid} frame 0: {value.value} {value.unit} "
+                              f"[{value.status}]")
+                    summary["freeze_frames"] = {"skipped": "", "frames": frames}
 
             print("## vehicle information (service 09)")
             vin, vin_reply = session.read_vin()
@@ -164,6 +273,17 @@ def run_probe(args) -> int:
                 info[pid] = {"value": value, "status": reply.status}
                 print(f"  09{pid}: {value!r} [{reply.status}]")
             summary["service09"] = info
+
+            ecus: dict = {"addresses": sorted(responders), "names": {}}
+            if thorough:
+                # Last, deliberately: this is the only step that narrows what the
+                # adapter will hear, and running it after every other read means
+                # a mistake here cannot quietly halve an earlier answer.
+                print("## responding modules")
+                ecus["names"] = session.ecu_name_map(sorted(responders))
+                for address in ecus["addresses"]:
+                    print(f"  {address}: {ecus['names'].get(address) or '(unnamed)'}")
+            summary["ecus"] = ecus
         finally:
             transport.close()
 
@@ -292,6 +412,12 @@ def main(argv=None) -> int:
     parser.add_argument("--summary", help="write a JSON summary here (VIN masked)")
     parser.add_argument("--database", help="also record the session in this SQLite database")
     parser.add_argument("--protocol-timeout", type=float, default=20.0)
+    parser.add_argument(
+        "--max", action="store_true",
+        help="ask for everything the vehicle advertises: service 06 monitor results, "
+             "freeze frames when a DTC exists, every module's answer to each PID, "
+             "and the module name behind each responding address",
+    )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--replay", nargs="+", help="summarise existing raw logs and exit")
     mode.add_argument(

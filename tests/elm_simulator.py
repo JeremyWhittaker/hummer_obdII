@@ -110,11 +110,20 @@ class ElmSimulator:
                 if not command:
                     continue
                 self.received.append(command)
-                body = self.responses.get(command, "NO DATA")
+                body = self.answer(command)
                 try:
                     os.write(self.master, (body + "\r\r>").encode("ascii"))
                 except OSError:
                     return
+
+    def answer(self, command: str) -> str:
+        """Return the canned reply for *command*.
+
+        Split out from the serving loop so a test can teach the simulator a
+        family of commands -- a CAN receive filter, whose argument differs on
+        every call -- without restating the PTY plumbing.
+        """
+        return self.responses.get(command, "NO DATA")
 
     def __enter__(self) -> "ElmSimulator":
         return self.start()

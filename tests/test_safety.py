@@ -3,7 +3,14 @@
 import unittest
 
 from hummer_obd import safety
-from hummer_obd.safety import UnsafeCommandError, validate_command, is_safe
+from hummer_obd.safety import (
+    ALLOWED_OBD_MODES,
+    FORBIDDEN_SERVICES,
+    UnsafeCommandError,
+    describe_command,
+    is_safe,
+    validate_command,
+)
 
 
 class TestAllowedCommands(unittest.TestCase):
@@ -79,6 +86,53 @@ class TestDescriptions(unittest.TestCase):
         self.assertIn("current data", safety.describe_command("010C"))
         self.assertIn("stored DTCs", safety.describe_command("03"))
         self.assertIn("adapter command", safety.describe_command("ATI"))
+
+
+class TestFreezeFrameAndMonitorServices(unittest.TestCase):
+    """Services 02 and 06, added 2026-09-01.
+
+    Both are standard SAE J1979 *read* services, defined by the same
+    specification as 01/03/07/09/0A.  Unlike mode 22 they need no vendor
+    identifier to be guessed: 02 returns the snapshot an ECU stored alongside a
+    DTC, and 06 returns monitor results the ECU computed on its own.  The point
+    of these tests is that widening the allowlist did not widen anything else.
+    """
+
+    def test_freeze_frame_request_shapes_are_accepted(self):
+        for command in ("0200", "0202", "020200", "020201", "02020F"):
+            self.assertTrue(is_safe(command), command)
+
+    def test_monitor_test_result_request_shapes_are_accepted(self):
+        for command in ("0600", "0601", "0620", "06A1", "06010"):
+            self.assertTrue(is_safe(command), command)
+
+    def test_a_bare_service_byte_is_still_not_a_request(self):
+        # 02 and 06 both need a parameter; a bare mode byte is malformed and
+        # must not be waved through just because the mode is now allowed.
+        for command in ("02", "06"):
+            with self.assertRaises(UnsafeCommandError):
+                validate_command(command)
+
+    def test_over_long_payloads_are_rejected(self):
+        for command in ("020000FF", "060102", "0203040506", "02000000000"):
+            with self.assertRaises(UnsafeCommandError):
+                validate_command(command)
+
+    def test_widening_the_allowlist_did_not_admit_a_forbidden_service(self):
+        self.assertEqual(ALLOWED_OBD_MODES & FORBIDDEN_SERVICES, frozenset())
+        for command in ("04", "0400", "08", "0800", "22F190", "2E1234",
+                        "2701", "3101FF", "1101", "3E00", "14FFFFFF"):
+            self.assertFalse(is_safe(command), command)
+
+    def test_batching_is_still_refused_behind_the_new_services(self):
+        for command in ("0200;04", "0600\r04", "0202\n0400"):
+            with self.assertRaises(UnsafeCommandError):
+                validate_command(command)
+
+    def test_the_new_services_are_described_for_the_log(self):
+        self.assertIn("freeze frame", describe_command("0202"))
+        self.assertIn("monitoring", describe_command("0601"))
+
 
 
 if __name__ == "__main__":

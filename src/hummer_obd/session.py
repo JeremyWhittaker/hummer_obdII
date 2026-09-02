@@ -8,8 +8,12 @@ The session owns the ordered, read-only conversation with the adapter:
    connector voltage (``ATRV``),
 4. let the adapter auto-detect the vehicle protocol (``ATSP0`` then ``0100``)
    and record what it chose (``ATDP``/``ATDPN``),
-5. answer read-only questions: supported PIDs, current data, DTC reads and
-   service 09 vehicle information.
+5. answer read-only questions: supported PIDs, current data, freeze frames,
+   on-board monitor results, DTC reads and service 09 vehicle information.
+
+Several modules answer the same request, so the answers are kept per module
+wherever that is possible.  Collapsing them to one value would let whichever
+ECU happened to reply first speak for the whole truck.
 
 No step here can transmit anything the safety gate has not approved.
 """
@@ -17,15 +21,21 @@ No step here can transmit anything the safety gate has not approved.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Iterable, Optional
 
 from .decode import (
     AdapterReply,
     decode_ascii_item,
+    decode_ascii_items,
     decode_dtcs,
+    decode_freeze_frame,
+    decode_monitor_tests,
     decode_pid,
+    decode_pid_per_ecu,
     decode_vin,
+    ecu_from_header,
     parse_reply,
+    supported_mids,
     supported_pids,
     supported_service09_pids as _decode_service09_support,
 )
@@ -42,6 +52,24 @@ IDENT_SEQUENCE = ("ATI", "AT@1", "AT@2", "STI", "STDI", "ATRV")
 
 #: Support bitmaps for service 01 and service 09.
 SUPPORT_PIDS_01 = ("0100", "0120", "0140", "0160", "0180", "01A0", "01C0")
+
+#: Support bitmaps for service 06 monitor IDs.  Service 06 numbers its monitors
+#: in banks of 32 exactly as service 01 numbers its PIDs, so the same walk
+#: applies: ask ``0600``, and only ask ``0620`` when the first bitmap says the
+#: vehicle has a MID 20 to point at.
+SUPPORT_MIDS_06 = ("0600", "0620", "0640", "0660", "0680", "06A0", "06C0")
+
+#: The 29-bit response identifier this vehicle answers on.  ISO 15765-4
+#: extended addressing replies to ``18DAF1<ecu>``: ``F1`` is the tester, and the
+#: final byte names the module that spoke.
+RESPONSE_ID_PREFIX = "18DAF1"
+
+#: Restores unfiltered CAN reception after a single-module query.  A bare
+#: ``ATCRA`` is the adapter's own reset for the receive filter, but it is not on
+#: the safety allowlist and must not be added for this.  An all-zero CAN mask is
+#: equivalent: the adapter accepts a frame when ``id & mask`` equals
+#: ``filter & mask``, and a zero mask makes that true for every identifier.
+RECEIVE_FILTER_CLEAR = "ATCM00000000"
 
 
 @dataclass
@@ -170,3 +198,102 @@ class AdapterSession:
     def read_service09_item(self, pid: str, timeout: float = 10.0):
         reply = self.ask(f"09{pid.upper()}", timeout=timeout)
         return decode_ascii_item(reply, int(pid, 16)), reply
+
+    def supported_monitor_mids(self) -> list[str]:
+        """Ask which service 06 on-board monitors the vehicle advertises.
+
+        The banks are walked the same way service 01's PID banks are: the next
+        request is only sent when the bitmap just read actually points at it.
+        Asking for every bank unconditionally would put six pointless requests
+        on a live bus and make a vehicle that supports one bank look like one
+        that timed out five times.
+        """
+        found: list[str] = []
+        for command in SUPPORT_MIDS_06:
+            reply = self.ask(command, timeout=8.0)
+            base = command[2:4]
+            mids = supported_mids(reply, base)
+            self._say(f"{command}: {reply.status} -> {len(mids)} mids")
+            if not mids:
+                break
+            found.extend(mids)
+            next_bank = f"{int(base, 16) + 0x20:02X}"
+            if next_bank not in mids:
+                break
+        return sorted(set(found))
+
+    def read_monitor_tests(self, mid: str, timeout: float = 8.0):
+        """Read the on-board monitoring test results for one monitor ID.
+
+        Service 06 is what the ECU concluded from its own self-tests, with the
+        limits it judged them against.  It is read-only in the strongest sense:
+        the numbers already exist inside the module, and asking for them starts
+        no test.
+        """
+        reply = self.ask(f"06{mid.upper()}", timeout=timeout)
+        return decode_monitor_tests(reply), reply
+
+    def read_freeze_frame(self, pid: str, frame: int = 0, timeout: float = 8.0):
+        """Read the stored freeze frame value of *pid* from snapshot *frame*.
+
+        A freeze frame is the snapshot an ECU kept of the moment it set a
+        trouble code, so it is only worth asking for when a code exists; the
+        caller decides that, because only the caller has seen the DTC reads.
+        """
+        command = f"02{pid.upper()}{frame:02X}"
+        reply = self.ask(command, timeout=timeout)
+        return decode_freeze_frame(pid, reply, frame=frame), reply
+
+    def read_pid_per_ecu(self, pid: str, timeout: float = 6.0):
+        """Read *pid* and keep every module's answer instead of the first.
+
+        The request is byte for byte the one :meth:`read_pid` sends -- this is
+        not extra bus traffic, it is the same traffic read honestly.  On this
+        truck several modules answer the same PID with different numbers, and
+        reporting only the first makes the others invisible.
+        """
+        command = f"01{pid.upper()}"
+        reply = self.ask(command, timeout=timeout)
+        values = decode_pid_per_ecu(pid, reply)
+        if not values:
+            # Never hand back an empty list.  Silence is an observation, and the
+            # caller has to be able to record it in the same shape as a reading
+            # rather than special-casing "nothing came back" at every call site.
+            values = [decode_pid(pid, reply)]
+        return values, reply
+
+    def ecu_name_map(self, addresses: Iterable[str], timeout: float = 8.0) -> dict[str, str]:
+        """Ask each responding module for its own name, one module at a time.
+
+        Every module answers ``090A`` at once and the adapter prints the replies
+        interleaved, so the only way to say *which* module is called what is to
+        listen to one of them at a time.  ``ATCRA18DAF1<addr>`` narrows reception
+        to a single responder.  ``ATSH`` cannot do this job: the allowlisted
+        header pattern stops at six hex digits and a 29-bit request header needs
+        eight, and the allowlist is not going to be widened for a convenience.
+
+        The filter is always taken off again, including when a request fails.  A
+        filter left in place would quietly turn every later request into a
+        one-module answer, and nothing downstream reports the difference.
+        """
+        names: dict[str, str] = {}
+        # Only a 29-bit module address can be turned into a receive filter.  An
+        # 11-bit identifier such as 7E8 would build a command the safety gate
+        # rejects, so it is skipped rather than mangled into a valid-looking one.
+        wanted = sorted({a for a in (ecu_from_header(x) for x in addresses) if len(a) == 2})
+        if not wanted:
+            return names
+        try:
+            for address in wanted:
+                self.ask(f"ATCRA{RESPONSE_ID_PREFIX}{address}", timeout=4.0)
+                reply = self.ask("090A", timeout=timeout)
+                values = decode_ascii_items(reply, 0x0A)
+                # Exactly one answer means the filter took effect and the name
+                # belongs to this address.  Several answers mean it did not, and
+                # any name picked out of them would be a guess -- so record
+                # nothing.  A wrong module name reads as fact; a blank does not.
+                names[address] = values[0] if len(values) == 1 else ""
+                self._say(f"090A @{address}: {names[address] or reply.status}")
+        finally:
+            self.ask(RECEIVE_FILTER_CLEAR, timeout=4.0)
+        return names

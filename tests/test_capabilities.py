@@ -527,7 +527,11 @@ class TestSanitize(unittest.TestCase):
 class TestSections(CapabilitiesFixture):
     def test_safety_gate_is_interrogated_not_described(self):
         gate = self.build()["sections"]["safety_gate"]
-        self.assertEqual(gate["allowed_obd_modes"], ["01", "03", "07", "09", "0A"])
+        # Deliberately a literal, not sorted(safety.ALLOWED_OBD_MODES): this is
+        # a tripwire.  Widening the gate must fail here and be acknowledged,
+        # which is exactly what happened when services 02 and 06 were added.
+        self.assertEqual(
+            gate["allowed_obd_modes"], ["01", "02", "03", "06", "07", "09", "0A"])
         self.assertTrue(gate["all_samples_accepted"])
         self.assertTrue(gate["all_samples_refused"])
         refused = {check["command"]: check for check in gate["checked_refused"]}
@@ -572,7 +576,9 @@ class TestSections(CapabilitiesFixture):
     def test_database_summary_counts_dtcs_sessions_and_the_upload_queue(self):
         db = self.build()["sections"]["database"]
         self.assertTrue(db["present"])
-        self.assertEqual(db["schema_version"], 1)
+        # Literal on purpose, for the same reason as the gate list above: a
+        # schema change should have to be acknowledged here.
+        self.assertEqual(db["schema_version"], 2)
         self.assertEqual(db["tables"]["samples"], 4)
         self.assertEqual(db["upload_queue_depth"], 4)  # upload is off; nothing is stamped
         self.assertEqual(db["dtc_summary"]["03"]["reads"], 1)

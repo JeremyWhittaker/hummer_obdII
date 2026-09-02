@@ -33,7 +33,7 @@ endorsed by General Motors, GMC, OBD Solutions, or Waveshare.
   and persistent RFCOMM binding.
 - Reconnect-aware polling, WAL-mode SQLite buffering, masked vehicle identity,
   and an uploader that is disabled by default.
-- A hardware-free PTY/ELM simulator and 265 tests (223 subtests) covering the
+- A hardware-free PTY/ELM simulator and 337 tests (327 subtests) covering the
   safety boundary, transport, decoding, storage, recovery, display, and
   end-to-end probe flow.
 - Conservative e-paper operation: full refreshes only, unchanged frames are
@@ -56,6 +56,8 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | Vehicle speed, run time, control-module voltage | live, from up to 8 responding ECUs |
 | Distance since codes cleared, distance with MIL on, warm-up count | live |
 | Diagnostic trouble codes | stored, pending and permanent, per responding module |
+| Per-module attribution | every ECU's own answer to a PID, not just the first (eight voltages, 0.41 V spread) |
+| Freeze frame and monitor tests | services 02 and 06, standard reads, permitted and awaiting a live run |
 | Vehicle information | VIN (masked outside the raw log), calibration IDs, calibration verification numbers, full module names |
 | Module inventory | 8 modules named by the vehicle, including three drive-motor controllers |
 | 12 V system voltage | `ATRV`, with **zero CAN traffic** — sampled on a timer while the vehicle sleeps |
@@ -110,8 +112,15 @@ details.
 |---|---|
 | OBDLink `AT`/`ST` identification and setup | Mode `04` DTC clearing |
 | Mode `01` current data | Mode `08` actuator/control tests |
-| Modes `03`, `07`, `0A` DTC reads | UDS write, control, security, reset, and routine services |
-| Mode `09` vehicle information | Mode `22` enhanced PID discovery in this release |
+| Mode `02` freeze frame data | UDS write, control, security, reset, and routine services |
+| Modes `03`, `07`, `0A` DTC reads | Mode `22` enhanced PID discovery in this release |
+| Mode `06` on-board monitoring test results | |
+| Mode `09` vehicle information | |
+
+Every allowed service is a request for data the ECU already holds. Modes `02`
+and `06` were added on 2026-09-01 under the change-control process in
+[Safety](docs/SAFETY.md); unlike Mode `22` they are standard SAE J1979 reads
+and need no vendor identifier to be guessed.
 
 The denylist is defense in depth; the primary control is an allowlist in
 [`src/hummer_obd/safety.py`](src/hummer_obd/safety.py). The transport validates

@@ -37,10 +37,24 @@ class UnsafeCommandError(ValueError):
     """Raised when a command is not provably read-only."""
 
 
-#: OBD-II services this project is allowed to request.
-#:   01 current data, 03 stored DTCs, 07 pending DTCs,
-#:   09 vehicle information, 0A permanent DTCs.
-ALLOWED_OBD_MODES: Final[frozenset[str]] = frozenset({"01", "03", "07", "09", "0A"})
+#: OBD-II services this project is allowed to request.  Every one of these is
+#: a *request for data the ECU already holds*; none of them writes, actuates,
+#: resets, unlocks or clears anything.
+#:
+#:   01 current data              06 on-board monitoring test results
+#:   02 freeze frame data         07 pending DTCs
+#:   03 stored DTCs               09 vehicle information
+#:                                0A permanent DTCs
+#:
+#: 02 and 06 were added on 2026-09-01.  They are standard SAE J1979 read
+#: services, defined by the same specification as 01/03/07/09/0A, and unlike
+#: mode 22 they need no vendor identifier to be guessed: 02 returns the stored
+#: snapshot that accompanied a DTC, and 06 returns monitor test results the ECU
+#: computed on its own.  Asking for them cannot change vehicle state, and an
+#: ECU with nothing to report answers with an empty positive response.
+ALLOWED_OBD_MODES: Final[frozenset[str]] = frozenset(
+    {"01", "02", "03", "06", "07", "09", "0A"}
+)
 
 #: Services that must never be transmitted, whatever else changes.  ``04`` is
 #: the OBD-II clear-DTC service; ``08`` actuates on-board components; the rest
@@ -117,9 +131,15 @@ _ALLOWED_AT_PATTERNS: Final[tuple[re.Pattern[str], ...]] = (
 
 _HEX_ONLY = re.compile(r"^[0-9A-F]+$")
 
-# Requests that carry a PID/parameter byte.  Everything else in the allowlist
-# is a bare service request.
-_MODES_WITH_PID: Final[frozenset[str]] = frozenset({"01", "09"})
+# Requests that carry one PID/MID parameter byte.
+_MODES_WITH_PID: Final[frozenset[str]] = frozenset({"01", "06", "09"})
+
+# Freeze frame requests carry a PID *and* a frame number, so their payload is
+# two bytes rather than one.  Giving 02 its own shape keeps the check exact
+# instead of loosening the one-byte rule for every mode that uses it.
+_MODES_WITH_PID_AND_FRAME: Final[frozenset[str]] = frozenset({"02"})
+
+# Everything else in the allowlist is a bare service request.
 _MODES_WITHOUT_PID: Final[frozenset[str]] = frozenset({"03", "07", "0A"})
 
 MAX_COMMAND_LENGTH: Final[int] = 32
@@ -196,6 +216,18 @@ def validate_command(command: str) -> str:
         if len(payload) == 3 and payload[2] in "0123456789ABCDEF":
             return cmd
         raise _reject(raw, f"service {mode} takes one PID byte and an optional response count")
+    if mode in _MODES_WITH_PID_AND_FRAME:
+        # "0202" (PID, frame 0 implied) or "020200" (PID and frame number),
+        # each optionally followed by a response count.
+        if len(payload) in (2, 4):
+            return cmd
+        if len(payload) in (3, 5) and payload[-1] in "0123456789ABCDEF":
+            return cmd
+        raise _reject(
+            raw,
+            f"service {mode} takes a PID byte, an optional frame byte, and an "
+            f"optional response count",
+        )
 
     raise _reject(raw, "unhandled command shape")  # pragma: no cover - defensive
 
@@ -217,7 +249,9 @@ def describe_command(command: str) -> str:
     mode = cmd[:2]
     names = {
         "01": "current data",
+        "02": "freeze frame data",
         "03": "stored DTCs",
+        "06": "on-board monitoring test results",
         "07": "pending DTCs",
         "09": "vehicle information",
         "0A": "permanent DTCs",

@@ -25,8 +25,8 @@ reference node.
 Latest result:
 
 ```text
-pytest:   265 passed
-unittest: 265 tests / 223 subtests passed
+pytest:   337 passed
+unittest: 342 tests / 327 subtests passed
 shell:    all repository shell scripts pass bash -n
 compile:  all Python modules compile
 ```
@@ -492,6 +492,76 @@ Two attempts to install the unit earlier, during the drive, failed outright:
 `sudo` over a phone hotspot did not survive long enough to complete. That is
 the same class of failure as the original collection gap, and it is why
 `scripts/run_trial.sh` exists as a rootless fallback with the same bounds.
+
+## Maximal capability expansion, 2026-09-01
+
+Three capability gaps were closed. None of them was a vehicle limitation; all
+three were limitations of this software.
+
+### Services 02 and 06 added to the gate
+
+`ALLOWED_OBD_MODES` became `{01, 02, 03, 06, 07, 09, 0A}`. Both additions are
+standard SAE J1979 read services and needed no guessed identifier, which is
+what distinguishes them from Mode 22. The full change-control record is in
+[Safety](SAFETY.md). `FORBIDDEN_SERVICES` is unchanged, the allowlist and the
+denylist are asserted disjoint, and service 02 was given its own request shape
+rather than relaxing the existing one-parameter rule.
+
+Status: **permitted, not yet proven on this vehicle.** The truck was asleep
+when they were added and no live request has been made.
+
+### Seven of every eight readings were being discarded
+
+`decode_pid` returned the first matching frame and dropped the rest. On this
+vehicle a single `0142` request is answered by eight modules, each with its own
+supply voltage. Replayed against the transcript already on the node:
+
+```text
+ecu 45  13.747 V     ecu CB  13.693 V
+ecu 17  13.571 V     ecu 1D  13.500 V
+ecu 40  13.875 V     ecu 1E  13.524 V
+ecu CD  13.726 V     ecu 28  13.910 V
+```
+
+A 0.41 V spread, which is harness voltage drop between modules and a real
+measurement. `decode_pid_per_ecu` now returns one value per responding module
+and `samples.ecu` records which module produced it. `decode_pid` is unchanged
+for existing callers.
+
+### Schema migration, verified against the live database
+
+The `ecu` column and a `monitor_tests` table required schema version 2. The
+node holds readings nobody can take again, so the migration only ever adds
+(`ALTER TABLE ... ADD COLUMN`, `CREATE TABLE IF NOT EXISTS`) and never drops,
+renames or rebuilds.
+
+It was verified against a **copy of the reference node's real database**, not a
+fixture:
+
+```text
+samples        7384 rows  identical
+dtc_reads        18 rows  identical
+sessions          5 rows  identical
+vehicle_info      1 rows  identical
+events            5 rows  identical
+EVERY ORIGINAL COLUMN AND ROW IDENTICAL: True
+schema_version: 2      ecu column present: True
+ecu default on old rows: ''      monitor_tests exists: True
+```
+
+Comparing the original columns explicitly matters: a `SELECT *` check reports a
+difference purely because the new column exists, which looks like data loss and
+is not.
+
+### `--max` probe
+
+`hummer-obd-probe --max` asks for everything the vehicle advertises: per-module
+attribution of every PID, service 06 monitor discovery and results, an ECU
+address-to-name map via `ATCRA` receive filtering, and freeze frames **only**
+when a DTC read actually returned codes. The default probe path is unchanged.
+
+This has **not been run on the vehicle yet.** It is the highest-value
+outstanding action and needs the truck awake.
 
 ## Resource result
 

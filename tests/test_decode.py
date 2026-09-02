@@ -7,13 +7,20 @@ from hummer_obd.decode import (
     decode_ascii_items,
     decode_cvns,
     decode_dtcs,
+    decode_freeze_frame,
+    decode_monitor_tests,
     decode_pid,
+    decode_pid_per_ecu,
     decode_vin,
+    ecu_from_header,
     mask_vin,
     PID_DECODERS,
     parse_reply,
+    PidValue,
+    supported_mids,
     supported_pids,
     supported_service09_pids,
+    UAS_SCALINGS,
 )
 
 
@@ -312,6 +319,323 @@ class TestPidsThisVehicleAdvertises(unittest.TestCase):
                    if p not in bitmaps and p not in composite
                    and p not in PID_DECODERS]
         self.assertEqual(missing, [])
+
+
+#: The real shape of a ``0142`` broadcast on this vehicle: eight modules answer,
+#: each reporting the supply voltage measured at its own connector.  Header
+#: 18DAF1xx, ISO-TP length 04, then 41 42 and the two-byte millivolt count.
+EIGHT_ECUS_ANSWER_0142 = ("18DAF14504414235B3\r"
+                          "18DAF1170441423503\r"
+                          "18DAF1400441423633\r"
+                          "18DAF1CB044142357D\r"
+                          "18DAF11D04414234BC\r"
+                          "18DAF11E04414234D4\r"
+                          "18DAF1CD044142359E\r"
+                          "18DAF1280441423656\r>")
+
+#: Addresses and voltages of the eight answers above, in arrival order.
+EIGHT_ECU_VOLTAGES = [("45", 13.747), ("17", 13.571), ("40", 13.875), ("CB", 13.693),
+                      ("1D", 13.500), ("1E", 13.524), ("CD", 13.726), ("28", 13.910)]
+
+
+class TestEcuFromHeader(unittest.TestCase):
+    def test_29_bit_headers_reduce_to_the_responding_module_byte(self):
+        self.assertEqual(ecu_from_header("18DAF145"), "45")
+        self.assertEqual(ecu_from_header("18DAF1CB"), "CB")
+        self.assertEqual(ecu_from_header("18DAF128"), "28")
+
+    def test_11_bit_identifiers_are_kept_whole(self):
+        # Documented choice: an 11-bit identifier has no separate address byte,
+        # so the whole identifier is the module's address.
+        self.assertEqual(ecu_from_header("7E8"), "7E8")
+        self.assertEqual(ecu_from_header("7e9"), "7E9")
+
+    def test_absent_header_names_no_module(self):
+        self.assertEqual(ecu_from_header(""), "")
+        self.assertEqual(ecu_from_header("   "), "")
+
+
+class TestEveryRespondingEcuIsKept(unittest.TestCase):
+    """Eight modules answer 0142; seven of them used to be thrown away.
+
+    The raw hex always survived in the transcript, but the queryable data was
+    one eighth of what the vehicle said.  These are eight measurements of eight
+    different things, not eight attempts at one number.
+    """
+
+    def test_all_eight_answers_are_decoded_with_their_addresses(self):
+        values = decode_pid_per_ecu("42", parse_reply(EIGHT_ECUS_ANSWER_0142))
+        self.assertEqual(len(values), 8)
+        self.assertEqual([(v.ecu, v.value) for v in values], EIGHT_ECU_VOLTAGES)
+        self.assertTrue(all(v.status == "ok" and v.unit == "V" for v in values))
+
+    def test_the_eight_readings_are_genuinely_distinct(self):
+        values = decode_pid_per_ecu("42", parse_reply(EIGHT_ECUS_ANSWER_0142))
+        self.assertEqual(len({v.value for v in values}), 8)
+        self.assertEqual(len({v.ecu for v in values}), 8)
+
+    def test_each_value_carries_only_its_own_frame_as_evidence(self):
+        values = decode_pid_per_ecu("42", parse_reply(EIGHT_ECUS_ANSWER_0142))
+        self.assertEqual(values[0].raw_hex, "04414235b3")
+        self.assertEqual(values[3].raw_hex, "044142357d")
+
+    def test_decode_pid_still_returns_only_the_first_answer(self):
+        # Regression: the singular decoder is what existing callers use, and it
+        # must keep reporting one value with the whole reply as evidence.
+        value = decode_pid("42", parse_reply(EIGHT_ECUS_ANSWER_0142))
+        self.assertIsInstance(value, PidValue)
+        self.assertAlmostEqual(value.value, 13.747, places=3)
+        self.assertEqual(value.ecu, "45")
+        self.assertEqual(len(value.raw_hex.split()), 8)
+
+    def test_eleven_bit_replies_are_attributed_to_the_whole_identifier(self):
+        reply = parse_reply(b"7E8 04 41 42 35 B3\r7E9 04 41 42 34 BC\r>")
+        values = decode_pid_per_ecu("42", reply)
+        self.assertEqual([v.ecu for v in values], ["7E8", "7E9"])
+        self.assertAlmostEqual(values[1].value, 13.500, places=3)
+
+    def test_a_reply_without_headers_names_no_module(self):
+        values = decode_pid_per_ecu("42", parse_reply(b"41 42 35 B3\r>"))
+        self.assertEqual(len(values), 1)
+        self.assertEqual(values[0].ecu, "")
+        self.assertAlmostEqual(values[0].value, 13.747, places=3)
+
+    def test_frames_answering_a_different_pid_are_skipped_not_invented(self):
+        # ECU 17 is answering 010D and ECU 28 rejected the request outright;
+        # neither is a voltage, and neither may become one.
+        reply = parse_reply("18DAF14504414235B3\r"
+                            "18DAF11703410D40\r"
+                            "18DAF128037F0122\r>")
+        values = decode_pid_per_ecu("42", reply)
+        self.assertEqual([(v.ecu, v.value) for v in values], [("45", 13.747)])
+
+    def test_a_module_that_answered_short_is_reported_not_dropped(self):
+        # ECU 17 sent 41 42 35: one byte where the millivolt count needs two.
+        reply = parse_reply("18DAF14504414235B3\r18DAF11703414235\r>")
+        values = decode_pid_per_ecu("42", reply)
+        self.assertEqual([v.status for v in values], ["ok", "short_frame"])
+        self.assertEqual(values[1].ecu, "17")
+        self.assertIsNone(values[1].value)
+
+    def test_no_answer_yields_no_rows_rather_than_a_placeholder(self):
+        for raw in (b"NO DATA\r>", b"CAN ERROR\r>", b"OK\r>"):
+            with self.subTest(raw=raw):
+                self.assertEqual(decode_pid_per_ecu("42", parse_reply(raw)), [])
+
+    def test_frame_headers_stay_aligned_with_frames(self):
+        reply = parse_reply(EIGHT_ECUS_ANSWER_0142)
+        self.assertEqual(len(reply.frame_headers), len(reply.frames))
+        self.assertEqual(reply.frame_headers[0], "18DAF145")
+
+    def test_an_unattributable_reply_still_decodes(self):
+        # A hand-built reply carries no frame_headers at all; the value is
+        # still decoded, with no module claimed for it.
+        values = decode_pid_per_ecu("42", parse_reply_from_frames(bytes.fromhex("04414235B3")))
+        self.assertEqual([(v.ecu, v.value) for v in values], [("", 13.747)])
+
+
+class TestOnBoardMonitoringTests(unittest.TestCase):
+    """Service 06: the monitor results a module computed on its own."""
+
+    #: ECU 45 sends two nine-byte records as one 0x13-byte ISO-TP message while
+    #: ECU 17 answers with a single record in a single frame.  Record one uses
+    #: UASID 01 (raw counts, known); record two uses UASID 0A, which this build
+    #: deliberately does not claim to know.
+    TWO_ECUS = ("18DAF145101346010B010100\r"
+                "18DAF1170A4602212401000000FFFF\r"
+                "18DAF14521000001F4010C0A\r"
+                "18DAF14522123400102000\r>")
+
+    def test_supported_mid_bitmap(self):
+        mids = supported_mids(parse_reply("18DAF145064600C0000000\r>"))
+        self.assertEqual(mids, ["01", "02"])
+
+    def test_a_bitmap_reply_yields_no_test_results(self):
+        # 46 00 C0 00 00 00 is an advertisement, not a measurement.
+        self.assertEqual(decode_monitor_tests(parse_reply("18DAF145064600C0000000\r>")), [])
+
+    def test_multiple_records_decode_with_their_raw_counts(self):
+        tests = decode_monitor_tests(parse_reply(self.TWO_ECUS))
+        self.assertEqual(len(tests), 3)
+        first, second, third = tests
+        self.assertEqual(
+            (first.mid, first.tid, first.uasid, first.value, first.min_limit, first.max_limit),
+            (0x01, 0x0B, 0x01, 0x0100, 0x0000, 0x01F4),
+        )
+        self.assertEqual(
+            (second.mid, second.tid, second.uasid, second.value,
+             second.min_limit, second.max_limit),
+            (0x01, 0x0C, 0x0A, 0x1234, 0x0010, 0x2000),
+        )
+        self.assertEqual(
+            (third.mid, third.tid, third.uasid, third.value, third.min_limit, third.max_limit),
+            (0x02, 0x21, 0x24, 0x0100, 0x0000, 0xFFFF),
+        )
+
+    def test_each_record_is_attributed_to_the_module_that_sent_it(self):
+        tests = decode_monitor_tests(parse_reply(self.TWO_ECUS))
+        self.assertEqual([t.ecu for t in tests], ["45", "45", "17"])
+
+    def test_a_known_uasid_is_scaled(self):
+        first = decode_monitor_tests(parse_reply(self.TWO_ECUS))[0]
+        self.assertEqual(first.uasid, 0x01)
+        self.assertEqual(
+            (first.scaled_value, first.scaled_min, first.scaled_max), (256.0, 0.0, 500.0)
+        )
+
+    def test_an_unknown_uasid_reports_no_scaling_and_keeps_the_raw_counts(self):
+        second = decode_monitor_tests(parse_reply(self.TWO_ECUS))[1]
+        self.assertNotIn(second.uasid, UAS_SCALINGS)
+        self.assertIsNone(second.scaled_value)
+        self.assertIsNone(second.scaled_min)
+        self.assertIsNone(second.scaled_max)
+        self.assertEqual(second.unit, "")
+        # The measurement itself is untouched: it is recoverable later, once
+        # the scaling is confirmed, precisely because nothing was guessed.
+        self.assertEqual((second.value, second.min_limit, second.max_limit),
+                         (0x1234, 0x0010, 0x2000))
+
+    def test_the_scaling_table_claims_nothing_it_cannot_state(self):
+        # Every entry present must carry a real multiplier; the table is
+        # allowed to be small, not to be vague.
+        for uasid, scaling in UAS_SCALINGS.items():
+            with self.subTest(uasid=uasid):
+                self.assertIsInstance(scaling.multiplier, float)
+                self.assertGreater(scaling.multiplier, 0.0)
+
+    def test_a_truncated_trailing_record_is_dropped(self):
+        # Four bytes where nine are needed: a record read out of this would
+        # have a plausible TID and invented limits.
+        self.assertEqual(decode_monitor_tests(parse_reply("18DAF1450546010B0101\r>")), [])
+
+    def test_an_incomplete_multi_frame_reply_yields_nothing(self):
+        reply = parse_reply("18DAF145101346010B010100\r>")
+        self.assertEqual(reply.status, "incomplete")
+        self.assertEqual(decode_monitor_tests(reply), [])
+
+    def test_a_failed_request_yields_nothing(self):
+        self.assertEqual(decode_monitor_tests(parse_reply(b"NO DATA\r>")), [])
+        self.assertEqual(decode_monitor_tests(parse_reply(b"7F 06 12\r>")), [])
+
+
+class TestFreezeFrame(unittest.TestCase):
+    """Service 02: the snapshot a module stored when a DTC set."""
+
+    def test_speed_decodes_through_the_service_01_table(self):
+        value = decode_freeze_frame("0D", parse_reply("18DAF14504420D0040\r>"))
+        self.assertEqual(value.value, 64.0)
+        self.assertEqual(value.unit, "km/h")
+        self.assertEqual(value.status, "ok")
+        self.assertEqual(value.ecu, "45")
+
+    def test_the_frame_byte_is_not_fed_to_the_pid_decoder(self):
+        # 42 0C 00 1A F8: frame 00, then 1A F8 = 1726 rpm.  Treating the frame
+        # byte as data would give 6.5 rpm — a plausible-looking wrong number,
+        # which is exactly what this guards against.
+        value = decode_freeze_frame("0C", parse_reply("18DAF14505420C001AF8\r>"))
+        self.assertAlmostEqual(value.value, 1726.0)
+
+    def test_a_different_stored_frame_is_not_reported_as_this_one(self):
+        value = decode_freeze_frame("0C", parse_reply("18DAF14505420C001AF8\r>"), frame=1)
+        self.assertIsNone(value.value)
+        self.assertEqual(value.status, "unmatched")
+
+    def test_a_non_zero_frame_number_is_matched(self):
+        value = decode_freeze_frame("0D", parse_reply("18DAF14504420D0140\r>"), frame=1)
+        self.assertEqual(value.value, 64.0)
+
+    def test_a_truncated_snapshot_fails_closed(self):
+        value = decode_freeze_frame("0D", parse_reply("18DAF14503420D00\r>"))
+        self.assertIsNone(value.value)
+        self.assertEqual(value.status, "short_frame")
+
+    def test_no_answer_is_reported_not_invented(self):
+        value = decode_freeze_frame("0D", parse_reply(b"NO DATA\r>"))
+        self.assertIsNone(value.value)
+        self.assertEqual(value.status, "no_data")
+
+
+class TestAttributionSurvivesTheAwkwardCases(unittest.TestCase):
+    """The cases where a wrong module name, not a wrong number, is the defect.
+
+    Every test here failed to fail before it was written: each one pins a
+    behaviour the implementation already had but nothing checked, so a later
+    simplification could have quietly reintroduced a misattributed reading.
+    """
+
+    def test_a_dropped_multi_frame_reply_does_not_shift_attribution(self):
+        # ECU 45 starts a multi-frame answer whose consecutive frames never
+        # arrive, so it is discarded; ECU 17 then answers 0142 in one frame.
+        # ``headers`` records both modules (45 spoke, even though its bytes did
+        # not survive) while ``frames`` holds only ECU 17's, so indexing
+        # ``headers`` positionally would credit 13.571 V to module 45 — a
+        # reading attributed to a module that never reported one.
+        reply = parse_reply("18DAF145101449020101\r18DAF1170441423503\r>")
+        self.assertEqual(reply.incomplete, 1)
+        self.assertEqual(reply.headers, ["18DAF145", "18DAF117"])
+        self.assertEqual(reply.frame_headers, ["18DAF117"])
+        values = decode_pid_per_ecu("42", reply)
+        self.assertEqual([(v.ecu, v.value) for v in values], [("17", 13.571)])
+
+    def test_two_eleven_bit_modules_do_not_have_their_frames_spliced(self):
+        # Both modules send a multi-frame VIN and their consecutive frames
+        # interleave, ECU 7E9's arriving first at each sequence number.  Frames
+        # must be joined per identifier: matching on the sequence number alone
+        # hands 7E9's characters to 7E8 and produces two well-formed,
+        # seventeen-character, entirely fictional VINs.
+        reply = parse_reply("7E8 10 14 49 02 01 31 47 31\r"
+                            "7E9 10 14 49 02 01 35 59 5A\r"
+                            "7E9 21 39 39 39 39 39 39 39\r"
+                            "7E8 21 43 50 34 39 42 30 30\r"
+                            "7E9 22 39 39 39 39 39 39 00\r"
+                            "7E8 22 30 30 30 31 32 33 00\r>")
+        self.assertEqual(reply.frame_headers, ["7E8", "7E9"])
+        text = ["".join(chr(b) for b in f if 0x20 <= b <= 0x7E) for f in reply.frames]
+        self.assertTrue(text[0].endswith("1G1CP49B00000123"), text[0])
+        self.assertTrue(text[1].endswith("5YZ9999999999999"), text[1])
+
+
+class TestScalingIsClaimedOnlyWhereItIsKnown(unittest.TestCase):
+    def test_the_uas_table_holds_exactly_the_rows_that_were_verified(self):
+        """Pin the table so it can only grow by a deliberate, reviewed edit.
+
+        A UASID row is an assertion about what a raw count means, and a wrong
+        one is indistinguishable from a measurement.  This test fails whenever
+        a row is added, changed or removed, which is the point: the failure is
+        the prompt to check the new row against the J1979 UAS table before the
+        number it produces is ever written to the database.
+        """
+        self.assertEqual(
+            {uasid: (s.unit, s.multiplier) for uasid, s in UAS_SCALINGS.items()},
+            {0x01: ("", 1.0), 0x24: ("", 1.0)},
+        )
+
+    def test_a_scaled_value_equals_the_raw_count_for_a_unit_multiplier(self):
+        # Both known rows are plain counts at multiplier 1, so scaling must not
+        # move the magnitude.  UASID 24 is otherwise asserted nowhere.
+        third = decode_monitor_tests(parse_reply(TestOnBoardMonitoringTests.TWO_ECUS))[2]
+        self.assertEqual(third.uasid, 0x24)
+        self.assertEqual(
+            (third.scaled_value, third.scaled_min, third.scaled_max),
+            (float(third.value), float(third.min_limit), float(third.max_limit)),
+        )
+
+    def test_a_bitmap_mid_stops_the_record_walk(self):
+        # Two supported-MID bitmaps concatenated in one reply: long enough to
+        # look like a nine-byte test record, and its "test" would carry a
+        # real-looking TID and invented limits.  Reading must stop at the
+        # bitmap MID rather than parse the advertisement as a measurement.
+        reply = parse_reply("18DAF145 10 0D 46 00 C0 00 00 00\r"
+                            "18DAF145 21 46 20 80 00 00 00 00\r>")
+        self.assertEqual(reply.status, "ok")
+        self.assertGreaterEqual(len(reply.frames[0]) - 1, 9)
+        self.assertEqual(decode_monitor_tests(reply), [])
+
+
+class TestPidValueStaysBackwardCompatible(unittest.TestCase):
+    def test_six_positional_fields_still_construct_a_value(self):
+        value = PidValue("0D", "vehicle speed", 0.0, "km/h", "410d00", "ok")
+        self.assertEqual(value.ecu, "")
 
 
 def parse_reply_from_frames(frame: bytes):

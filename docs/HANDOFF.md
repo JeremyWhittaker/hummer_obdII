@@ -18,6 +18,8 @@ power test is complete.
 2. Never send Mode 08 or a UDS write/control/security/reset/routine command.
 3. Keep Mode 22 rejected until an exact identifier set is independently
    validated for the exact vehicle and accepted through the safety process.
+   Services 02 and 06 were added on 2026-09-01 because they are standard and
+   need no guessed identifier; that reasoning does not extend to Mode 22.
 4. Every command must pass `safety.validate_command()` immediately before
    serial I/O; do not add a bypass.
 5. Preserve raw TX/RX bytes append-only before parsing.
@@ -42,7 +44,7 @@ power test is complete.
 | Probe | completed and reviewed; raw transcript remains private on the Pi |
 | Collector | one-shot proven; continuous unit disabled and config flag false |
 | Upload | disabled, endpoint empty |
-| Tests | 265 passed / 223 subtests under both test runners |
+| Tests | 337 passed / 327 subtests under both test runners |
 
 The final controlled reboot was also accepted: both SSH paths returned in about
 36 seconds, all required infrastructure/display/RFCOMM services were active,

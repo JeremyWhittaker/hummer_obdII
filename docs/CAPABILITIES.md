@@ -139,6 +139,33 @@ a better decoder can fix.
 | `0906` CVN | calibration verification numbers returned from 6 modules | **Proven** |
 | `0908`, `090B` | not advertised by this vehicle | Not available |
 
+### Every module's answer, not just the first
+
+A single request on this vehicle is answered by up to eight modules, each
+reporting its **own** value. Asking for control module voltage (`0142`) returns
+eight different voltages:
+
+```text
+ecu 45  13.747 V     ecu CB  13.693 V
+ecu 17  13.571 V     ecu 1D  13.500 V
+ecu 40  13.875 V     ecu 1E  13.524 V
+ecu CD  13.726 V     ecu 28  13.910 V
+```
+
+That is a 0.41 V spread across the vehicle — the voltage drop between modules
+on the harness, which is a real measurement and not noise.
+
+Until 2026-09-01 the decoder returned the *first* matching frame and discarded
+the rest, so seven of those eight readings never reached the database. The raw
+transcript always held them; the queryable data did not. `decode_pid_per_ecu`
+now returns one value per responding module, `samples.ecu` records which module
+gave it, and the database keeps every one.
+
+This matters beyond voltage. Any PID several modules answer is a *distribution*,
+not a number: "the pack controller said one thing and the drive unit said
+another" is the observation, and collapsing it to one value silently picks a
+winner.
+
 ### The module map
 
 Eight modules answer, and service 09 PID `0A` names them in full:
@@ -175,12 +202,38 @@ enhanced-PID request has to be addressed to a specific ECU, so a definitive
 address-to-name map is a prerequisite for
 [ENHANCED_PID_VALIDATION.md](ENHANCED_PID_VALIDATION.md).
 
-Closing it needs **no new command authority**. `ATCRA` (CAN receive-address
-filter) is already on the safety allowlist and accepts a full 29-bit address, so
-`090A` can be requested while filtering replies to one address at a time and the
-answer attributed with certainty. Note that `ATSH` cannot be used for this: its
-allowlist pattern caps at six hex digits and a 29-bit request header needs
-eight.
+Closing it needed **no new command authority**, and is now implemented.
+`AdapterSession.ecu_name_map()` sets an `ATCRA18DAF1<addr>` receive filter,
+requests `090A`, attributes the reply to that address, and restores the
+unfiltered state in a `finally` block — leaving a filter in place would make
+every later request silently see only one module. `ATCRA` was already on the
+allowlist and accepts a full 29-bit address.
+
+`ATSH` cannot be used for this: its allowlist pattern caps at six hex digits and
+a 29-bit request header needs eight. The map itself is still **unproven** — it
+needs the vehicle awake.
+
+### Services 02 and 06 — added 2026-09-01
+
+| Service | What it returns | Tier |
+|---|---|---|
+| `02` freeze frame | the snapshot an ECU stored alongside a DTC | Available, unproven |
+| `06` on-board monitoring | per-monitor test results: test ID, value, and the ECU's own min/max limits | Available, unproven |
+
+Both are standard SAE J1979 *read* services from the same specification as
+`01`/`03`/`07`/`09`/`0A`. Unlike Mode 22 they need no vendor identifier to be
+guessed. They passed the change-control process in [Safety](SAFETY.md), but the
+vehicle was asleep when they were added, so they are **permitted and not yet
+proven on this vehicle** — no live request has been made.
+
+Freeze frame is additionally gated by behaviour rather than by the gate: the
+probe requests it only when a DTC read actually returned stored codes. With
+zero DTCs there is no freeze frame to fetch.
+
+Service 06 decoding is deliberately partial. The unit-and-scaling identifier
+table covers only the identifiers that can be stated confidently from the
+standard; an unrecognised one yields a null scaled value with the raw counts
+preserved, rather than a plausible number derived from a guessed scale factor.
 
 ### Services 03 / 07 / 0A — diagnostic trouble codes
 
@@ -242,7 +295,7 @@ Each of these is a deliberate boundary, not an oversight.
 
 | Not available | Why |
 |---|---|
-| **Mode 22 enhanced GM/Ultium PIDs** | Rejected by the safety gate. Identifiers are unproven on this VIN and this project does not guess them. Plan: [ENHANCED_PID_VALIDATION.md](ENHANCED_PID_VALIDATION.md) |
+| **Mode 22 enhanced GM/Ultium PIDs** | Rejected by the safety gate. Identifiers are unproven on this VIN and this project does not guess them. Plan: [ENHANCED_PID_VALIDATION.md](ENHANCED_PID_VALIDATION.md). Note that modes 02 and 06 were added instead precisely because they are standard and need no guessing |
 | **State of charge, pack voltage, pack temperature, range** | Not exposed over standard OBD on this vehicle. Requires Mode 22 or passive CAN monitoring |
 | **GPS / location** | No GPS receiver on the Pi, and location is not available over OBD |
 | **OnStar / GM cloud data** | Different system entirely. Belongs in a separate broker with isolated credentials and a command allowlist, never in this read-only OBD node |
@@ -294,9 +347,11 @@ hummer-collector.service = disabled / inactive
 3. **Trend `ATRV` across a sleep cycle** with `hummer-obd-voltage`. Zero CAN
    traffic, directly measures the parasitic-drain question that gates
    everything else. First observation started 2026-09-01.
-4. **Build the definitive ECU address-to-name map** with `ATCRA` and a
-   per-address `090A`. No new command authority needed, and it unblocks any
-   future enhanced-PID work.
+4. **Run `hummer-obd-probe --max` on an awake vehicle.** This is now the single
+   highest-value action outstanding. It exercises, for the first time on this
+   truck: service 06 monitor results, per-module attribution of every PID, the
+   ECU address-to-name map, and freeze frames if any DTC exists. Modes 02 and
+   06 stay "permitted but unproven" until it runs.
 5. **Run the bounded collector trial** (`--duration-s`, conservative interval)
    only after the voltage trend looks acceptable, then confirm the vehicle still
    sleeps.
