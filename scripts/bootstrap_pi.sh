@@ -20,6 +20,23 @@ for module in serial spidev RPi.GPIO gpiozero PIL numpy; do
     python3 -c "import $module" 2>/dev/null && echo "  $module OK" || echo "  $module MISSING"
 done
 
+echo "### install the package"
+# An *editable* install, so src/ stays the single source of truth and a deploy
+# does not need a reinstall.  This is what puts the seven hummer-obd-* console
+# scripts on PATH; without it every documented command fails with "command not
+# found", which is exactly what happened before this step existed.
+#
+# --break-system-packages is deliberate.  Debian 13 marks its Python
+# externally-managed (PEP 668), and the alternatives are worse here: ~/.local/bin
+# is not on PATH on this image, and a venv would mean repointing all six systemd
+# units away from /usr/bin/python3 on a live appliance.  This node has exactly
+# one Python application and its two dependencies (Pillow, pyserial) are already
+# system packages, so the isolation a venv buys is not worth the churn.
+sudo python3 -m pip install -e . --break-system-packages --root-user-action=ignore \
+    >/dev/null 2>&1 && echo "  installed (editable)" || echo "  install FAILED"
+command -v hummer-obd-capabilities >/dev/null \
+    && echo "  console scripts on PATH" || echo "  console scripts MISSING"
+
 echo "### unit tests"
 PYTHONPATH=src python3 -m unittest discover -s tests -t tests -q 2>&1 | grep -E '^(OK|FAILED|Ran )' | tail -2
 

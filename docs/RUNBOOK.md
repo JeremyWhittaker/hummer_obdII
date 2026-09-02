@@ -377,6 +377,37 @@ hummer-obd-voltage --root . --interval-s 300 --duration-s 3600   # no CAN traffi
 hummer-obd-capabilities --root .                                 # opens no serial device
 ```
 
+## Running the commands
+
+The package is installed **editable** on the node, so the seven console scripts
+are on `PATH` and `src/` remains the source of truth — a `scripts/deploy.sh`
+does not need a reinstall.
+
+```bash
+cd ~/hummer-obd
+hummer-obd-capabilities --root .        # opens no serial device
+hummer-obd-export --root . --format jsonl --output evidence/export.jsonl
+hummer-obd-voltage --root . --interval-s 300 --duration-s 28800 \
+    --output evidence/voltage-watch.csv
+```
+
+If a command reports *command not found*, the install step has not been run:
+`scripts/bootstrap_pi.sh` performs it, and it is safe to re-run. Before that
+step existed every documented command failed this way, while
+`PYTHONPATH=src python3 -m hummer_obd.<module>` worked — that fallback still
+works and is what the systemd units use.
+
+Two things worth knowing when writing your own invocations:
+
+- **Reach the node by its Tailscale name**, not `hummer.local`. mDNS resolves
+  to whichever LAN the node last joined (it has answered on a home LAN and on a
+  phone hotspot in the same day), so `hummer.local` can point at a stale
+  address while the node is perfectly reachable over the tailnet.
+- **Capture a timestamp once**, not twice. `foo-$(date -u +%Y%m%dT%H%M%SZ).json`
+  and `... | tee foo-$(date -u +%Y%m%dT%H%M%SZ).txt` in one pipeline evaluate
+  `date` twice and can straddle a second boundary, leaving the JSON and the
+  transcript with different names. Use `STAMP=$(date -u +%Y%m%dT%H%M%SZ)` first.
+
 ## Battery watch and graceful shutdown
 
 The node runs on a PiSugar2 pack. `hummer-battery.service` watches the cell and
