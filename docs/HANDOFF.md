@@ -129,6 +129,10 @@ vehicle powered itself off normally with the adapter connected, shortly after
 diagnostic traffic. Adapter presence did not hold it awake. That says nothing
 yet about a two-second polling loop.
 
+`hummer-collector-trial.service` is installed and reports `static`: it cannot
+be enabled at boot, only started deliberately for one bounded run. Use it, or
+`scripts/run_trial.sh` when there is no stable link for `sudo`.
+
 Step 4 now has real tooling. `hummer-obd-collector --duration-s S
 --poll-interval-s S --force` runs a bounded trial that stops itself, and
 `hummer-obd-capabilities` reports node state without ever opening

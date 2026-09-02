@@ -23,7 +23,11 @@ rsync -av "${RSYNC_EXCLUDES[@]}" "$SRC_DIR/tests/" "$HOST:$DEST/tests/"
 rsync -av "$SRC_DIR/pytest.ini" "$HOST:$DEST/"
 rsync -av "$SRC_DIR/pyproject.toml" "$HOST:$DEST/"
 rsync -av "$SRC_DIR/README.md" "$HOST:$DEST/"
-rsync -av "$SRC_DIR/config/hummer.example.toml" "$HOST:$DEST/config/"
+# Ship every config *template*, never config/hummer.toml itself: the live
+# configuration belongs to the node.  A new template that is not listed here
+# simply never arrives, which is how the trial unit's defaults file went
+# missing after it was added.
+rsync -av "$SRC_DIR"/config/*.example.toml "$SRC_DIR"/config/*.default "$HOST:$DEST/config/"
 ssh "$HOST" "test -f $DEST/config/hummer.toml || cp $DEST/config/hummer.example.toml $DEST/config/hummer.toml"
 
 echo "# deployed; installed units are NOT enabled by this script"

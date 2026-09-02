@@ -454,6 +454,45 @@ collector.enabled = false
 hummer-collector.service = disabled / inactive
 ```
 
+## Second drive, and the supervised trial unit in service
+
+A return drive on 2026-09-01 was collected through the supervised trial path
+rather than a hand-started background process. Cumulative results across both
+drives:
+
+| Measurement | Result |
+|---|---|
+| Vehicle speed | 0 to 94 km/h, 961 valid samples |
+| Odometer (`A6`) | 2146.6 to **2166.2 km** |
+| Distance since codes cleared (`31`) | 19 to **38 km** |
+| Control module voltage (`42`) | 12.55 to 13.898 V |
+| Warm-ups since codes cleared (`30`) | 2 to 4 |
+| DTCs | zero codes throughout |
+
+The odometer cross-check now holds over a longer distance: `A6` moved 19.6 km
+while `31` moved 19 km, which is agreement at 1 km resolution. The collector
+stopped itself cleanly on request after 422 cycles.
+
+### Supervision, installed
+
+`hummer-collector-trial.service` is now installed on the reference node.
+`systemctl is-enabled` reports **`static`**, which is the intended result: the
+unit has no `[Install]` section, so it cannot be enabled to start at boot. That
+property is now demonstrated on the real system rather than asserted in a
+comment.
+
+Installing it exposed a gap in `scripts/deploy.sh`. The script copied
+`config/hummer.example.toml` by name, so `config/hummer-collector-trial.default`
+- added in the same change as the unit - never reached the node, and the
+install failed on a missing file. The script now ships every config *template*
+(`*.example.toml` and `*.default`) while still never touching the node's live
+`config/hummer.toml`.
+
+Two attempts to install the unit earlier, during the drive, failed outright:
+`sudo` over a phone hotspot did not survive long enough to complete. That is
+the same class of failure as the original collection gap, and it is why
+`scripts/run_trial.sh` exists as a rootless fallback with the same bounds.
+
 ## Resource result
 
 The reference image was reduced from a desktop installation to a conservative
