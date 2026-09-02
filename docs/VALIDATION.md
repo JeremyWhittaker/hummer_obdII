@@ -687,9 +687,31 @@ exactly as service 01 is. That is not a positive response and does not make
 service 02 "proven", but it does establish that nothing between this code and
 the ECU is wrong. The remaining gap is a vehicle condition, not a code path.
 
-Full proof needs either a stored code (which would arrive on its own if the
-truck ever develops a fault) or a positive `020000` from an awake vehicle,
-which the next `--max` run on a live bus will attempt automatically.
+### Proven, on the next awake run
+
+The positive response arrived on the following `--max` run, with the vehicle
+switched on:
+
+```text
+020000: ok -> 4 pids
+020000 supported: 02 0D 1F 20
+```
+
+**Service 02 is proven on this vehicle.** The freeze-frame support bitmap
+advertises four PIDs, so if this truck ever sets a diagnostic trouble code the
+snapshot it keeps will contain:
+
+| PID | Meaning |
+|---|---|
+| `02` | the DTC that caused the freeze frame |
+| `0D` | vehicle speed at the moment it set |
+| `1F` | run time since start at the moment it set |
+| `20` | support bitmap pointer for PIDs 21-40 |
+
+That is the whole of what a freeze frame would hold here, known in advance and
+without the truck having to develop a fault to find out. It is a small set, and
+knowing it is small is itself the useful result: a freeze frame on this vehicle
+will not carry pack or thermal state.
 
 The decode side is separately verified offline: a service 02 bitmap carries an
 extra frame byte before the four bitmap bytes, and a test asserts that the same

@@ -230,7 +230,7 @@ needs the vehicle awake.
 
 | Service | What it returns | Tier |
 |---|---|---|
-| `02` freeze frame | the snapshot an ECU stored alongside a DTC | Partly proven — the request is recognised (`7F 02 22`, not `7F 02 11`); no positive response while the vehicle has no DTCs |
+| `02` freeze frame | the snapshot an ECU stored alongside a DTC | **Proven** — `020000` advertises 4 PIDs: `02 0D 1F 20`. No frame exists to read while the vehicle has no DTCs |
 | `06` on-board monitoring | per-monitor test results | **Proven** — answers, and advertises **zero** monitor IDs on this vehicle |
 
 Both are standard SAE J1979 *read* services from the same specification as
@@ -240,8 +240,13 @@ vehicle was asleep when they were added, so they are **permitted and not yet
 proven on this vehicle** — no live request has been made.
 
 Freeze frame is additionally gated by behaviour rather than by the gate: the
-probe requests it only when a DTC read actually returned stored codes. With
-zero DTCs there is no freeze frame to fetch.
+probe always asks `020000` (what a frame *would* hold) but requests individual
+frame readings only when a DTC read actually returned stored codes. With zero
+DTCs there is no freeze frame to fetch.
+
+What a freeze frame would contain on this vehicle is already known: `02` (the
+DTC that set it), `0D` (speed), `1F` (run time), and the `20` bank pointer. It
+would not carry pack or thermal state.
 
 Service 06 decoding is deliberately partial. The unit-and-scaling identifier
 table covers only the identifiers that can be stated confidently from the
