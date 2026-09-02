@@ -334,6 +334,64 @@ That a source's scaling turned out to be wrong for this vehicle, on the very
 same run where two others turned out to be right, is the argument for storing
 raw frames rather than decoded values.
 
+### Tier 2b — chassis dynamics from the brake system controller
+
+All five answered on 2026-09-02, addressed to `0x14DA28F1` and answering on
+`0x142AF128`. Address `28` is `BSCM-BrakeSystem`, which this vehicle names for
+itself.
+
+| Identifier | Signal | Raw | Value (parked) |
+|---|---|---|---|
+| `0x4A7A` | wheel speed, four corners | `00000000` | 0, 0, 0, 0 km/h |
+| `0x4A7C` | brake pressure | `0A` | 0 kPa |
+| `0x4C2D` | steering wheel angle | `02AF` | 15.11° |
+| `0x4C2F` | lateral acceleration | `0000` | 0.0000 g |
+| `0x4C30` | longitudinal acceleration | `FFF8` | −0.0127 g |
+
+Every reading is what a stationary vehicle should produce: all four wheels at
+zero, the brake pedal released, the front wheels left slightly turned, no
+lateral acceleration, and a longitudinal figure within a hundredth of a g of
+level ground. Values that are individually plausible *and* jointly consistent
+with the vehicle's actual physical state are much harder to get by accident
+than a single number in range.
+
+**These scalings are the best-evidenced in this document.** The source is not a
+stated formula but a set of test fixtures pairing a *captured response* with its
+*expected decoded value*. That means the equation could be derived from the
+vectors and then checked against every one of them, which it was:
+
+```
+224A7C   0x0A -> 0 kPa      0x0E -> 400     0x0F -> 500     0x10 -> 600
+         (byte - 10) * 100 reproduces all four exactly
+
+224C2D   0x002D -> 0.99     0x24F7 -> 208.186
+         0xE407 -> -157.542 0xFF15 -> -5.17
+         signed16 * 0.022 reproduces all four exactly, including both signs
+
+224C2F   0xFF50 -> -0.28033     0xFFFC -> -0.00637
+         signed16 * 0.0015928 reproduces both exactly
+```
+
+A formula recovered from data and confirmed against every available vector is a
+stronger claim than one copied out of a file, because a transcription error
+survives copying but not arithmetic.
+
+#### A correction
+
+An earlier version of this document listed these identifiers under Tier 3 as
+"not sourced", on the grounds that `OBDb/Cadillac-LYRIQ`'s signalset returns
+`{"commands": []}`. That was **wrong, and wrong in the direction that loses
+information**: the signalset is an empty stub, but the repository's
+`tests/test_cases/2024/commands/` directory holds the identifiers along with
+real captured frames. Checking one file in a repository and concluding the
+repository is empty is exactly the sort of shortcut this project's evidence
+rules exist to prevent, and it was caught only because the question was asked a
+second time.
+
+The same directory's three `DACB` identifiers are the ones this vehicle had
+already answered, so the fixture set was three-for-three on this truck before
+any of these five were sent.
+
 ### Tier 3
 
 Nothing is added to `ENHANCED_READ_DIDS` without a fetchable source that names
@@ -341,12 +399,6 @@ the exact identifier, and being listed as a candidate never means "safe to
 send" until it has been through the same review.
 
 Deliberately **not** added, despite appearing in research output:
-
-* **Cadillac LYRIQ wheel speeds, brake pressure, steering angle, accelerations.**
-  A research pass reported these from `OBDb/Cadillac-LYRIQ`. Fetching that
-  repository's signalset directly returns `{"commands": []}` — it is an empty
-  stub. The identifiers may exist in test fixtures or an unmerged branch, but
-  they are not in the file that was cited, so they are not sourced.
 * **`OBDb/GMC` priority-14 identifiers.** There are 198 of them, but every one
   targets module `11`, which is not among the eight modules this vehicle names.
 * **`0x2885` pack voltage** and **`0x8334`**, reported against Bolt platforms.

@@ -316,6 +316,36 @@ ENHANCED_READ_DIDS: Final[dict[str, str]] = {
         "HV battery state of charge, 8-bit -- OBDb/Chevrolet-Equinox-EV "
         "signalsets/v3/default.json, hdr DACB, byte * 100 / 255, percent"
     ),
+    # Chassis identifiers from OBDb/Cadillac-LYRIQ test fixtures
+    # (tests/test_cases/2024/commands/DA28.*.yaml), fetched 2026-09-02.  Those
+    # files pair a captured response with its expected decoded value, so the
+    # scaling below was *derived arithmetically from the vectors* and matches
+    # every one exactly -- a stronger form of evidence than a stated formula.
+    #
+    # The same directory's three DACB identifiers are the ones this vehicle has
+    # already answered, so the fixture set is three-for-three on this truck
+    # before these five are tried.  Address 28 is BSCM-BrakeSystem, which this
+    # vehicle names for itself.
+    "4A7A": (
+        "wheel speed, four corners -- OBDb/Cadillac-LYRIQ test fixture "
+        "DA28.224A7A, one byte per wheel FL/FR/RL/RR, km/h"
+    ),
+    "4A7C": (
+        "brake pressure -- OBDb/Cadillac-LYRIQ test fixture DA28.224A7C, "
+        "(byte - 10) * 100, kPa"
+    ),
+    "4C2D": (
+        "steering wheel angle -- OBDb/Cadillac-LYRIQ test fixture DA28.224C2D, "
+        "signed 16-bit * 0.022, degrees"
+    ),
+    "4C2F": (
+        "lateral acceleration -- OBDb/Cadillac-LYRIQ test fixture DA28.224C2F, "
+        "signed 16-bit * 0.0015928, g"
+    ),
+    "4C30": (
+        "longitudinal acceleration -- OBDb/Cadillac-LYRIQ test fixture "
+        "DA28.224C30, signed 16-bit * 0.0015928, g"
+    ),
     "33E5": (
         "drive motor control module battery voltage -- "
         "OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DA1D "

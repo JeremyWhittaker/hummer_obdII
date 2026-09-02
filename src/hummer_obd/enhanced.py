@@ -233,8 +233,49 @@ BEV3_DMCM = EnhancedProfile(
     rx_id="0x142AF11D",
 )
 
+#: Chassis dynamics from the brake system controller.
+#:
+#: Address 28 is ``BSCM-BrakeSystem``, which this vehicle named for itself.
+#: The identifiers and their scalings come from OBDb/Cadillac-LYRIQ test
+#: fixtures, which pair a captured response with its expected decoded value --
+#: so every formula here was checked against the vectors arithmetically rather
+#: than believed.  LYRIQ is BEV3 rather than BT1, but the same fixture
+#: directory's three battery identifiers all answered on this truck before
+#: these were tried.
+CHASSIS_BSCM = EnhancedProfile(
+    key="chassis-bscm",
+    description="chassis dynamics from the brake system controller (28)",
+    provenance=(
+        "OBDb/Cadillac-LYRIQ tests/test_cases/2024/commands/DA28.*.yaml, "
+        "fetched 2026-09-02; scalings derived from the captured "
+        "response/expected-value pairs and verified against every vector. "
+        "BEV3 source, unproven on this vehicle"
+    ),
+    init=(
+        "ATZ", "ATE0", "ATL0", "ATS0", "ATH1", "ATAL",
+        "ATSP7",
+        "ATCP14",
+        "ATSHDA28F1",      # target BSCM, tester F1
+        "ATCRA142AF128",   # that module's reply
+        "ATFCSH14DA28F1",
+        "ATFCSD300000",
+        "ATFCSM1",
+        "ATST96",
+    ),
+    requests=(
+        ("224A7A", "wheel_speed_fl_fr_rl_rr", "one byte per wheel, km/h"),
+        ("224A7C", "brake_pressure", "(B0 - 10) * 100, kPa"),
+        ("224C2D", "steering_angle", "signed 16-bit * 0.022, degrees"),
+        ("224C2F", "lateral_g", "signed 16-bit * 0.0015928, g"),
+        ("224C30", "longitudinal_g", "signed 16-bit * 0.0015928, g"),
+    ),
+    tx_id="0x14DA28F1",
+    rx_id="0x142AF128",
+)
+
 PROFILES: dict[str, EnhancedProfile] = {
     BT1.key: BT1,
+    CHASSIS_BSCM.key: CHASSIS_BSCM,
     BEV3_BSM.key: BEV3_BSM,
     BEV3_DMCM.key: BEV3_DMCM,
 }
@@ -280,6 +321,7 @@ def candidate_scalings(payload: bytes) -> list[dict]:
                 "div_655_35": round(raw / 655.35, 3),
                 "div_100": round(raw / 100.0, 3),
                 "div_2_55": round(raw / 2.55, 3),
+                "signed": raw - 0x10000 if raw & 0x8000 else raw,
             }
         )
     return windows
