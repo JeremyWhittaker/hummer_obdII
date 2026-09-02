@@ -177,7 +177,67 @@ BT1 = EnhancedProfile(
     rx_id="0x142AF1CB",
 )
 
-PROFILES: dict[str, EnhancedProfile] = {BT1.key: BT1}
+#: BEV3 identifiers tried against the same battery manager.
+#:
+#: A weaker claim than :data:`BT1` and labelled as such: these come from a
+#: Chevrolet Equinox EV signalset, which is BEV3 rather than BT1.  They are
+#: worth one supervised attempt because they address the same module this
+#: vehicle has already named for itself, and because the same file's entry for
+#: 0x27C6 is arithmetically identical to the scaling this vehicle has already
+#: confirmed.  ``7F 22 31`` is the expected failure and is a perfectly good
+#: result: it would say the module serves service 22 but not these identifiers.
+BEV3_BSM = EnhancedProfile(
+    key="bev3-bsm",
+    description="BEV3 identifiers against the BT1 battery system manager (CB)",
+    provenance=(
+        "OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, fetched "
+        "2026-09-02 from raw.githubusercontent.com; hdr DACB. BEV3, not BT1 -- "
+        "unproven on this vehicle"
+    ),
+    init=BT1.init,
+    requests=(
+        ("222AF5", "cell_voltage_avg_min_max",
+         "three 16-bit fields / 10000 -> volts (OBDb Equinox EV)"),
+        ("222B43", "hv_battery_soc_8bit",
+         "byte * 100 / 255 -> percent (OBDb Equinox EV)"),
+    ),
+    tx_id="0x14DACBF1",
+    rx_id="0x142AF1CB",
+)
+
+#: The same idea aimed at drive motor controller 2, which this vehicle names.
+BEV3_DMCM = EnhancedProfile(
+    key="bev3-dmcm",
+    description="BEV3 drive-motor identifier against DMC2 (1D)",
+    provenance=(
+        "OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DA1D; this "
+        "vehicle names address 1D as DMC2-DriveMotorCtrl2. BEV3, not BT1 -- "
+        "unproven on this vehicle"
+    ),
+    init=(
+        "ATZ", "ATE0", "ATL0", "ATS0", "ATH1", "ATAL",
+        "ATSP7",
+        "ATCP14",
+        "ATSHDA1DF1",       # target module 1D, tester F1
+        "ATCRA142AF11D",    # that module's reply
+        "ATFCSH14DA1DF1",
+        "ATFCSD300000",
+        "ATFCSM1",
+        "ATST96",
+    ),
+    requests=(
+        ("2233E5", "dmcm_battery_voltage",
+         "byte / 10 -> volts (OBDb Equinox EV)"),
+    ),
+    tx_id="0x14DA1DF1",
+    rx_id="0x142AF11D",
+)
+
+PROFILES: dict[str, EnhancedProfile] = {
+    BT1.key: BT1,
+    BEV3_BSM.key: BEV3_BSM,
+    BEV3_DMCM.key: BEV3_DMCM,
+}
 
 
 @dataclass

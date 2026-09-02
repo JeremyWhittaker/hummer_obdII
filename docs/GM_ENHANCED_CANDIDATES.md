@@ -276,11 +276,81 @@ against different origins, and nothing in either file says which. Six frames of
 three different lengths agreeing on one convention is what makes this a finding
 rather than a preference.
 
-### Tier 2 and Tier 3
+### Tier 2 — BEV3 identifiers that answered on this BT1 vehicle
+
+These come from `OBDb/Chevrolet-Equinox-EV`, which is **BEV3, not BT1**. They
+were tried because they address module addresses this vehicle has already named
+for itself, and because the same file's entry for `0x27C6` (16-bit, `*100/65535`)
+is arithmetically identical to the `/655.35` this vehicle had already confirmed
+— an independent third source agreeing on an identifier we had measured.
+`7F 22 31` was the expected outcome. All three answered instead.
+
+| Identifier | Module | Signal | Raw | Value |
+|---|---|---|---|---|
+| `0x2AF5` | `CB` BSM | cell voltage avg / min / max | `9CF9 9CEB 9D1C …` | 4.0185 / 4.0171 / 4.0220 V |
+| `0x2B43` | `CB` BSM | 26-byte array (see below) | `C7C6C7…C9C8` | 198–201 per element |
+| `0x33E5` | `1D` DMC2 | DMCM battery voltage | `83` | 13.1 V |
+
+#### Cell voltages, and why the decode is trustworthy
+
+`0x2AF5` is the most valuable identifier found so far, because cell balance is
+the earliest visible sign of a failing module and was listed in this project's
+own documentation as unobtainable.
+
+The decode is not merely plausible, it is *constrained*. The published labels
+are average, minimum and maximum, in that order, and the observed values are:
+
+```
+avg 4.0185 V    min 4.0171 V    max 4.0220 V
+```
+
+`min < avg < max` holds exactly. A wrong byte offset would break that ordering
+almost every time, so the ordering surviving is evidence the offsets are right.
+The magnitude corroborates it independently: a nickel-manganese-cobalt cell sits
+near 4.0 V at 80 % state of charge, and this pack was independently measured at
+80.85 % moments earlier by a different identifier.
+
+**Cell spread is 4.9 mV**, which is a very tightly balanced pack.
+
+Four further bytes (`740F B317`) arrive in the same response and are *not*
+explained by the source, which describes only three fields. Under the same
+scaling they read 2.9711 V and 4.5847 V — suggestively like limits rather than
+measurements, but that is a guess and is recorded as one. They are stored raw
+and left undecoded.
+
+#### `0x2B43` is an array, not the scalar the source describes
+
+`OBDb` describes `0x2B43` as a single byte scaled `*100/255` to a percentage.
+This vehicle returned **26 bytes**, values `198`–`201`, in a multi-frame
+response. The source's interpretation does not fit, so it is not applied.
+
+Under the published scaling the elements span 77.65 %–78.82 %, while the
+high-resolution identifier `0x27C6` read 80.85 % at the same moment. Whether
+this is per-module state of charge, a cell-group array, or something else is
+**unresolved**, and guessing would be exactly the error this project keeps
+warning about. The bytes are recorded; the meaning is not claimed.
+
+That a source's scaling turned out to be wrong for this vehicle, on the very
+same run where two others turned out to be right, is the argument for storing
+raw frames rather than decoded values.
+
+### Tier 3
 
 Nothing is added to `ENHANCED_READ_DIDS` without a fetchable source that names
 the exact identifier, and being listed as a candidate never means "safe to
 send" until it has been through the same review.
+
+Deliberately **not** added, despite appearing in research output:
+
+* **Cadillac LYRIQ wheel speeds, brake pressure, steering angle, accelerations.**
+  A research pass reported these from `OBDb/Cadillac-LYRIQ`. Fetching that
+  repository's signalset directly returns `{"commands": []}` — it is an empty
+  stub. The identifiers may exist in test fixtures or an unmerged branch, but
+  they are not in the file that was cited, so they are not sourced.
+* **`OBDb/GMC` priority-14 identifiers.** There are 198 of them, but every one
+  targets module `11`, which is not among the eight modules this vehicle names.
+* **`0x2885` pack voltage** and **`0x8334`**, reported against Bolt platforms.
+  Sources disagree on scaling and neither is BT1.
 
 **A lesson from `0x27C7`.** An earlier version of this project used `0x27C7` in
 its tests as the example of a fictional identifier "a sweep would try next",

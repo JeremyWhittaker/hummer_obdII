@@ -70,6 +70,8 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | Node health | e-paper status page, Bluetooth recovery, reboot-safe services |
 | Battery monitoring | PiSugar2 cell read over I2C, with the power IC identified by measurement rather than by label |
 | **HV battery state of charge, energy remaining, range, distance since charge, temperature, charger power** | **proven**: six supervised enhanced reads (UDS service `22`) all answer from the Battery System Manager. They cross-check each other — range ÷ state of charge gives 333 mi at full against a 329 mi EPA rating, and the charger reads exactly 0 kW while the pack is measurably discharging. Dashboard cross-check still outstanding — see [GM enhanced candidates](docs/GM_ENHANCED_CANDIDATES.md) |
+| **HV cell voltage, average / minimum / maximum** | **proven**: `0x2AF5` returns 4.0185 / 4.0171 / 4.0220 V — a **4.9 mV** cell spread. The published `min < avg < max` ordering holds exactly, which a wrong byte offset would almost always break, and 4.02 V is where a cell sits at the 80.85 % this truck independently reported |
+| **Drive-motor module voltage** | `0x33E5` from `DMC2-DriveMotorCtrl2`, 13.1 V |
 
 ### Deliberately not available
 
@@ -78,7 +80,7 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | DTC clearing, actuator tests, any UDS write/control/security service | Permanently forbidden by the safety gate. Not a configuration option |
 | Mode 22 in unattended collection | Service `22` is still refused by the gate the collector uses. Enhanced reads exist only behind a separate, narrower gate that accepts an exact enumerated identifier and must be run deliberately — see [GM enhanced candidates](docs/GM_ENHANCED_CANDIDATES.md) |
 | Identifier sweeping / guessing | An identifier is added only when a fetchable source names it exactly. The gate refuses `0x27C5` and `0x27C7` — one step either side of the one that works |
-| Pack voltage, cell balance, per-cell temperature | Not exposed over standard OBD-II, and no sourced enhanced identifier for them has been found. Six other EV signals *were* obtained; these specific ones remain genuinely unavailable |
+| Pack voltage, per-cell temperature | Not exposed over standard OBD-II, and no sourced identifier for them has been proven here. Cell *voltages* were obtained; pack voltage and cell temperatures were not |
 | Remote commands (lock, unlock, precondition, start) | Out of scope. This node has no vehicle write authority of any kind |
 | GPS / location | No receiver, and location is not an OBD-II service |
 | OnStar / GM cloud data | A different system. Belongs in a separate broker with isolated credentials |

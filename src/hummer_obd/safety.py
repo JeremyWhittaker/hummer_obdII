@@ -299,6 +299,28 @@ ENHANCED_READ_DIDS: Final[dict[str, str]] = {
         "DC charger power -- meatpiHQ/wican-fw vehicle_profiles/gmc/"
         "sierra-ev.json (CHARGER_DC_PWR), BT1 platform family"
     ),
+    # From OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, fetched
+    # 2026-09-02.  That is a BEV3 vehicle rather than BT1, so these are a
+    # weaker claim than the sierra-ev entries above and may simply answer
+    # 7F 22 31.  They are included because the file addresses the same module
+    # addresses this vehicle has already named for itself, and because its
+    # entry for 0x27C6 (16-bit, *100/65535) is arithmetically identical to the
+    # /655.35 this vehicle has already confirmed -- an independent third source
+    # agreeing on an identifier we have measured.
+    "2AF5": (
+        "HV battery cell voltage average/minimum/maximum -- "
+        "OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DACB, "
+        "three 16-bit fields divided by 10000, volts"
+    ),
+    "2B43": (
+        "HV battery state of charge, 8-bit -- OBDb/Chevrolet-Equinox-EV "
+        "signalsets/v3/default.json, hdr DACB, byte * 100 / 255, percent"
+    ),
+    "33E5": (
+        "drive motor control module battery voltage -- "
+        "OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DA1D "
+        "(this vehicle names 1D as DMC2-DriveMotorCtrl2), byte / 10, volts"
+    ),
 }
 
 # The production gate must never learn service 22.  If a future edit adds it to
