@@ -6,10 +6,8 @@ tests are about the cases where it must decline to act.
 """
 
 import unittest
-from unittest import mock
 
 from hummer_obd.battery import (
-    ACTIONS,
     I2C_ADDRESS,
     IP5209,
     IP5312,

@@ -1,7 +1,6 @@
 """The raw log must preserve bytes exactly and only ever append."""
 
 import base64
-import json
 import tempfile
 import unittest
 from pathlib import Path
