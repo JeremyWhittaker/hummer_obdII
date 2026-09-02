@@ -211,6 +211,15 @@ not solve a missing-source problem by copying them into Git.
   and `git diff -- src/hummer_obd/safety.py` must be empty before every commit
   regardless.
 
+- **Pi-only code in `display/status.py` runs for real on the dev host.**
+  `_read_wifi()` shells out to `nmcli`, and its `_run()` guard only checks
+  `shutil.which`, which is not a test for "am I the Pi" — `nmcli` exists on
+  every dev box. Running the status renderer or its tests off-Pi triggers a
+  real Wi-Fi scan on the workstation, which prompts Jeremy for a password on
+  his RDP desktop ("System policy prevents Wi-Fi scans"). Open item with
+  evidence and the requested fix:
+  [AGENT-TODO-wifi-scan.md](AGENT-TODO-wifi-scan.md).
+
 ## Definition of done
 
 A future change is complete only when tests pass, the deployed process has
