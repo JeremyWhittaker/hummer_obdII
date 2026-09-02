@@ -200,22 +200,100 @@ enhanced read has the shape `7F 22 xx`, where the middle byte is the service.
 
 ### Tier 1 — proven on this VIN
 
-| Identifier | Signal | Request | Response | Decoder | Status |
-|---|---|---|---|---|---|
-| `0x27C6` | HV battery state of charge | `0x14DACBF1` | `0x142AF1CB` | `[B8:B9] / 655.35` | **positive response, reproducible; value not yet cross-checked against the dashboard** |
+All six answered with a positive response on 2026-09-02 at 23:20 UTC, vehicle
+awake and parked at 13.8 V. All are addressed to `0x14DACBF1` and answer on
+`0x142AF1CB` — the same Battery System Manager throughout.
+
+| Identifier | Signal | Decoder | Raw | Value |
+|---|---|---|---|---|
+| `0x27C6` | HV battery state of charge | `[B4:B5]/655.35` | `CEFA` | 80.85 % |
+| `0x27AF` | HV energy remaining | `[B4:B5]/100` | `3C52` | 154.42 kWh |
+| `0x27C7` | Remaining range | `[B4:B6]/103` | `006C3F` | 269.04 mi |
+| `0x27C0` | Distance since full charge | `[B4:B6]/16.09344` | `0000FE` | 15.78 mi |
+| `0x0046` | Temperature | `(B4-40)*1.8+32` | `51` | 105.8 °F |
+| `0x5401` | Charger DC power | `[B4:B5]/4350` | `00` | 0.00 kW |
+
+#### A note on units: the source states none
+
+`sierra-ev.json` gives only a parameter name and a formula. It has no unit
+field, no range, and no description. Every unit in the table above is therefore
+**derived here, not published**, and the derivations differ in strength:
+
+| Unit | How it was arrived at | Strength |
+|---|---|---|
+| `%` for `0x27C6` | `/655.35` is 16-bit full scale (65535/100) | strong |
+| `°F` for `0x0046` | the formula `(B4-40)*1.8+32` is literally a Celsius-to-Fahrenheit conversion | strong |
+| `mi` for `0x27C7` | range ÷ SoC gives 333 against a 329 mi EPA figure; in km it would give 333 km against 529 km | strong, empirical |
+| `mi` for `0x27C0` | the divisor 16.09344 is the kilometre-to-mile ratio scaled by ten | strong |
+| `kWh` for `0x27AF` | the name is `HV_CAPACITY_R`, and energy ÷ SoC gives a pack figure of the right order | moderate |
+| `kW` for `0x5401` | the name is `CHARGER_DC_PWR`; the value was zero, so nothing tests the scale | **weak — untested** |
+
+The charger reading is the weakest entry in the table and is marked as such: a
+zero tells us the identifier exists and the vehicle was not charging, and
+nothing whatsoever about whether `/4350` is the right divisor. That will only be
+settled by reading it during a charge.
+
+#### They cross-check each other
+
+This is the part that carries the weight. Six values decoded with six different
+published equations were not fitted to one another, yet they agree:
+
+| Derived from | Computation | Result | Independent expectation |
+|---|---|---|---|
+| range ÷ SoC | 269.04 / 0.8085 | **333 mi at 100 %** | EPA rating for this vehicle is 329 mi |
+| energy ÷ SoC | 154.42 / 0.8085 | **191 kWh usable** | right order for this pack |
+| energy ÷ range | 154.42 / 269.04 | **574 Wh/mi** | matches this truck's real-world efficiency |
+| charger power | 0.00 kW | not charging | SoC was falling across the series, as it must be if nothing is charging |
+| temperature | 105.8 °F | plausible | Phoenix, early September, mid-afternoon local |
+
+A range figure that lands within 1.2 % of the published EPA rating, computed
+from *two* identifiers whose scalings came from a community JSON file, is not
+something a wrong decode produces. Neither is a charger reading of exactly zero
+on a vehicle whose state of charge is measurably falling.
+
+#### The byte-offset conflict is resolved
+
+The two source profiles disagreed: `bt1.json` says `[B8:B9]`, `sierra-ev.json`
+says `[B4:B5]`, for the same identifier. The verification pass flagged this as
+an unsettled hazard. **The vehicle settled it.** Counting `B0` from the ISO-TP
+PCI byte — that is, excluding the four-byte CAN header — every one of the six
+lands exactly where `sierra-ev.json` says, including the one-byte and
+three-byte fields:
+
+```
+2227C6   05 62 27 C6 CE FA          B4:B5 = CE FA
+2227AF   05 62 27 AF 3C 52          B4:B5 = 3C 52
+2227C7   06 62 27 C7 00 6C 3F       B4:B6 = 00 6C 3F
+2227C0   06 62 27 C0 00 00 FE       B4:B6 = 00 00 FE
+220046   04 62 00 46 51             B4    = 51
+225401   04 62 54 01 00             B4    = 00
+```
+
+The two conventions differ by exactly four — the CAN header length — so they
+describe the same bytes. `bt1.json` counts from the start of the whole frame;
+`sierra-ev.json` counts from the PCI byte. Neither is wrong; they are stated
+against different origins, and nothing in either file says which. Six frames of
+three different lengths agreeing on one convention is what makes this a finding
+rather than a preference.
 
 ### Tier 2 and Tier 3
 
-Research into further identifiers is ongoing. Nothing is added to
-`ENHANCED_READ_DIDS` without a fetchable source that names the exact
-identifier, and being listed as a candidate never means "safe to send" until
-it has been through the same review.
+Nothing is added to `ENHANCED_READ_DIDS` without a fetchable source that names
+the exact identifier, and being listed as a candidate never means "safe to
+send" until it has been through the same review.
+
+**A lesson from `0x27C7`.** An earlier version of this project used `0x27C7` in
+its tests as the example of a fictional identifier "a sweep would try next",
+because it sits one step from `0x27C6`. It is not fictional — it is the range
+identifier, and it is now Tier 1. Nearness to a real identifier is no evidence
+in either direction, which is exactly why the rule is enumeration from a source
+and never distance from something that worked.
 
 ---
 
 ## Provenance
 
-The Tier 1 identifier comes from `vehicle_profiles/bt1/bt1.json` in
+The addressing and `0x27C6` come from `vehicle_profiles/bt1/bt1.json` in
 [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw), fetched
 2026-09-02 from `raw.githubusercontent.com`
 (sha256 `26dc621adf2e6b2090798c41c2da45abb1db9d00429613b739942f4904e6600d`).
@@ -226,6 +304,22 @@ Its `car_model` field names this vehicle explicitly:
 The profile's `pid_init` is a single semicolon-separated string. It is split
 into individual commands here because this project's safety gate refuses
 batched commands, so each one is validated and sent on its own.
+
+The other five identifiers come from `vehicle_profiles/gmc/sierra-ev.json` in
+the same repository (sha256
+`19ca7a20fa73de8ebca445ead27df119d4fc5ca394bd8241a13bd2784dc985ef`), whose
+`car_model` is `GMC: Sierra EV`. That is not this vehicle — but `bt1.json`'s own
+`car_model` groups the Sierra EV with the Hummer EV on the BT1 platform, and the
+profile targets the identical request and response identifiers, so it is
+addressing the same module in the same way. Every one of its identifiers
+answered on this truck.
+
+**The addressing was taken from `bt1.json`, not from `sierra-ev.json`, and that
+matters.** `sierra-ev.json` opens with `ATSP6` — ISO 15765-4 *11-bit* — while
+using a 29-bit header, which cannot be right for this vehicle and is most
+likely a defect in that file. `bt1.json` selects `ATSP7`, sets the priority byte
+with `ATCP14`, and configures flow control. Taking the headers from one profile
+and the identifiers from the other is deliberate.
 
 ---
 

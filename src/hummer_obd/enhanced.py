@@ -74,6 +74,7 @@ __all__ = [
     "EnhancedResult",
     "run_profile",
     "candidate_scalings",
+    "candidate_triples",
     "main",
 ]
 
@@ -120,9 +121,13 @@ BT1 = EnhancedProfile(
     key="bt1",
     description="GM BT1/BEV3 (Hummer EV, Silverado EV, Sierra EV, Lyriq, Blazer EV, ...)",
     provenance=(
-        "meatpiHQ/wican-fw vehicle_profiles/bt1/bt1.json, fetched 2026-09-02 from "
-        "raw.githubusercontent.com; car_model reads "
-        '"BT1: Hummer EV, Silverado EV, Sierra AV; BEV3: Cadillac Lyriq, ..."'
+        "addressing and 0x27C6 from meatpiHQ/wican-fw vehicle_profiles/bt1/"
+        "bt1.json (sha256 26dc621a...), whose car_model reads "
+        '"BT1: Hummer EV, Silverado EV, Sierra AV; BEV3: Cadillac Lyriq, ..."; '
+        "the five further identifiers from vehicle_profiles/gmc/sierra-ev.json "
+        "(sha256 19ca7a20...), same module and same request/response "
+        "identifiers, BT1 platform family. Both fetched 2026-09-02 from "
+        "raw.githubusercontent.com"
     ),
     init=(
         "ATZ",
@@ -140,8 +145,33 @@ BT1 = EnhancedProfile(
         "ATFCSM1",         # use the flow control values set above
         "ATST96",          # response timeout, from the published profile
     ),
+    # The addressing comes from bt1.json, which is the profile that names the
+    # Hummer EV and which selects protocol 7 explicitly.  The additional
+    # identifiers come from sierra-ev.json, which targets the *same* module at
+    # the same request and response identifiers -- and the Sierra EV is BT1,
+    # the platform family bt1.json itself groups with the Hummer.  Taking the
+    # headers from one and the identifiers from the other is deliberate:
+    # sierra-ev.json opens with ``ATSP6`` (11-bit) while using a 29-bit header,
+    # which cannot be right for this vehicle, and bt1.json's ``ATSP7`` is.
+    #
+    # The two profiles state different byte offsets for the identifier they
+    # share, and the difference is exactly four -- the length of the CAN
+    # header.  bt1.json counts from the start of the whole frame, sierra-ev.json
+    # from the ISO-TP PCI byte.  Both land on the same bytes, which this
+    # project confirmed against a real captured frame rather than guessing at.
     requests=(
-        ("2227C6", "hv_battery_soc", "WiCAN: [B8:B9]/655.35"),
+        ("2227C6", "hv_battery_soc",
+         "SOC = [B8:B9]/655.35 (bt1) = [B4:B5]/655.35 (sierra-ev); percent"),
+        ("2227AF", "hv_energy_remaining",
+         "HV_CAPACITY_R = [B4:B5]/100 (sierra-ev)"),
+        ("2227C7", "range",
+         "RANGE = [B4:B6]/103 (sierra-ev); three bytes"),
+        ("2227C0", "distance_since_full_charge",
+         "DIST_SINCE_FULL_CHARGE = [B4:B6]/16.09344 (sierra-ev); three bytes"),
+        ("220046", "temperature",
+         "TMP_A = (B4-40)*1.8+32 (sierra-ev); single byte, Fahrenheit"),
+        ("225401", "charger_dc_power",
+         "CHARGER_DC_PWR = [B4:B5]/4350 (sierra-ev)"),
     ),
     tx_id="0x14DACBF1",
     rx_id="0x142AF1CB",
@@ -190,6 +220,27 @@ def candidate_scalings(payload: bytes) -> list[dict]:
                 "div_655_35": round(raw / 655.35, 3),
                 "div_100": round(raw / 100.0, 3),
                 "div_2_55": round(raw / 2.55, 3),
+            }
+        )
+    return windows
+
+
+def candidate_triples(payload: bytes) -> list[dict]:
+    """Every three-byte window of *payload*.
+
+    Two of the published identifiers describe three-byte fields, so a
+    two-byte-only table would silently have nothing to offer for them.
+    """
+    windows: list[dict] = []
+    for i in range(len(payload) - 2):
+        raw = (payload[i] << 16) | (payload[i + 1] << 8) | payload[i + 2]
+        windows.append(
+            {
+                "offset": f"B{i}:B{i + 2}",
+                "hex": payload[i : i + 3].hex().upper(),
+                "raw": raw,
+                "div_103": round(raw / 103.0, 3),
+                "div_16_09344": round(raw / 16.09344, 3),
             }
         )
     return windows
@@ -244,6 +295,13 @@ def _describe_reply(reply: AdapterReply, request: str) -> dict:
         # silently reconciled, because which convention the profile used is
         # exactly the thing that is uncertain.
         record["scalings_from_data"] = candidate_scalings(payload)
+        record["triples_from_data"] = candidate_triples(payload)
+        # Single-byte readings too: TMP_A is (B4-40)*1.8+32 over one byte.
+        record["bytes_from_data"] = [
+            {"offset": f"B{i}", "hex": f"{b:02X}", "raw": b,
+             "minus40_c": b - 40, "minus40_f": round((b - 40) * 1.8 + 32, 1)}
+            for i, b in enumerate(payload)
+        ]
         record["scalings_from_response"] = candidate_scalings(expect + payload)
         # The published profile counts B0 from the first byte of the whole CAN
         # frame -- identifier, then ISO-TP PCI, then the response -- so its

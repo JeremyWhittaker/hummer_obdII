@@ -68,13 +68,38 @@ class TestEnhancedIdentifierAllowlist(unittest.TestCase):
         self.assertEqual(validate_enhanced_command("22 27 c6"), "2227C6")
 
     def test_adjacent_identifiers_are_refused(self):
-        # This is the anti-sweep property.  27C5 and 27C7 are one step either
-        # side of the identifier that works, which is exactly what a probe
-        # would try next.
-        for did in ("2227C5", "2227C7", "2227C0", "220000", "22FFFF"):
+        # The anti-sweep property.  An earlier version of this test used 0x27C7
+        # as a stand-in for "obviously fictional, the next thing a sweep would
+        # try".  That turned out to be wrong -- 0x27C7 is a real, documented
+        # range identifier on this platform, and it is now allowlisted with a
+        # source.  Nearness to a real identifier is no evidence either way,
+        # which is exactly why the rule is enumeration and not distance.
+        for did in ("2227C5", "2227C8", "2227C9", "2227AE", "2227B0",
+                    "220000", "22FFFF", "220045", "225400"):
             with self.subTest(did=did):
                 with self.assertRaises(UnsafeCommandError):
                     validate_enhanced_command(did)
+
+    def test_only_the_enumerated_identifiers_are_accepted(self):
+        # Stronger than spot checks: walk the whole neighbourhood around every
+        # allowlisted identifier and assert the accepted set is exactly the
+        # allowlist.  A prefix rule, an off-by-one, or a stray range would all
+        # show up here and nowhere else.
+        accepted = set()
+        for high in {did[:2] for did in ENHANCED_READ_DIDS}:
+            for low in range(0x100):
+                candidate = f"22{high}{low:02X}"
+                try:
+                    validate_enhanced_command(candidate)
+                except UnsafeCommandError:
+                    continue
+                accepted.add(candidate[2:])
+        self.assertEqual(accepted, set(ENHANCED_READ_DIDS))
+
+    def test_collector_gate_refuses_every_enhanced_identifier(self):
+        for did in ENHANCED_READ_DIDS:
+            with self.subTest(did=did):
+                self.assertFalse(safety.is_safe(f"22{did}"))
 
     def test_identifier_must_be_exactly_two_bytes(self):
         for command in ("22", "2227", "2227C6C6", "2227C600"):
@@ -227,14 +252,29 @@ class _FakeTransport(Transport):
 
 
 class TestRunProfile(unittest.TestCase):
-    def test_sends_init_then_exactly_one_request(self):
+    def test_sends_init_then_each_request_exactly_once(self):
         fake = _FakeTransport({"2227C6": CAPTURED, "ATRV": "13.8V\r\r>"})
         result = run_profile(BT1, fake)
-        self.assertEqual(fake.sent.count("2227C6"), 1, "one request, no sweep")
         self.assertEqual(fake.sent[: len(BT1.init)], list(BT1.init))
         self.assertEqual(result.adapter_voltage, "13.8V")
-        self.assertEqual(len(result.reads), 1)
-        self.assertEqual(result.reads[0]["payload_hex"], "D18A")
+
+        # The invariant is "each identifier once", not "only one identifier":
+        # a profile may carry several, but nothing may be retried or iterated.
+        requested = [c for c in fake.sent if not c.startswith(("AT", "ST"))]
+        self.assertEqual(requested, [r[0] for r in BT1.requests])
+        self.assertEqual(len(requested), len(set(requested)), "no repeats")
+        self.assertEqual(len(result.reads), len(BT1.requests))
+
+        soc = next(r for r in result.reads if r["request"] == "2227C6")
+        self.assertEqual(soc["payload_hex"], "D18A")
+
+    def test_every_request_is_a_read_by_identifier(self):
+        # Nothing in a profile may be a write, control or security service,
+        # whatever else a future edit adds to it.
+        for profile in PROFILES.values():
+            for request, _signal, _decoder in profile.requests:
+                with self.subTest(profile=profile.key, request=request):
+                    self.assertTrue(request.startswith("22"))
 
     def test_records_the_voltage_so_a_no_data_can_be_interpreted(self):
         # A NO DATA at 12.8 V (asleep) and at 13.8 V (awake) are different

@@ -266,10 +266,38 @@ def validate_command(command: str) -> str:
 #: Provenance for each entry is recorded in ``docs/GM_ENHANCED_CANDIDATES.md``.
 #: Being listed here means "may be transmitted", **not** "is known to work on
 #: this VIN" -- validation status lives in the documentation, not the gate.
+#: A note on "adjacent" identifiers.  An earlier version of this file used
+#: 0x27C7 as the example of an identifier a sweep would try next, on the
+#: assumption that it was fictional.  It is not: 0x27C7 is a documented range
+#: identifier on this platform.  Nearness to a real identifier is therefore no
+#: evidence either way, which is precisely why the rule is enumeration rather
+#: than distance -- and why finding a source is the only way in.
 ENHANCED_READ_DIDS: Final[dict[str, str]] = {
     "27C6": (
         "HV battery state of charge -- meatpiHQ/wican-fw vehicle_profiles/bt1/"
-        "bt1.json, a profile whose car_model names the Hummer EV explicitly"
+        "bt1.json, a profile whose car_model names the Hummer EV explicitly; "
+        "independently attested in vehicle_profiles/gmc/sierra-ev.json"
+    ),
+    "27AF": (
+        "HV battery energy remaining -- meatpiHQ/wican-fw vehicle_profiles/gmc/"
+        "sierra-ev.json (HV_CAPACITY_R). Sierra EV is BT1, the same platform "
+        "family bt1.json groups with the Hummer EV"
+    ),
+    "27C7": (
+        "remaining range -- meatpiHQ/wican-fw vehicle_profiles/gmc/"
+        "sierra-ev.json (RANGE), BT1 platform family"
+    ),
+    "27C0": (
+        "distance since full charge -- meatpiHQ/wican-fw vehicle_profiles/gmc/"
+        "sierra-ev.json (DIST_SINCE_FULL_CHARGE), BT1 platform family"
+    ),
+    "0046": (
+        "temperature -- meatpiHQ/wican-fw vehicle_profiles/gmc/sierra-ev.json "
+        "(TMP_A), BT1 platform family"
+    ),
+    "5401": (
+        "DC charger power -- meatpiHQ/wican-fw vehicle_profiles/gmc/"
+        "sierra-ev.json (CHARGER_DC_PWR), BT1 platform family"
     ),
 }
 
