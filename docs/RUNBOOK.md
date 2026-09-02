@@ -394,6 +394,33 @@ journalctl -u hummer-battery -n 20
 sudoedit /etc/default/hummer-battery          # threshold, interval, streak
 ```
 
+### Known limitation: the node does not come back by itself
+
+**`systemctl poweroff` halts the operating system. It does not tell the PiSugar
+to cut power, and a halted Pi does not restart itself.** So if this watch fires
+today, the outcome is:
+
+- the Pi halts and keeps drawing a small current, so the cell keeps draining,
+  just more slowly;
+- power returning does **not** boot it, because power was never removed; and
+- somebody has to walk out to the vehicle and press the button.
+
+That protects the SD card and strands the node, which is the wrong trade for an
+unattended vehicle node. Until it is resolved the service runs with
+`--dry-run` on the reference node: it reads the cell, logs what it would do,
+and never powers off.
+
+Resolving it means choosing one of:
+
+| Option | What it costs |
+|---|---|
+| Vehicle power, read-only root filesystem, battery as a UPS that never cuts power | a filesystem change; accepts bounded data loss on a dirty cut, which WAL and `fsync` already limit to seconds rather than corruption |
+| Tell the PiSugar to cut power after halt, and rely on auto-boot when power returns | requires writing to the IP5209 power IC and confirming auto-boot behaviour; both need evidence this project does not yet have |
+| Stop the collector cleanly on low battery and leave the OS running | keeps the node reachable and never strands it, but does not protect against the cell actually reaching cutoff |
+
+The third is the smallest safe step and is the likely default: halting the OS is
+only the right move once its return is guaranteed.
+
 ### Why it is hard to make it fire wrongly
 
 A shutdown that fires when it should not leaves the node dead until somebody

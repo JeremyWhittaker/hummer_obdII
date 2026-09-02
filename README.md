@@ -68,7 +68,7 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | Bounded collection | self-stopping trials by cycle count or wall-clock duration, under systemd supervision |
 | Offline reporting | sanitized capability report that never opens the serial device |
 | Node health | e-paper status page, Bluetooth recovery, reboot-safe services |
-| Battery safety | PiSugar2 cell watched over I2C; the node powers down cleanly before the pack runs flat, so an unexpected cut cannot corrupt the SD card mid-write |
+| Battery monitoring | PiSugar2 cell read over I2C, with the power IC identified by measurement rather than by label |
 
 ### Deliberately not available
 
@@ -82,6 +82,7 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | OnStar / GM cloud data | A different system. Belongs in a separate broker with isolated credentials |
 | Raw transcript upload | Refused at config load: raw logs can contain an unmasked VIN |
 | Continuous collector autostart | Gated on two unproven physical results: overnight 12 V stability, and sleep while actively polling |
+| Automatic shutdown on low battery | Implemented and held in dry-run: halting does not cut PiSugar power, so the node would not restart itself |
 
 Report the live state of a node at any time, without touching the vehicle:
 

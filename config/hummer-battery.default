@@ -14,3 +14,12 @@ BATTERY_INTERVAL_S=30
 # that fires wrongly leaves the node dead until somebody walks out to it, so
 # the bias is deliberately towards waiting.
 BATTERY_CONSECUTIVE=5
+
+# Extra arguments. Ships as --dry-run deliberately.
+#
+# A shutdown today halts the OS without cutting PiSugar power, and a halted Pi
+# does not restart itself: the node would be stranded until somebody pressed
+# the button. Until that is resolved (see "Known limitation" in
+# docs/RUNBOOK.md) the watch should observe and log, not act. Clear this only
+# once the node is proven to come back on its own.
+BATTERY_EXTRA=--dry-run

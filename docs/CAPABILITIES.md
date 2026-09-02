@@ -305,7 +305,8 @@ fault", which otherwise look identical.
 | Local export for external/AI ingestion | `export.py` | Proven — jsonl and csv exported from the live database, per-module attribution included |
 | Bluetooth recovery for an already-bonded adapter; cannot pair, trust or remove | `btdiscover.py` | Proven |
 | E-paper status page, full refreshes only, unchanged frames skipped | `display/status.py` | Proven |
-| PiSugar2 cell watch and graceful shutdown | `battery.py` | Proven — reads 4.05 V from the live pack; chip identified by measurement, not by label |
+| PiSugar2 cell monitoring | `battery.py` | Proven — reads the live pack; chip identified by measurement, not by label |
+| Graceful shutdown on low battery | `battery.py` | **Held in dry-run**: a halt does not cut PiSugar power and the node would not restart itself. See the known limitation in [RUNBOOK](RUNBOOK.md) |
 | Hardware-free PTY/ELM simulator | `tests/elm_simulator.py` | Proven |
 
 ## 5. Not available

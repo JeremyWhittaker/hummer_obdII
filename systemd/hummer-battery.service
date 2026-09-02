@@ -23,7 +23,7 @@ EnvironmentFile=/etc/default/hummer-battery
 ExecStart=/usr/bin/python3 -m hummer_obd.battery \
     --shutdown-v ${BATTERY_SHUTDOWN_V} \
     --interval-s ${BATTERY_INTERVAL_S} \
-    --consecutive ${BATTERY_CONSECUTIVE}
+    --consecutive ${BATTERY_CONSECUTIVE} ${BATTERY_EXTRA}
 
 # The watch losing its I2C bus must not stop it watching: it declines to act on
 # an unreadable cell, so restarting is always the safer response than exiting.
