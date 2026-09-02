@@ -355,13 +355,16 @@ Consequences:
 - The correct next measurement is a 12 V trend over a full sleep period, which
   `ATRV` can supply with zero bus traffic.
 
-**Observed so far**: with polling stopped, the vehicle reached sleep about five
-minutes after parking (13.9 V to 12.7 V), watched with zero CAN traffic.
+**Observed**: the vehicle reaches sleep with the hardware attached and *stays*
+asleep. On 2026-09-02 it slept for **6.8 hours**, the rail settled at
+**12.80 V** — healthy resting range — and `ATCS` read `T:00 R:00` on all 127
+samples, so this node put nothing on the bus for the whole window.
 
-**Still unproven**: overnight 12 V stability with the hardware attached — every
-attempt so far was made while the truck was plugged in, which holds the rail up
-and measures nothing — and whether the vehicle still sleeps while the collector
-is *actively polling*, which is the condition the gate is actually about.
+**Still unproven**: a parasitic-*current* figure (a 6.8-hour window cannot
+separate drain from surface-charge relaxation; the voltage actually rose 0.4 V
+in the first half hour as it relaxed), and whether the vehicle still sleeps
+while the collector is *actively polling* — which is the condition the gate is
+really about.
 
 Until both are answered, the accepted state remains:
 

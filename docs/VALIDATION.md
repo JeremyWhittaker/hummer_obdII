@@ -801,6 +801,74 @@ on both sides by real readings: above the highest resting value and below the
 13.9 V running value. It is still not calibrated, and the honest version comes
 from trending `ATRV` across a full sleep period.
 
+## Overnight 12 V measurement, 2026-09-02
+
+The measurement the continuous-collector gate has been waiting on. Every
+previous attempt was pinned at 13.9 V because the vehicle was plugged in and
+measuring nothing; this one crossed into rest and stayed there for nearly seven
+hours.
+
+### Conditions
+
+Vehicle polling processes: **zero**. `hummer-obd-voltage` sends only `ATZ`,
+`ATE0`, `ATRV` and `ATCS`, asserted adapter-only at import, so nothing this
+node did during the window reached the CAN bus. `ATCS` read `T:00 R:00` on
+**all 127 samples**, which is the independent confirmation: the adapter
+transmitted nothing and logged no bus errors for the entire measurement.
+
+### Result
+
+```text
+05:49Z  13.9 V   DC-DC running
+05:54Z  13.8 V   falling
+05:59Z  12.5 V   DC-DC off, vehicle asleep
+06:29Z  12.9 V   surface charge relaxed
+...
+12:45Z  12.8 V   still asleep, 6.8 h later
+12:50Z  13.5 V   powered up again
+```
+
+| Measure | Value |
+|---|---|
+| Asleep window | 05:59Z to 12:45Z, **6.77 hours**, 82 samples |
+| Range while asleep | 12.50 V to 12.90 V |
+| Mean while asleep | 12.84 V |
+| Settled slope (first 30 min excluded) | **-15.9 mV/hour** (12.90 to 12.80 V over 6.27 h) |
+| Final resting voltage | **12.80 V** |
+
+### What this does and does not establish
+
+**Established.** The vehicle reaches sleep and *stays* asleep for seven hours
+with the Pi and the OBDLink attached to an always-live port, and the 12 V rail
+ends the window at 12.80 V — squarely inside the healthy resting range for a
+12 V lead-acid battery, not sagging. Nothing about the attached hardware
+prevented sleep or visibly depleted the rail overnight.
+
+**Not established: a parasitic-current figure.** A 6.8-hour window cannot
+cleanly separate true drain from surface-charge relaxation, and the trace shows
+exactly why: the voltage *rose* 0.4 V over the first half hour after the load
+came off, which is relaxation, not charging. Reporting -15.9 mV/hour as a drain
+rate would be reading a battery's own settling curve as a current draw, and
+extrapolating it linearly to a day or a week would be worse — resting voltage
+flattens, it does not fall at a constant slope. A real figure needs either a
+much longer window or a current measurement in series with the supply.
+
+**Still not established: sleep while actively polling.** This window had
+polling stopped, which is the correct control and is not the condition the gate
+is actually about.
+
+### A note on the wake reading
+
+The vehicle powered up to **13.5 V**, not the 13.9 V previously recorded with
+the DC-DC converter running. The lower value may mean a charger engaging rather
+than the vehicle entering Ready. It is recorded rather than interpreted.
+
+That reading did, however, calibrate a threshold. `policy.wake_volts` had
+defaulted to 13.0 V, which this trace shows sitting only 0.1 V above the
+observed asleep maximum of 12.90 V — uncomfortably tight. It was raised to
+13.4 V on review beforehand, and the measurement supports that: 13.4 sits 0.5 V
+above the asleep maximum and below the 13.5 V wake.
+
 ## Resource result
 
 The reference image was reduced from a desktop installation to a conservative
@@ -831,11 +899,12 @@ the observation cannot have influenced what it observed.
 
 **What is still unproven, and why the gate stays shut.**
 
-1. **Overnight 12 V stability.** A single 12.7 V reading minutes after shutdown
-   is not a drain measurement. What matters is whether the rail holds across a
-   full night with the hardware attached, and no such night has been recorded:
-   every attempt so far has been made while the vehicle was plugged in, which
-   holds the rail up and measures nothing.
+1. ~~**Overnight 12 V stability.**~~ **Answered 2026-09-02.** The vehicle slept
+   for 6.8 hours with the hardware attached and the rail ended at 12.80 V,
+   inside the healthy resting range, with zero CAN traffic from this node
+   throughout. What remains unquantified is a parasitic-*current* figure, which
+   a window that short cannot separate from surface-charge relaxation — but
+   nothing in the trace suggests a problem.
 2. **Sleep behaviour while actively polling.** Every sleep observation to date
    had polling stopped. That is the correct control, but it is not the
    condition the gate is actually about: whether a continuous diagnostic loop

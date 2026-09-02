@@ -29,9 +29,11 @@ power test is complete.
 7. Treat a sleeping vehicle as a wait condition. Do not increase traffic to
    wake it.
 8. Keep the continuous collector disabled until the physical power gate is
-   satisfied. Sleep with the hardware attached and polling stopped has been
-   observed; overnight 12 V stability and sleep behaviour while actively
-   polling are both still unproven, and either one is enough to keep it off.
+   satisfied. Overnight stability **is** now observed — 6.8 hours asleep with
+   the hardware attached, rail at 12.80 V. What remains is the half that
+   matters most: whether the vehicle still sleeps while the collector is
+   *actively polling*. Every sleep observation so far had polling stopped,
+   which is the correct control and is not the condition being gated.
 
 ## Last verified deployment state
 
@@ -112,9 +114,12 @@ The next meaningful milestone is a power/sleep experiment, not a new decoder:
    spanning periods when the vehicle was off, and the owner independently
    observed the port still powered after the truck shut itself down. Treat the
    Pi and adapter as a permanent parasitic load;
-2. measure baseline 12 V current with the vehicle asleep. `ATRV` gives a
-   voltage trend with **zero CAN traffic** and is the cheapest first version of
-   this measurement;
+2. ~~measure baseline 12 V with the vehicle asleep~~ — **done 2026-09-02**: a
+   6.8-hour sleep with the hardware attached, rail settling at 12.80 V, zero
+   CAN traffic throughout (`ATCS T:00 R:00` on all 127 samples). A parasitic
+   *current* figure is still missing and needs either a much longer window or a
+   meter in series; a 6.8-hour voltage trace cannot separate drain from
+   surface-charge relaxation;
 3. observe a complete vehicle sleep/wake cycle with the Pi and OBDLink attached
    while the continuous collector remains off. **Partly answered 2026-09-01**:
    with polling stopped, the vehicle reached sleep about five minutes after
