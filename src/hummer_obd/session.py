@@ -40,7 +40,7 @@ from .decode import (
     supported_pids,
     supported_service09_pids as _decode_service09_support,
 )
-from .transport import Transport, TransportError
+from .transport import Transport
 
 __all__ = ["AdapterSession", "Fingerprint"]
 

@@ -1,0 +1,27 @@
+version: 2
+
+# This node runs unattended in a vehicle and has exactly two runtime
+# dependencies, so the risk here is not churn -- it is a dependency quietly
+# ageing out of support while nobody is looking at it.  Weekly is frequent
+# enough to notice that and infrequent enough to stay readable.
+
+updates:
+  # Reads the dependencies and the `dev` extra declared in pyproject.toml.
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+
+  # Covers every `uses:` in .github/workflows.  Those are pinned to major
+  # version tags, so this mostly surfaces a major bump, which is precisely the
+  # one worth reading rather than merging on sight.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(actions)"

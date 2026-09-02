@@ -1,0 +1,58 @@
+Copyright (c) 2026 Jeremy Whittaker. All rights reserved.
+
+This repository is published so that it can be read. It is not open source, and
+nothing in it grants an open-source license. The absence of one is deliberate,
+not an oversight: the source is here for portfolio and review purposes, and the
+copyright holder has not chosen to give away rights he still holds.
+
+"the Work" below means everything in this repository -- source code,
+documentation, configuration, scripts and assets.
+
+
+PERMITTED WITHOUT ASKING
+
+  * Reading, studying and reviewing the Work. This is what it was published
+    for.
+  * Quoting short excerpts for review, commentary, teaching or discussion, with
+    attribution to this repository.
+  * The operations a public GitHub repository necessarily allows under GitHub's
+    Terms of Service -- viewing it, and forking it within GitHub. Publishing
+    here grants those, so claiming otherwise would be dishonest. They do not
+    extend past GitHub, and they do not enlarge anything below.
+
+
+REQUIRES WRITTEN PERMISSION FROM THE COPYRIGHT HOLDER
+
+  * Copying, reproducing, publishing or redistributing the Work, or any
+    substantial part of it, in source or compiled form.
+  * Modifying the Work or creating derivative works from it.
+  * Using the Work, in whole or in part, in any product, service, or other
+    software, whether or not that use is commercial and whether or not it is
+    ever distributed.
+  * Sublicensing, selling or transferring any of the above.
+
+To ask, contact the copyright holder and describe the intended use. Permission
+that has not been given in writing has not been given.
+
+
+NO WARRANTY, AND A SPECIFIC RISK
+
+THE WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDER
+BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+WORK OR THE USE OR OTHER DEALINGS IN THE WORK.
+
+That disclaimer is not boilerplate here. This software connects to a live motor
+vehicle. Read docs/SAFETY.md before doing so. Anyone who runs it does so at
+their own risk and remains solely responsible for their vehicle, for any damage
+or loss, and for compliance with the law where they are.
+
+
+NO AFFILIATION
+
+This is an independent project. It is not affiliated with, endorsed by or
+sponsored by General Motors, GMC, OBD Solutions or Waveshare. Trademarks named
+in the Work belong to their respective owners and are used only to identify the
+vehicle and hardware this software was written for.

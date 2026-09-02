@@ -5,15 +5,21 @@ import unittest
 from hummer_obd.decode import (
     decode_ascii_item,
     decode_ascii_items,
+    decode_ascii_items_per_ecu,
     decode_cvns,
+    decode_cvns_per_ecu,
     decode_dtcs,
+    decode_dtcs_per_ecu,
     decode_freeze_frame,
+    decode_monitor_status,
     decode_monitor_tests,
     decode_pid,
     decode_pid_per_ecu,
     decode_vin,
     ecu_from_header,
     mask_vin,
+    negative_response_name,
+    parse_can_status,
     PID_DECODERS,
     parse_reply,
     PidValue,
@@ -646,6 +652,412 @@ class TestPidValueStaysBackwardCompatible(unittest.TestCase):
     def test_six_positional_fields_still_construct_a_value(self):
         value = PidValue("0D", "vehicle speed", 0.0, "km/h", "410d00", "ok")
         self.assertEqual(value.ecu, "")
+
+
+#: The real shape of an ``03`` request on this vehicle: five modules answer and
+#: every one of them says ``43 00`` — a positive response whose code count is
+#: zero.  Header 18DAF1xx, ISO-TP length 02, then the ``43`` response byte and
+#: the count.  Nothing is wrong with this vehicle, so this is the only DTC
+#: reply it has ever produced.
+FIVE_ECUS_REPORT_NO_CODES = ("18DAF145024300\r18DAF1CD024300\r18DAF11D024300\r"
+                             "18DAF128024300\r18DAF117024300\r>")
+
+
+class TestDtcsPerEcu(unittest.TestCase):
+    """A module reporting nothing is a row; that is the whole point.
+
+    ``decode_dtcs`` keeps the byte alignment that *yields codes*, so a module
+    answering ``43 00`` yields nothing at either alignment.  Ported naively,
+    that drops precisely the rows this vehicle produces, and the result — an
+    empty list — is indistinguishable from a bus that never answered.
+    """
+
+    def test_every_module_that_answered_gets_a_row_with_no_codes(self):
+        rows = decode_dtcs_per_ecu("03", parse_reply(FIVE_ECUS_REPORT_NO_CODES))
+        self.assertEqual([r.ecu for r in rows], ["45", "CD", "1D", "28", "17"])
+        self.assertTrue(all(r.status == "ok" for r in rows))
+        self.assertTrue(all(r.codes == [] for r in rows))
+        self.assertTrue(all(r.detail == "" for r in rows))
+
+    def test_five_modules_answering_nothing_is_not_the_same_as_silence(self):
+        # The observation that matters on a healthy vehicle: the singular
+        # decoder returns [] for both of these replies, and this one does not.
+        answered = decode_dtcs_per_ecu("03", parse_reply(FIVE_ECUS_REPORT_NO_CODES))
+        silent = decode_dtcs_per_ecu("03", parse_reply(b"NO DATA\r>"))
+        self.assertEqual(decode_dtcs("03", parse_reply(FIVE_ECUS_REPORT_NO_CODES)), [])
+        self.assertEqual(decode_dtcs("03", parse_reply(b"NO DATA\r>")), [])
+        self.assertEqual(len(answered), 5)
+        self.assertEqual(silent, [])
+
+    def test_a_module_holding_codes_reports_them(self):
+        # 18DAF117 | 06 | 43 02 01 43 01 96 -> count 02, then P0143 and P0196.
+        rows = decode_dtcs_per_ecu("03", parse_reply("18DAF11706430201430196\r>"))
+        self.assertEqual([(r.ecu, r.codes) for r in rows], [("17", ["P0143", "P0196"])])
+        self.assertEqual(rows[0].status, "ok")
+
+    def test_codes_and_silence_from_different_modules_stay_apart(self):
+        rows = decode_dtcs_per_ecu("03", parse_reply("18DAF145024300\r"
+                                                     "18DAF11706430201430196\r"
+                                                     "18DAF128024300\r>"))
+        self.assertEqual([(r.ecu, r.codes) for r in rows],
+                         [("45", []), ("17", ["P0143", "P0196"]), ("28", [])])
+
+    def test_the_same_code_from_two_modules_is_two_rows(self):
+        # decode_dtcs de-duplicates because it answers "what is wrong with the
+        # vehicle".  Per module the repetition is the finding: two modules
+        # independently set U0140, which is not one fault reported twice.
+        # 04 | 43 01 C1 40: one code, U0140 ("lost communication with the
+        # ECM/PCM"), which two modules on one bus really would set together.
+        raw = "18DAF145044301C140\r18DAF128044301C140\r>"
+        rows = decode_dtcs_per_ecu("03", parse_reply(raw))
+        self.assertEqual([(r.ecu, r.codes) for r in rows],
+                         [("45", ["U0140"]), ("28", ["U0140"])])
+        self.assertEqual(decode_dtcs("03", parse_reply(raw)), ["U0140"])
+
+    def test_a_rejection_is_a_row_naming_the_reason(self):
+        rows = decode_dtcs_per_ecu("03", parse_reply("18DAF128037F0322\r>"))
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual((row.ecu, row.status, row.codes), ("28", "negative_response", []))
+        self.assertEqual(row.detail, "conditionsNotCorrect")
+        self.assertEqual(row.detail, negative_response_name(0x22))
+
+    def test_rows_survive_a_reply_that_is_nothing_but_rejections(self):
+        # parse_reply calls this reply "negative_response", not "ok".  Gating
+        # on reply.ok — which decode_pid_per_ecu does, correctly, because a
+        # rejection is not a measurement — would throw away the record that two
+        # named modules refused, which is the only thing this reply says.
+        reply = parse_reply("18DAF128037F0311\r18DAF145037F0312\r>")
+        self.assertEqual(reply.status, "negative_response")
+        rows = decode_dtcs_per_ecu("03", reply)
+        self.assertEqual([(r.ecu, r.detail) for r in rows],
+                         [("28", "serviceNotSupported"), ("45", "subFunctionNotSupported")])
+
+    def test_a_rejection_of_another_service_is_not_this_requests_answer(self):
+        # ECU 28 refused a service 01 request that was still in flight.  It is
+        # not an answer to 03 and must not become one module's DTC row.
+        rows = decode_dtcs_per_ecu("03", parse_reply("18DAF145024300\r18DAF128037F0122\r>"))
+        self.assertEqual([(r.ecu, r.status) for r in rows], [("45", "ok")])
+
+    def test_a_response_byte_with_nothing_behind_it_is_not_a_report_of_none(self):
+        # 18DAF145 | 01 | 43: the count byte never arrived.  Calling this "no
+        # codes" would invent the one fact the frame failed to carry.
+        rows = decode_dtcs_per_ecu("03", parse_reply("18DAF1450143\r>"))
+        self.assertEqual([(r.ecu, r.status, r.codes) for r in rows], [("45", "short_frame", [])])
+        self.assertIn("no data bytes", rows[0].detail)
+
+    def test_pending_and_permanent_modes_are_labelled_by_service(self):
+        pending = decode_dtcs_per_ecu("07", parse_reply("18DAF145044701C123\r>"))
+        permanent = decode_dtcs_per_ecu("0A", parse_reply("18DAF145044A018134\r>"))
+        self.assertEqual([(r.mode, r.codes) for r in pending], [("07", ["U0123"])])
+        self.assertEqual([(r.mode, r.codes) for r in permanent], [("0A", ["B0134"])])
+
+    def test_each_row_carries_only_its_own_frame_as_evidence(self):
+        rows = decode_dtcs_per_ecu("03", parse_reply(FIVE_ECUS_REPORT_NO_CODES))
+        self.assertTrue(all(r.raw_hex == "024300" for r in rows))
+
+    def test_a_reply_that_nobody_answered_yields_no_rows(self):
+        for raw in (b"NO DATA\r>", b"CAN ERROR\r>", b"OK\r>", b"\r>"):
+            with self.subTest(raw=raw):
+                self.assertEqual(decode_dtcs_per_ecu("03", parse_reply(raw)), [])
+
+    def test_a_reply_without_headers_names_no_module(self):
+        rows = decode_dtcs_per_ecu("03", parse_reply(b"43 00\r>"))
+        self.assertEqual([(r.ecu, r.status, r.codes) for r in rows], [("", "ok", [])])
+
+    def test_an_incomplete_multi_frame_reply_yields_no_rows(self):
+        # The consecutive frames never arrived, so nothing was reassembled and
+        # no module can be said to have answered.
+        reply = parse_reply("18DAF1451014430A01430196\r>")
+        self.assertEqual(reply.status, "incomplete")
+        self.assertEqual(decode_dtcs_per_ecu("03", reply), [])
+
+
+#: 18DAF145 | 06 | 41 01 83 07 65 04.  Byte A 0x83: MIL commanded on, three
+#: emission codes stored by this module.  Byte B 0x07: all three continuous
+#: monitors supported, none of the not-complete bits set, bit 3 clear so the
+#: spark table names bytes C and D.  Byte C 0x65 supports catalyst,
+#: evaporative system, oxygen sensor and oxygen sensor heater; byte D 0x04
+#: leaves the evaporative-system monitor not complete.
+SPARK_MONITOR_STATUS = "18DAF14506410183076504\r>"
+
+#: 18DAF117 | 06 | 41 01 00 0F 02 02.  Same shape with bit 3 of byte B set, so
+#: the compression table names the identical C/D bytes differently.
+COMPRESSION_MONITOR_STATUS = "18DAF117064101000F0202\r>"
+
+
+class TestMonitorStatus(unittest.TestCase):
+    """Service 01 PID 01: four bytes of packed flags, one row per module."""
+
+    def readiness(self, raw):
+        status = decode_monitor_status(parse_reply(raw))[0]
+        return {bit.monitor: bit for bit in status.readiness}
+
+    def test_mil_state_and_this_modules_own_code_count(self):
+        status = decode_monitor_status(parse_reply(SPARK_MONITOR_STATUS))[0]
+        self.assertEqual(status.ecu, "45")
+        self.assertTrue(status.mil_on)
+        self.assertEqual(status.dtc_count, 3)
+        self.assertEqual(status.status, "ok")
+        self.assertEqual(status.raw_hex, "06410183076504")
+
+    def test_the_count_is_seven_bits_and_the_mil_bit_is_not_part_of_it(self):
+        # 0xFF would read as 255 codes if the MIL bit were left in the count.
+        status = decode_monitor_status(parse_reply("18DAF145064101FF000000\r>"))[0]
+        self.assertTrue(status.mil_on)
+        self.assertEqual(status.dtc_count, 0x7F)
+
+    def test_the_mil_can_be_off_with_codes_stored(self):
+        status = decode_monitor_status(parse_reply(COMPRESSION_MONITOR_STATUS))[0]
+        self.assertFalse(status.mil_on)
+        self.assertEqual(status.dtc_count, 0)
+
+    def test_every_module_that_answered_gets_its_own_row(self):
+        raw = SPARK_MONITOR_STATUS.rstrip(">") + COMPRESSION_MONITOR_STATUS
+        rows = decode_monitor_status(parse_reply(raw))
+        self.assertEqual([(r.ecu, r.dtc_count) for r in rows], [("45", 3), ("17", 0)])
+
+    def test_continuous_monitors_come_from_byte_b(self):
+        bits = self.readiness(SPARK_MONITOR_STATUS)
+        for name, index in (("misfire", 0), ("fuel_system", 1), ("components", 2)):
+            with self.subTest(monitor=name):
+                self.assertEqual(bits[name].kind, "continuous")
+                self.assertEqual((bits[name].src_byte, bits[name].src_bit), ("B", index))
+                self.assertTrue(bits[name].supported)
+                self.assertTrue(bits[name].complete)
+
+    def test_a_set_not_complete_bit_reads_as_not_ready(self):
+        # Byte B 0x17: bits 0-2 supported, bit 4 set, so the misfire monitor is
+        # supported and has not completed while the other two have.
+        bits = self.readiness("18DAF14506410100170000\r>")
+        self.assertEqual(bits["misfire"].complete, False)
+        self.assertEqual(bits["fuel_system"].complete, True)
+        self.assertEqual(bits["components"].complete, True)
+
+    def test_non_continuous_monitors_come_from_bytes_c_and_d(self):
+        bits = self.readiness(SPARK_MONITOR_STATUS)
+        self.assertEqual(bits["catalyst"].kind, "non_continuous")
+        self.assertEqual((bits["catalyst"].src_byte, bits["catalyst"].src_bit), ("C", 0))
+        self.assertTrue(bits["catalyst"].complete)
+        # C bit 2 supported, D bit 2 set: running, and not finished.
+        self.assertTrue(bits["evaporative_system"].supported)
+        self.assertEqual(bits["evaporative_system"].complete, False)
+        self.assertEqual(bits["oxygen_sensor_heater"].src_bit, 6)
+
+    def test_an_unsupported_monitor_is_never_reported_complete(self):
+        # Byte B 0x00 and bytes C/D 0x00: nothing is supported, and every
+        # not-complete bit is clear.  Read as a boolean, a clear bit says
+        # "complete", which would put eleven monitors the vehicle does not run
+        # into the ready column.  None is the only true answer.
+        bits = self.readiness("18DAF14506410100000000\r>")
+        self.assertEqual(len(bits), 11)
+        for name, bit in bits.items():
+            with self.subTest(monitor=name):
+                self.assertFalse(bit.supported)
+                self.assertIsNone(bit.complete)
+
+    def test_unsupported_and_unfinished_are_different_facts(self):
+        # C 0x03, D 0x02: bit 0 supported and complete, bit 1 supported and not
+        # complete, bit 2 not supported at all.  Three states, not two.
+        bits = self.readiness("18DAF14506410100000302\r>")
+        self.assertEqual((bits["catalyst"].supported, bits["catalyst"].complete), (True, True))
+        self.assertEqual((bits["heated_catalyst"].supported, bits["heated_catalyst"].complete),
+                         (True, False))
+        self.assertEqual((bits["evaporative_system"].supported,
+                          bits["evaporative_system"].complete), (False, None))
+
+    def test_bit_three_of_byte_b_selects_the_name_table(self):
+        spark = decode_monitor_status(parse_reply(SPARK_MONITOR_STATUS))[0]
+        compression = decode_monitor_status(parse_reply(COMPRESSION_MONITOR_STATUS))[0]
+        self.assertEqual(spark.ignition_type, "spark")
+        self.assertEqual(compression.ignition_type, "compression")
+        self.assertEqual([b.monitor for b in spark.readiness][:5],
+                         ["misfire", "fuel_system", "components", "catalyst", "heated_catalyst"])
+        self.assertEqual([b.monitor for b in compression.readiness][3:5],
+                         ["nmhc_catalyst", "nox_scr_aftertreatment"])
+
+    def test_the_same_cd_bytes_are_named_differently_by_ignition_type(self):
+        # Identical C/D bytes, one bit of difference in B.  Bit 1 is the heated
+        # catalyst on a spark engine and NOx/SCR aftertreatment on a
+        # compression one: reading bit 3 backwards mislabels rather than fails.
+        spark = self.readiness("18DAF14506410100070202\r>")
+        compression = self.readiness("18DAF117064101000F0202\r>")
+        self.assertEqual(spark["heated_catalyst"].complete, False)
+        self.assertEqual(compression["nox_scr_aftertreatment"].complete, False)
+        self.assertNotIn("heated_catalyst", compression)
+        self.assertNotIn("nox_scr_aftertreatment", spark)
+
+    def test_spark_bit_four_is_named_reserved_not_ac_refrigerant(self):
+        # Older ELM-derived references call this the A/C refrigerant monitor;
+        # J1979-DA reserves the bit.  Both cannot be printed on a stored row,
+        # so the bit is reported and the claim about it is withheld.
+        bits = self.readiness(SPARK_MONITOR_STATUS)
+        self.assertIn("reserved_b4", bits)
+        self.assertEqual(bits["reserved_b4"].src_bit, 4)
+        self.assertNotIn("ac_refrigerant", bits)
+
+    def test_the_compression_table_reserves_bits_two_and_four(self):
+        bits = self.readiness(COMPRESSION_MONITOR_STATUS)
+        self.assertEqual(bits["reserved_b2"].src_bit, 2)
+        self.assertEqual(bits["reserved_b4"].src_bit, 4)
+
+    def test_a_short_frame_decodes_no_bits_at_all(self):
+        # 41 01 83 07: two of the four data bytes.  Byte A and byte B are
+        # there, and decoding them would produce three confident continuous
+        # rows about a frame that never carried C or D.
+        rows = decode_monitor_status(parse_reply("18DAF1450441018307\r>"))
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual((row.ecu, row.status), ("45", "short_frame"))
+        self.assertIsNone(row.mil_on)
+        self.assertIsNone(row.dtc_count)
+        self.assertEqual(row.ignition_type, "")
+        self.assertEqual(row.readiness, [])
+        self.assertEqual(row.raw_hex, "0441018307")
+
+    def test_a_short_frame_from_one_module_does_not_hide_a_good_one(self):
+        raw = "18DAF1450441018307\r" + COMPRESSION_MONITOR_STATUS
+        rows = decode_monitor_status(parse_reply(raw))
+        self.assertEqual([(r.ecu, r.status) for r in rows], [("45", "short_frame"), ("17", "ok")])
+
+    def test_frames_answering_something_else_are_skipped(self):
+        # A voltage reply and a rejection: neither is a readiness report.
+        rows = decode_monitor_status(parse_reply("18DAF14504414235B3\r"
+                                                 "18DAF128037F0122\r"
+                                                 + COMPRESSION_MONITOR_STATUS))
+        self.assertEqual([r.ecu for r in rows], ["17"])
+
+    def test_no_answer_yields_no_rows(self):
+        for raw in (b"NO DATA\r>", b"CAN ERROR\r>", b"OK\r>"):
+            with self.subTest(raw=raw):
+                self.assertEqual(decode_monitor_status(parse_reply(raw)), [])
+
+    def test_a_reply_without_headers_names_no_module(self):
+        rows = decode_monitor_status(parse_reply(b"41 01 83 07 65 04\r>"))
+        self.assertEqual([(r.ecu, r.dtc_count) for r in rows], [("", 3)])
+
+    def test_pid_01_still_decodes_as_undecoded_for_existing_callers(self):
+        # PID 01 is four bytes of flags, which the scalar PidValue shape cannot
+        # represent honestly, so it stays out of PID_DECODERS.  Callers on the
+        # ordinary path must keep seeing "undecoded" rather than one of the
+        # four bytes reported as "the value".
+        self.assertNotIn("01", PID_DECODERS)
+        value = decode_pid("01", parse_reply(SPARK_MONITOR_STATUS))
+        self.assertIsNone(value.value)
+        self.assertEqual(value.status, "undecoded")
+        per_ecu = decode_pid_per_ecu("01", parse_reply(SPARK_MONITOR_STATUS))
+        self.assertEqual([(v.ecu, v.status, v.value) for v in per_ecu],
+                         [("45", "undecoded", None)])
+
+
+class TestServiceNinePerEcu(unittest.TestCase):
+    """Service 09 values tagged with their module — where the wire allows it."""
+
+    def test_two_modules_are_kept_apart(self):
+        raw = b"7E8 06 49 04 01 41 42 43\r7E9 06 49 04 01 44 45 46\r>"
+        self.assertEqual(decode_ascii_items_per_ecu(parse_reply(raw), 0x04),
+                         [("7E8", "ABC"), ("7E9", "DEF")])
+
+    def test_29_bit_multi_frame_replies_are_attributed(self):
+        # Both modules answer 090A across two frames each; the reassembled
+        # message keeps the identifier it arrived under.
+        reply = parse_reply(INTERLEAVED_090A)
+        self.assertEqual(decode_ascii_items_per_ecu(reply, 0x0A),
+                         [("45", "Gateway00"), ("17", "DMC2-MOD0")])
+
+    def test_a_segment_reassembled_reply_names_no_module(self):
+        # The caveat that matters on real hardware.  When the adapter prints a
+        # multi-frame answer in its "0:"/"1:" segment form, the identifier is
+        # gone before the payload is: _extract_frames returns [""] + the plain
+        # headers for the reassembled message because there is nothing left to
+        # attribute it to.  Service 09 replies are usually multi-frame, so this
+        # is the common case, and "" is the honest answer — an address guessed
+        # from the surrounding traffic would read as a measured one.
+        reply = parse_reply(b"014\r0: 49 04 01 41 42 43\r1: 44 45 46 47 48 49\r>")
+        self.assertEqual(reply.frame_headers, [""])
+        self.assertEqual(decode_ascii_items_per_ecu(reply, 0x04), [("", "ABCDEFGHI")])
+        # The value itself is complete; only the attribution is missing.
+        self.assertEqual(decode_ascii_items(reply, 0x04), ["ABCDEFGHI"])
+
+    def test_the_untagged_decoder_returns_the_same_values_in_the_same_order(self):
+        raw = b"7E8 06 49 04 01 41 42 43\r7E9 06 49 04 01 44 45 46\r>"
+        reply = parse_reply(raw)
+        self.assertEqual(decode_ascii_items(reply, 0x04),
+                         [value for _ecu, value in decode_ascii_items_per_ecu(reply, 0x04)])
+        self.assertEqual(decode_ascii_item(reply, 0x04), "ABC / DEF")
+
+    def test_calibration_verification_numbers_are_tagged(self):
+        raw = (b"7E8 07 49 06 01 12 34 56 78\r"
+               b"7E9 07 49 06 01 9A BC DE F0\r>")
+        self.assertEqual(decode_cvns_per_ecu(parse_reply(raw)),
+                         [("7E8", "12345678"), ("7E9", "9ABCDEF0")])
+
+    def test_two_cvns_from_one_module_are_two_rows_with_one_address(self):
+        # 49 06 02 then two four-byte numbers: eleven bytes, so a real module
+        # sends it as an ISO-TP pair.  Both rows belong to module 45, and the
+        # repeated address is the module's doing, not the decoder's.
+        reply = parse_reply("18DAF145100B490602123456\r18DAF14521789ABCDEF000\r>")
+        self.assertEqual(decode_cvns_per_ecu(reply),
+                         [("45", "12345678"), ("45", "9ABCDEF0")])
+        self.assertEqual(decode_cvns(reply), ["12345678", "9ABCDEF0"])
+
+    def test_a_segment_reassembled_cvn_reply_names_no_module(self):
+        reply = parse_reply(b"00B\r0: 49 06 02 12 34 56\r1: 78 9A BC DE F0\r>")
+        self.assertEqual(decode_cvns_per_ecu(reply),
+                         [("", "12345678"), ("", "9ABCDEF0")])
+
+    def test_no_answer_yields_no_rows(self):
+        for raw in (b"NO DATA\r>", b"OK\r>"):
+            with self.subTest(raw=raw):
+                self.assertEqual(decode_ascii_items_per_ecu(parse_reply(raw), 0x04), [])
+                self.assertEqual(decode_cvns_per_ecu(parse_reply(raw)), [])
+
+
+class TestCanStatusCounters(unittest.TestCase):
+    """ATCS: the adapter's own error counters, and what may be claimed of them."""
+
+    def test_the_reply_the_live_adapter_sends(self):
+        self.assertEqual(parse_can_status("T:00 R:00"), (0, 0))
+
+    def test_the_reply_survives_line_endings_case_and_the_prompt(self):
+        for text in ("T:00 R:00\r\r>", "t:00 r:00", "  T:00  R:00  ", "ATCS / T:00 R:00"):
+            with self.subTest(text=text):
+                self.assertEqual(parse_can_status(text), (0, 0))
+
+    def test_counters_are_parsed_as_hex(self):
+        # Documented choice, not a verified one: every value observed on this
+        # vehicle is 00, where hex and decimal agree, so nothing in the
+        # evidence settles the radix.  This pins the behaviour so that
+        # confirming the radix later is a deliberate edit to a failing test.
+        self.assertEqual(parse_can_status("T:0A R:1F"), (10, 31))
+
+    def test_the_only_claim_that_survives_the_radix_ambiguity_is_zero(self):
+        # Whatever the radix, "00" is zero and any other two-digit field is
+        # not, so callers may test a counter against zero and may not read a
+        # non-zero one as a count of errors.
+        self.assertEqual(parse_can_status("T:00 R:00"), (0, 0))
+        for text in ("T:01 R:00", "T:00 R:10", "T:99 R:99"):
+            with self.subTest(text=text):
+                transmit, receive = parse_can_status(text)
+                self.assertNotEqual((transmit, receive), (0, 0))
+
+    def test_anything_that_is_not_a_counter_pair_is_refused(self):
+        for text in ("", "OK", "?", "NO DATA", "13.9V", "ELM327 v1.4b", "T:R:"):
+            with self.subTest(text=text):
+                self.assertEqual(parse_can_status(text), (None, None))
+
+    def test_half_a_status_is_not_a_status(self):
+        # One counter without the other is not the ATCS reply this parses; the
+        # pair is the observation, so a lone counter is refused rather than
+        # reported beside an invented partner.
+        self.assertEqual(parse_can_status("T:00"), (None, None))
+        self.assertEqual(parse_can_status("R:00"), (None, None))
+
+    def test_a_field_wider_than_the_adapter_prints_is_not_reinterpreted(self):
+        # Two characters per counter is the shape ATCS prints.  A wider field
+        # is some other reply, and cropping it to two digits would turn text
+        # nobody parsed into a plausible error count.
+        self.assertEqual(parse_can_status("T:001 R:002"), (None, None))
 
 
 def parse_reply_from_frames(frame: bytes):

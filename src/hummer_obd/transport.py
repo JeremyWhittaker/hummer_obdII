@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from .rawlog import RawLog
-from .safety import UnsafeCommandError, describe_command, validate_command
+from .safety import describe_command, validate_command
 
 __all__ = ["Transport", "TransportError", "SerialTransport", "PROMPT"]
 

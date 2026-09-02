@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Iterable, Optional
+from typing import Optional
 
 __all__ = [
     "AdapterReply",
@@ -36,17 +36,25 @@ __all__ = [
     "decode_pid_per_ecu",
     "decode_freeze_frame",
     "decode_dtcs",
+    "EcuDtcResult",
+    "decode_dtcs_per_ecu",
     "decode_vin",
     "supported_pids",
     "supported_service09_pids",
     "supported_mids",
     "supported_freeze_frame_pids",
     "MonitorTest",
+    "ReadinessBit",
+    "MonitorStatus",
+    "decode_monitor_status",
     "UnitAndScaling",
     "UAS_SCALINGS",
     "decode_monitor_tests",
     "decode_ascii_items",
+    "decode_ascii_items_per_ecu",
     "decode_cvns",
+    "decode_cvns_per_ecu",
+    "parse_can_status",
     "negative_response_name",
     "PID_DECODERS",
     "mask_vin",
@@ -542,6 +550,167 @@ def decode_freeze_frame(pid: str, reply: AdapterReply, frame: int = 0) -> PidVal
     return PidValue(pid, meta["name"], None, meta["unit"], raw_hex, "unmatched")
 
 
+# --- service 01 PID 01: MIL, stored-code count and readiness monitors ----
+#: The three continuous monitors, in the bit order byte B reports them.
+_CONTINUOUS_MONITORS: tuple[str, ...] = ("misfire", "fuel_system", "components")
+
+#: Non-continuous monitors by bit position, keyed by the ignition type that bit
+#: 3 of byte B selects.  The two tables share bit positions and nothing else,
+#: which is why the ignition type has to be read before any bit of bytes C and
+#: D is named: bit 1 is the heated-catalyst monitor on a spark engine and the
+#: NOx/SCR aftertreatment monitor on a compression one, so reading bit 3
+#: wrongly does not fail, it mislabels every non-continuous row.
+#:
+#: Spark bit 4 is ``reserved_b4`` deliberately.  Older ELM-derived references
+#: name it the A/C refrigerant monitor while J1979-DA lists the bit as
+#: reserved, and those two cannot both be written onto a stored row.  The bit's
+#: value is still reported in full; only the claim about what it monitors is
+#: withheld, on the same grounds that keep an unverified UAS scaling out of
+#: :data:`UAS_SCALINGS`.
+_NON_CONTINUOUS_MONITORS: dict[str, tuple[str, ...]] = {
+    "spark": (
+        "catalyst",
+        "heated_catalyst",
+        "evaporative_system",
+        "secondary_air_system",
+        "reserved_b4",
+        "oxygen_sensor",
+        "oxygen_sensor_heater",
+        "egr_or_vvt_system",
+    ),
+    "compression": (
+        "nmhc_catalyst",
+        "nox_scr_aftertreatment",
+        "reserved_b2",
+        "boost_pressure",
+        "reserved_b4",
+        "exhaust_gas_sensor",
+        "pm_filter",
+        "egr_or_vvt_system",
+    ),
+}
+
+
+@dataclass
+class ReadinessBit:
+    """One monitor's support and completeness, and where both bits came from.
+
+    ``complete`` is ``None`` whenever ``supported`` is ``False``.  The wire
+    format still defines a completeness bit for a monitor the vehicle does not
+    run, and that bit is normally zero — which, read as a boolean, says
+    "complete" and puts a monitor that does not exist into the ready column.
+    ``None`` states the only thing that is true: the question does not apply.
+
+    ``src_byte`` and ``src_bit`` locate the *support* bit inside the four data
+    bytes so a row can be checked back against ``raw_hex``.  The completeness
+    bit is the paired one — byte B bit ``src_bit + 4`` for a continuous
+    monitor, byte D bit ``src_bit`` for a non-continuous one — and is not given
+    its own coordinates because the pairing, not the position, is the rule.
+    """
+
+    monitor: str
+    #: "continuous" (byte B) or "non_continuous" (bytes C and D).
+    kind: str
+    supported: bool
+    complete: Optional[bool]
+    #: "B" for a continuous monitor, "C" for a non-continuous one.
+    src_byte: str
+    src_bit: int
+
+
+@dataclass
+class MonitorStatus:
+    """What one module reported for service 01 PID 01.
+
+    ``dtc_count`` is *this module's* count of stored emission-related codes,
+    not the vehicle's: eight modules answer ``0101`` on this vehicle and each
+    counts only its own.  Keeping one row per responder is what makes the
+    counts addable; taking the first answer would report one module's zero as
+    the whole vehicle's.
+
+    ``mil_on`` and ``dtc_count`` are ``None`` only when the frame was too short
+    to hold them, in which case ``status`` says ``short_frame`` and
+    ``readiness`` is empty rather than partly decoded.
+    """
+
+    ecu: str
+    mil_on: Optional[bool]
+    dtc_count: Optional[int]
+    #: "spark" or "compression", or "" when the frame was too short to say.
+    ignition_type: str
+    status: str
+    raw_hex: str
+    readiness: list[ReadinessBit] = field(default_factory=list)
+
+
+def _readiness_bits(b: int, c: int, d: int, ignition: str) -> list[ReadinessBit]:
+    """Expand bytes B, C and D into one row per monitor.
+
+    Every monitor named by the tables gets a row, including the ones this
+    vehicle does not run.  "This module runs no evaporative-system monitor" is
+    a fact worth storing, and an absent row would be indistinguishable from a
+    monitor the decoder forgot to look at.
+    """
+    bits: list[ReadinessBit] = []
+    for index, name in enumerate(_CONTINUOUS_MONITORS):
+        supported = bool(b & (1 << index))
+        # Bits 4-6 mirror bits 0-2 and are set while the monitor has *not*
+        # completed, so completeness is that bit inverted, four places up.
+        not_complete = bool(b & (1 << (index + 4)))
+        bits.append(ReadinessBit(name, "continuous", supported,
+                                 (not not_complete) if supported else None, "B", index))
+    for index, name in enumerate(_NON_CONTINUOUS_MONITORS[ignition]):
+        supported = bool(c & (1 << index))
+        not_complete = bool(d & (1 << index))
+        bits.append(ReadinessBit(name, "non_continuous", supported,
+                                 (not not_complete) if supported else None, "C", index))
+    return bits
+
+
+def decode_monitor_status(reply: AdapterReply) -> list[MonitorStatus]:
+    """Decode service 01 PID 01 into one readiness report per responding module.
+
+    PID 01 is deliberately absent from :data:`PID_DECODERS`: it is not a
+    measurement but four bytes of packed flags, and squeezing it into the
+    scalar :class:`PidValue` shape would mean picking one of them to report as
+    "the value".  Callers that go through :func:`decode_pid` therefore still
+    get ``status="undecoded"`` for ``01``, which is accurate, and this function
+    is the one that unpacks it.
+
+    Frames that are not positive answers to ``0101`` — another module's reply
+    to a different request, a ``7F`` rejection — are skipped rather than turned
+    into a row of ``False`` flags.  A module that answered with fewer than four
+    data bytes still appears, with ``status="short_frame"``, no MIL state, no
+    count and **no readiness bits at all**: two of the four bytes would decode
+    into eleven confident-looking rows about monitors whose bytes never
+    arrived, and a partial bit decode is the one failure mode here that cannot
+    be spotted afterwards from the row itself.
+    """
+    rows: list[MonitorStatus] = []
+    for index, frame in enumerate(reply.frames):
+        data = _payload_after(frame, 0x01, 0x01)
+        if data is None:
+            continue
+        ecu = _ecu_for_frame(reply, index)
+        if len(data) < 4:
+            rows.append(MonitorStatus(ecu, None, None, "", "short_frame", frame.hex()))
+            continue
+        a, b, c, d = data[0], data[1], data[2], data[3]
+        # Bit 3 of byte B is not a monitor: it selects which table names the
+        # bits of C and D, so it is read before any of them.
+        ignition = "compression" if b & 0x08 else "spark"
+        rows.append(MonitorStatus(
+            ecu=ecu,
+            mil_on=bool(a & 0x80),
+            dtc_count=a & 0x7F,
+            ignition_type=ignition,
+            status="ok",
+            raw_hex=frame.hex(),
+            readiness=_readiness_bits(b, c, d, ignition),
+        ))
+    return rows
+
+
 def supported_pids(reply: AdapterReply, base_pid: str) -> list[str]:
     """Decode a support bitmap reply (PID 00/20/40/60/80/A0/C0)."""
     return _supported_pids_for_mode(reply, 0x01, base_pid)
@@ -734,26 +903,45 @@ def _dtc_from_bytes(hi: int, lo: int) -> Optional[str]:
     return f"{letter}{(hi >> 4) & 0x03}{hi & 0x0F:X}{lo >> 4:X}{lo & 0x0F:X}"
 
 
+def _dtcs_from_payload(data: bytes) -> list[str]:
+    """Read the trouble codes out of one service 03/07/0A payload.
+
+    CAN replies start with a count byte; ISO/KWP replies do not.  Both
+    alignments are tried and whichever yields valid codes wins.
+
+    That heuristic is why this is a function rather than a loop body: it
+    cannot tell "no codes" from "wrong alignment", so its empty result means
+    only "no codes were read here" and must never be used to decide whether a
+    module answered.  :func:`decode_dtcs_per_ecu` makes that decision from the
+    frame instead, which is the whole difference between the two decoders.
+    """
+    for offset in (1, 0):
+        body = data[offset:]
+        candidate = []
+        for i in range(0, len(body) - 1, 2):
+            code = _dtc_from_bytes(body[i], body[i + 1])
+            if code:
+                candidate.append(code)
+        if candidate:
+            return candidate
+    return []
+
+
 def decode_dtcs(mode: str, reply: AdapterReply) -> list[str]:
-    """Decode service 03/07/0A trouble-code replies."""
+    """Decode service 03/07/0A trouble-code replies, de-duplicated.
+
+    Kept for callers that want the vehicle's fault list.  It cannot express
+    "every module answered and none holds a code", which is what this vehicle
+    says: that reply and a reply nobody sent both come back as ``[]``.  Use
+    :func:`decode_dtcs_per_ecu` where the answer is stored as evidence.
+    """
     mode_int = int(mode, 16)
     codes: list[str] = []
     for frame in reply.frames:
         data = _payload_after(frame, mode_int, None)
         if data is None:
             continue
-        # CAN replies start with a count byte; ISO/KWP replies do not.  Try
-        # both alignments and keep whichever yields valid codes.
-        for offset in (1, 0):
-            body = data[offset:]
-            candidate = []
-            for i in range(0, len(body) - 1, 2):
-                code = _dtc_from_bytes(body[i], body[i + 1])
-                if code:
-                    candidate.append(code)
-            if candidate:
-                codes.extend(candidate)
-                break
+        codes.extend(_dtcs_from_payload(data))
     # Preserve first-seen order while removing duplicates.
     seen: set[str] = set()
     ordered = []
@@ -762,6 +950,99 @@ def decode_dtcs(mode: str, reply: AdapterReply) -> list[str]:
             seen.add(c)
             ordered.append(c)
     return ordered
+
+
+@dataclass
+class EcuDtcResult:
+    """What one module said when it was asked for trouble codes.
+
+    ``codes`` empty with ``status="ok"`` is a positive observation: this module
+    answered, and it holds no codes.  On this vehicle that is every row, which
+    makes it the row that matters most — "the brake controller answered and has
+    nothing" and "the brake controller was silent" are different facts, and
+    only the first is evidence that the request reached a live module.  A list
+    of rows is therefore not a list of faults; the count of rows is a count of
+    responders.
+
+    ``detail`` carries the reason behind a non-``ok`` status — the standard
+    name of a negative-response code, for instance — and stays empty otherwise.
+    """
+
+    ecu: str
+    #: The service asked for, as two hex digits ("03", "07", "0A").
+    mode: str
+    codes: list[str]
+    status: str
+    raw_hex: str
+    detail: str = ""
+
+
+def _negative_response_for(frame: bytes, mode: int) -> Optional[int]:
+    """Return the NRC when *frame* is a ``7F`` rejection of *mode*, else ``None``.
+
+    Mirrors the two offsets :func:`_find_negative_responses` handles: an
+    auto-formatted reply begins at ``7F``, while a header-preserving one keeps
+    its ISO-TP length byte in front of it.  A rejection naming a *different*
+    service belongs to some other request and is not this module's answer to
+    this one, so it is not matched here.
+    """
+    for offset in (0, 1):
+        if len(frame) >= offset + 3 and frame[offset] == 0x7F and frame[offset + 1] == mode:
+            return frame[offset + 2]
+    return None
+
+
+def decode_dtcs_per_ecu(mode: str, reply: AdapterReply) -> list[EcuDtcResult]:
+    """Decode one row per module that answered a service 03/07/0A request.
+
+    :func:`decode_dtcs` answers "what is wrong with the vehicle" and returns a
+    flat, de-duplicated list of codes.  This answers "what did each module
+    say", which on a vehicle with no faults is the more useful question: eight
+    modules reply ``43 00`` to a broadcast ``03``, and eight rows reporting no
+    codes are eight pieces of evidence that the bus is alive.  The flat list
+    for the same reply is empty and indistinguishable from silence.
+
+    That is the trap this function is built around.  :func:`decode_dtcs` keeps
+    whichever byte alignment *yields codes*, so a module reporting zero codes
+    yields nothing at either alignment; a naive per-ECU port of that loop would
+    drop exactly the rows this vehicle produces.  Here the code list is a
+    property of a row, never its admission ticket: **any frame whose payload
+    answers the requested mode is a row**, empty codes and all.
+
+    Three statuses are possible.  ``ok`` means the module answered, with
+    ``codes`` holding whatever it reported and an empty list meaning it
+    reported none.  ``negative_response`` means it refused, with ``detail``
+    naming the code.  ``short_frame`` means the response byte arrived with
+    nothing behind it, not even the count: that is a truncated answer, and
+    reporting it as a module that holds no codes would invent the one fact the
+    frame failed to carry.
+
+    Unlike :func:`decode_dtcs`, codes are **not** de-duplicated across modules.
+    Two modules reporting ``P0143`` is two modules reporting ``P0143``.
+    """
+    mode_int = int(mode, 16)
+    label = f"{mode_int:02X}"
+    rows: list[EcuDtcResult] = []
+    # No ``reply.ok`` gate: a reply in which every module refused is parsed
+    # with status "negative_response", and those refusals are precisely the
+    # rows this function exists to keep.  Replies that carry no frames at all
+    # (no_data, error, text, incomplete) yield no rows on their own.
+    for index, frame in enumerate(reply.frames):
+        ecu = _ecu_for_frame(reply, index)
+        nrc = _negative_response_for(frame, mode_int)
+        if nrc is not None:
+            rows.append(EcuDtcResult(ecu, label, [], "negative_response",
+                                     frame.hex(), negative_response_name(nrc)))
+            continue
+        data = _payload_after(frame, mode_int, None)
+        if data is None:
+            continue
+        if not data:
+            rows.append(EcuDtcResult(ecu, label, [], "short_frame", frame.hex(),
+                                     "positive response with no data bytes"))
+            continue
+        rows.append(EcuDtcResult(ecu, label, _dtcs_from_payload(data), "ok", frame.hex()))
+    return rows
 
 
 # --- service 09 ----------------------------------------------------------
@@ -805,18 +1086,14 @@ def decode_ascii_item(reply: AdapterReply, pid: int) -> Optional[str]:
 
 
 def decode_ascii_items(reply: AdapterReply, pid: int) -> list[str]:
-    """Decode one printable Service 09 value per responding ECU."""
-    values: list[str] = []
-    for frame in reply.frames:
-        data = _payload_after(frame, 0x09, pid)
-        if data is None:
-            continue
-        if data and data[0] in (0x00, 0x01, 0x02, 0x03, 0x04):
-            data = data[1:]
-        text = "".join(chr(b) for b in data if 0x20 <= b <= 0x7E).strip()
-        if text:
-            values.append(text)
-    return values
+    """Decode one printable Service 09 value per responding ECU.
+
+    The untagged view of :func:`decode_ascii_items_per_ecu`, kept because most
+    callers want the strings.  Values stay in arrival order, so a caller that
+    needs to know which module said what can switch decoders without its
+    indices moving.
+    """
+    return [value for _ecu, value in decode_ascii_items_per_ecu(reply, pid)]
 
 
 def decode_cvns(reply: AdapterReply) -> list[str]:
@@ -824,16 +1101,101 @@ def decode_cvns(reply: AdapterReply) -> list[str]:
 
     CVNs are four-byte binary values, not text. The byte before them is the
     message count on standard responses and is intentionally discarded.
+
+    The untagged view of :func:`decode_cvns_per_ecu`, in arrival order.
     """
-    values: list[str] = []
-    for frame in reply.frames:
+    return [value for _ecu, value in decode_cvns_per_ecu(reply)]
+
+
+def decode_ascii_items_per_ecu(reply: AdapterReply, pid: int) -> list[tuple[str, str]]:
+    """Decode printable Service 09 values as ``(ecu, value)`` pairs.
+
+    The values are exactly the ones :func:`decode_ascii_items` returns, tagged
+    with the address of the module that sent each.
+
+    **The tag is often empty, and that is the honest answer.**  Service 09
+    items are long enough to arrive as ISO-TP multi-frame messages, and when
+    the adapter prints one in its ``0:``/``1:`` segment form the identifier is
+    gone before the payload is: :func:`_extract_frames` has nothing left to
+    attribute the reassembled message to and returns ``""`` for it.  Raw
+    frame-per-line replies (``ATH1``, which is what this project runs) keep the
+    identifier and do attribute correctly, so both shapes appear in practice.
+    An empty address means "this transcript does not say"; filling it in from
+    the surrounding frames would be a guess, and a guessed module on a stored
+    calibration ID reads exactly like a measured one.
+    """
+    values: list[tuple[str, str]] = []
+    for index, frame in enumerate(reply.frames):
+        data = _payload_after(frame, 0x09, pid)
+        if data is None:
+            continue
+        if data and data[0] in (0x00, 0x01, 0x02, 0x03, 0x04):
+            data = data[1:]
+        text = "".join(chr(b) for b in data if 0x20 <= b <= 0x7E).strip()
+        if text:
+            values.append((_ecu_for_frame(reply, index), text))
+    return values
+
+
+def decode_cvns_per_ecu(reply: AdapterReply) -> list[tuple[str, str]]:
+    """Decode Service 09 PID 06 calibration verification numbers per module.
+
+    One module may report several CVNs in one answer — one per calibration it
+    holds — so the same address can appear on several rows; that repetition is
+    the module's, not this decoder's.
+
+    The same caveat as :func:`decode_ascii_items_per_ecu` applies, and applies
+    harder: a CVN reply is four bytes per number plus a count byte, so it is
+    multi-frame as soon as a module reports more than one, and a
+    segment-reassembled reply comes back with ``ecu=""``.
+    """
+    values: list[tuple[str, str]] = []
+    for index, frame in enumerate(reply.frames):
         data = _payload_after(frame, 0x09, 0x06)
         if data is None:
             continue
         if len(data) % 4 == 1:
             data = data[1:]
+        ecu = _ecu_for_frame(reply, index)
         for offset in range(0, len(data), 4):
             chunk = data[offset:offset + 4]
             if len(chunk) == 4:
-                values.append(chunk.hex().upper())
+                values.append((ecu, chunk.hex().upper()))
     return values
+
+
+# --- adapter status ------------------------------------------------------
+#: ``T:xx R:xx`` inside an ``ATCS`` reply.  Each counter is printed as a
+#: two-character field, so a wider one is not this reply and is refused rather
+#: than reinterpreted.
+_CAN_STATUS = re.compile(r"T:\s*([0-9A-F]{1,2})\s*R:\s*([0-9A-F]{1,2})")
+
+
+def parse_can_status(text: str) -> tuple[Optional[int], Optional[int]]:
+    """Parse an ``ATCS`` reply into ``(transmit errors, receive errors)``.
+
+    ``ATCS`` reads the adapter's own CAN error counters without transmitting,
+    which is how :mod:`hummer_obd.voltage` tells a sleeping bus apart from a
+    broken one during an overnight watch.  The live adapter answers exactly
+    ``T:00 R:00``.
+
+    **The radix is unresolved and the parse is hex.**  Every value this project
+    has ever observed is ``00``, where hexadecimal and decimal agree, so
+    nothing in the evidence settles which the adapter prints — and a counter
+    read in the wrong radix does not fail, it reports 16 errors as 22 or 22 as
+    16.  What survives the ambiguity is the only distinction the counters are
+    used for here: zero and non-zero are the same in either radix for the
+    two-character fields this parses.  **Callers must compare against zero and
+    must not treat the magnitude of a non-zero counter as a count of errors**
+    until the radix is confirmed against a bus that is actually producing them.
+
+    Anything that is not a counter pair — an ``OK``, an error marker, a reply
+    carrying only one of the two counters — yields ``(None, None)``.  Half a
+    status is not a status: the pair is the observation.
+    """
+    if not text:
+        return (None, None)
+    match = _CAN_STATUS.search(text.upper())
+    if match is None:
+        return (None, None)
+    return (int(match.group(1), 16), int(match.group(2), 16))

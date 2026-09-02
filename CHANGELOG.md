@@ -1,0 +1,267 @@
+# Changelog
+
+All notable changes to this project are recorded here.
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and the project intends to follow
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+Nothing has been released yet. There is no tag and no published artifact, so
+every entry below sits under Unreleased; the `0.1.0` in `pyproject.toml` is a
+build placeholder, not a shipped version.
+
+These entries were reconstructed from the commit history, and they keep that
+history's standard: where a capability is implemented but has never been
+demonstrated on the vehicle, the entry says so. A changelog that overstates is
+worse than no changelog, because the reader has no way to tell which lines to
+discount.
+
+## [Unreleased]
+
+### Added
+
+- **The read-only telemetry node itself.** A Raspberry Pi Zero 2 W talks to an
+  OBDLink MX+ over Bluetooth Classic SPP and a persistent RFCOMM binding,
+  preserves byte-exact diagnostic responses, decodes a small set of standard
+  OBD-II data, buffers it in WAL-mode SQLite, and reports node health on a
+  2.13-inch e-paper panel. Ships with Pi provisioning and deployment tooling,
+  a hardware-free PTY/ELM simulator, and a test suite that runs under both
+  pytest and `python -m unittest`.
+
+- **The safety gate** (`safety.py`). Every byte bound for the serial port
+  passes `validate_command()` first. It is an allowlist, so an unrecognised
+  command is rejected rather than forwarded, and `FORBIDDEN_SERVICES` is
+  checked as a second independent barrier: service 04 (DTC clear), service 08,
+  and the UDS write/control/security/reset/routine set can never be
+  transmitted. There is no runtime flag that turns it off. Mode 22 is
+  *deferred* rather than permitted, because GM/Ultium identifiers are unproven
+  on this VIN and this project does not guess them.
+
+- **Exact read-only capability probes**, replacing hopeful command lists with
+  requests whose shape is known before they are sent.
+
+- **Services 02 and 06, admitted through change control.** `ALLOWED_OBD_MODES`
+  became `{01, 02, 03, 06, 07, 09, 0A}`. Both are standard SAE J1979 *read*
+  services from the same specification as the modes already allowed and,
+  unlike mode 22, neither requires a vendor identifier to be guessed — which
+  is the entire reason mode 22 stays rejected. The five-part record is in
+  `docs/SAFETY.md`. Service 02 was given its own request shape rather than
+  relaxing the one-parameter rule for every mode that shares it, and a test
+  asserts the allowlist and the denylist stay disjoint.
+
+- **Per-ECU capture.** On this vehicle a single `0142` request is answered by
+  eight modules, each reporting its own supply voltage. `decode_pid_per_ecu()`
+  returns one value per module and `samples.ecu` records which module said
+  what. Replayed against the transcript already on the node, the eight
+  answers spanned 13.500 V to 13.910 V — a 0.41 V harness drop, and a real
+  measurement that the previous first-match-wins path had been discarding.
+
+- **The freeze-frame support bitmap, always requested.** The probe now always
+  sends `020000`, which asks what a freeze frame *would* contain rather than
+  what one does contain. It exercises request shaping, the frame byte and
+  parsing without a stored fault, which matters because this vehicle has none
+  and inducing one to exercise a decoder was never an option. On 2026-09-01 it
+  returned a positive response advertising `02 0D 1F 20`.
+
+- **The capabilities report** (`hummer-obd-capabilities`). A sanitized offline
+  account of what the node can do and what it has proven, split into proven /
+  available-but-unproven / not available. It never opens the serial device and
+  opens SQLite read-only, so it is safe to run in the middle of a sleep
+  observation, and a test asserts that property. Later gained a
+  collection-coverage section reporting sessions, observed time, coverage
+  ratio and every inter-session gap above a threshold — which immediately
+  corrected the record, showing the drive-time gap as 66.9 seconds rather than
+  the "about three minutes" that had been quoted from memory.
+
+- **Local export for external ingestion** (`hummer-obd-export`). Writes the
+  SQLite buffer out as self-describing JSONL, CSV or JSON that a notebook, a
+  spreadsheet or a language model can read without this repository in front of
+  it. Read-only on the database, never uploads, masks VIN-shaped tokens and
+  network identifiers, and is deterministic: two exports of the same database
+  differ only in the timestamp, which `--export-time` pins.
+
+- **Bounded collector trials and their supervision.** `--max-cycles`,
+  `--duration-s` and a `--poll-interval-s` override, with sliced waits so a
+  deadline and a SIGTERM are both honoured inside a long idle backoff. Then
+  `systemd/hummer-collector-trial.service`, which survives an SSH session
+  closing, caps a restart loop at five starts per hour, caps each start at
+  `RuntimeMaxSec=7200` regardless of configuration, does not restart a clean
+  exit, reads a separate trial config so `config/hummer.toml` is never
+  touched, and has no `[Install]` section, so it cannot become a boot service
+  by accident. `scripts/run_trial.sh` mirrors those guarantees without root,
+  for the case where installing a unit over an unreliable link is itself the
+  fragile step.
+
+- **A 12 V watch that provably cannot reach the vehicle** (`hummer-obd-voltage`).
+  `ATRV` reads connector voltage inside the adapter: no protocol, no ECU, no
+  bus arbitration, so the parasitic-drain question can be measured while the
+  vehicle sleeps without putting a byte on CAN. The guarantee here is narrower
+  than the rest of the project's — not "read-only" but "nothing reaches the
+  vehicle at all". `WATCH_COMMANDS` is fixed, every entry is checked at import
+  time to be an adapter command, and a test proves that `0100` — a perfectly
+  legal read-only request everywhere else — is refused here.
+
+- **A PiSugar2 cell watch** (`hummer-battery`). The chip was identified by
+  measurement rather than from the label: the IP5209 register pair reads
+  4.05 V and the IP5312 pair reads 2.60 V, and 2.60 V is below the voltage at
+  which the Pi could have taken the reading at all. `identify_chip()` repeats
+  that check at run time and refuses to answer if both profiles look
+  plausible. The module is built around its refusals, because a shutdown that
+  fires wrongly strands the node: the threshold is a measured voltage and
+  never a modelled percentage, an implausible reading clears the low streak
+  instead of extending it, an I2C failure never counts towards a shutdown,
+  five consecutive low readings 30 s apart are required, a cell below
+  threshold but rising is left alone, and a test asserts that no I2C write
+  exists anywhere in the module. No new dependency: a register read is one
+  write and one one-byte read over `/dev/i2c-1` through `fcntl` and `os`.
+
+- **Documentation:** `docs/CAPABILITIES.md` (proven / unproven / out of scope)
+  and `docs/ENHANCED_PID_VALIDATION.md` (the evidence bar a Mode 22 identifier
+  must clear before it is allowed on the wire).
+
+### Changed
+
+- **The probe asks the vehicle what it supports, instead of a fixed generic
+  PID list.** The old list overlapped this truck in three places, so eight
+  PIDs it advertises had never been requested — including the odometer. The
+  probe now reads the vehicle's own support bitmap, and does the same for
+  service 09 via `0900`. All fourteen advertised service 01 PIDs answered, the
+  odometer decoded at 2146.6 km, and service 09 named all eight modules.
+  Decoders added alongside: A6 odometer (4 bytes at 0.1 km/bit), 30 warm-ups,
+  1C OBD standard. PID 01 is left undecoded on purpose — it is a composite of
+  MIL state and readiness monitors that the scalar sample shape cannot
+  represent honestly.
+
+- **Storage schema v1 to v2, migrated in place.** The node holds readings
+  nobody can take again, so `migrate()` only ever adds: `ALTER TABLE ADD
+  COLUMN` and `CREATE TABLE IF NOT EXISTS`, never a drop, rename or rebuild,
+  and it raises rather than opening a version it does not understand. Verified
+  against a copy of the reference node's real database before the original was
+  touched, then run on the original with a backup taken first: 7384 samples,
+  18 DTC reads, 5 sessions, 1 vehicle_info and 5 events all byte-identical on
+  their original columns, with `ecu` defaulting to `''` on old rows.
+
+- **The module map is measured, not inferred.** Each address was queried behind
+  its own `ATCRA18DAF1<addr>` receive filter: 17 DMCM, 1D DMC2, 1E DMC3,
+  28 BSCM, 40 BCM, 45 Gateway Module - GWM, CB and CD BSM.
+
+- **UAS scaling row `0x24` removed from the service 06 table.** It could not be
+  confirmed against SAE J1979, and "a multiplier of 1.0 cannot change a
+  magnitude" is circular — it holds only if 1.0 is the right multiplier. An
+  unrecognised unit-and-scaling identifier now yields a null scaled value with
+  the raw counts kept, which is why the table is deliberately partial. A
+  plausible wrong reading is worse than an admitted gap.
+
+- **The battery watch stops the collector instead of halting the node.** A
+  PiSugar2 cannot power the Pi back on — the vendor's own position, not an
+  inference — a bare `systemctl poweroff` does not tell the chip to cut power,
+  and GPIO3 wake needs bootloader EEPROM the Zero 2 W does not have. So every
+  halting path strands an unattended node in a vehicle. The default action is
+  now `stop-collector`: it ends the polling that is drawing the power and
+  holding the serial port, and leaves the OS up and reachable. The watch keeps
+  running afterwards, so a recovering cell needs no intervention.
+  `--on-low poweroff` remains for a node whose return has been solved, and its
+  help says it has not been solved here. This also removed the need for the
+  `--dry-run` crutch the watch had briefly shipped with, so the watch is armed.
+
+- **Documents reconciled against what has actually been measured.** The README
+  had claimed "pack voltage under load" among the live driving telemetry; what
+  is captured is PID 42, the 12 V control-module supply each module sees. HV
+  pack voltage is not exposed over standard OBD on this vehicle, which is the
+  whole reason the enhanced-PID document exists. Service status was brought
+  current everywhere: service 06 is proven and advertises zero monitor IDs,
+  which is an answer rather than a failure; service 02's request path is
+  proven, while frame contents are not and cannot be until the truck develops
+  a fault of its own.
+
+- **Test counts recorded at the capability milestones above**, in order:
+  235, 243, 252, 265, 337, 346, 366, 372. The suite is the acceptance record
+  for a project that cannot re-run its measurements, so it grew with every
+  capability rather than after them.
+
+### Fixed
+
+- **The package had never been installed on the node.** All seven
+  `hummer-obd-*` console scripts were declared and none existed;
+  `import hummer_obd` raised `ModuleNotFoundError`. Every command in the
+  runbook, and every command a reviewer would reasonably copy out of it,
+  failed with "command not found". `bootstrap_pi.sh` now performs an editable
+  install and is safe to re-run.
+
+- **The probe printed per-module readings and then dropped them.** It stored a
+  session row and a masked VIN and nothing else, so decoded values survived
+  only in the JSON report. It now stores the decoded samples, monitor tests,
+  DTC reads and the module map — verified on the node as 23 rows carrying a
+  module address across eight distinct modules.
+
+- **The module map was written as two rows holding the `repr` of a list and a
+  dict**, rather than one queryable row per module address.
+
+- **The export dropped the `ecu` column.** It predated schema v2, so it
+  silently exported per-module readings with no way to say which module
+  reported which — turning a distribution back into an unattributed list,
+  which is the exact loss that column was added to prevent. Fixed in all three
+  formats and described in the meta record.
+
+- **`docs/ENHANCED_PID_VALIDATION.md` had named address 28 as the gateway.** It
+  is the brake system controller; 45 is the gateway. The inference came from
+  28 being the only module still answering during shutdown, which is true and
+  still not the same thing. Addressing the wrong module is precisely the
+  failure mode an enhanced-PID request has to avoid, so the correction is kept
+  visible rather than quietly swapped.
+
+- **An upload endpoint's embedded credentials could be printed.**
+  `_safe_endpoint` existed and was tested, but the configuration section
+  reported `cfg.upload.endpoint` verbatim, so `https://user:pass@host/` would
+  have been written to the capabilities report and to stdout in full. The
+  not-HTTPS refusal had the same hole. Both paths now share
+  `config.redacted_endpoint()`. Alongside it: tailnet hostnames are matched
+  case-insensitively, since DNS is, and userinfo is split off the authority by
+  hand rather than rebuilt from `parts.hostname`/`parts.port`, which
+  lower-cases the host and drops the brackets around an IPv6 literal.
+
+- **The reconnect backoff ignored the collector's deadline.** It was a bare
+  `time.sleep` of up to 120 s — the third and longest sleep in a cycle — so a
+  `--duration-s` trial could overshoot by two minutes and a stop request could
+  look ignored for the same window. The wait is now injectable, and the
+  collector hands it the same deadline-aware waiter it uses everywhere else.
+
+- **`--max-cycles 0` meant "unlimited"**, so it silently turned a config
+  carrying `max_cycles = 20` into an unbounded run on a real vehicle. It was
+  the one input where a typo removed a bound instead of being rejected. Now
+  refused; omit the flag to use the configured value.
+
+- **`hummer-obd-capabilities --config` without `--root`** reported the working
+  directory as the project root and then announced that nothing had been
+  recorded on this node — wrong in the most misleading direction, because it
+  reads as a finding. The root is now taken from the config's own location.
+
+- **The voltage log was written with CRLF line endings.** The `csv` module
+  defaults to `\r\n`; that file is appended to over hours and read back with
+  shell tooling while the watch is still running, so the last column parsed as
+  `"ok\r"` and a comparison against `"ok"` failed while looking obviously
+  correct. `export.py` already pinned `lineterminator="\n"` for the same
+  reason.
+
+- **`scripts/deploy.sh` copied one named config template**, so
+  `config/hummer-collector-trial.default` never reached the node and
+  installing the trial unit failed on a missing file. It now ships every
+  template (`*.example.toml` and `*.default`) and still never touches the
+  node's live `config/hummer.toml`.
+
+- **`0906` was rendered as ASCII.** CVNs are binary, and the ASCII path
+  produced noise that read like a decode failure on a good reply. Routed
+  through `decode_cvns`, which returned 42 CVNs as hex.
+
+- **The service 02 bitmap was one byte out.** A service 02 support bitmap
+  carries a frame byte before the four bitmap bytes, so
+  `_supported_pids_for_mode` gained a skip parameter; a test asserts the same
+  bitmap bytes decode identically through service 01 and service 02. Reading
+  them shifted would have advertised a set of PIDs the vehicle never claimed:
+  plausible, and wrong.
+
+- **systemd argument splitting in the battery unit.** `${VAR}` expands to a
+  single argument and `$VAR` to whitespace-separated words. The braced form
+  passed `--on-low stop-collector` as one token, argparse rejected it, and the
+  unit went into a restart loop. Now unbraced, with the reason recorded in the
+  unit so it is not "tidied" back.

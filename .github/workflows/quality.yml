@@ -1,0 +1,80 @@
+name: quality
+
+# Style and secret hygiene, kept separate from `tests.yml` so that a lint
+# opinion can never be confused with a failing test.  Tests decide whether the
+# code is correct; nothing in this file is allowed to make that call.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # Pinned rather than floating, so that a change in what this job reports
+      # is always traceable to a commit.  With a range, a new rule in a
+      # released version changes CI output on a branch nobody touched, and the
+      # first question -- "did my change cause this?" -- has no cheap answer.
+      # Bump it deliberately; dependabot cannot see a version spelled inline
+      # here, which is the trade for the pin.
+      - name: Install ruff
+        run: python -m pip install "ruff==0.15.12"
+
+      # Both ruff steps are advisory today, and this is a measured decision
+      # rather than caution.  The existing code does not pass either check, so
+      # a blocking job would fail on its first run and the only way to green it
+      # would be a mass reformat mixed into an unrelated change.  Making these
+      # blocking is a follow-up that starts with a formatting commit of its
+      # own; the report is useful in the meantime, and a reviewer can see the
+      # findings inline on the diff.
+      - name: Lint
+        continue-on-error: true
+        run: ruff check --output-format=github src tests
+
+      - name: Format
+        continue-on-error: true
+        run: ruff format --check --diff src tests
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # A secret is only removed from a repository by rewriting history, so
+          # scanning the checked-out tip would answer the easy half of the
+          # question.  gitleaks needs the whole history to answer the half that
+          # matters.
+          fetch-depth: 0
+
+      # Blocking, unlike the lint steps above.  This repository's own rules
+      # forbid committing credentials, network identifiers, an adapter MAC or
+      # an unmasked VIN, and a scan that reports a finding without stopping the
+      # build is a scan nobody reads.  If this ever fires, the finding is
+      # either real or needs a `.gitleaksignore` entry carrying a written
+      # justification -- never a silenced step.
+      - name: Scan for secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A gitleaks report embeds the matched secret.  Workflow artifacts on
+          # a public repository are downloadable by anyone, so publishing one
+          # would turn a detection into a second disclosure.  The job log
+          # already names the file, line and rule, which is what a fix needs.
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
+          # PR comments would need `pull-requests: write`, and this workflow is
+          # not worth widening the token for.
+          GITLEAKS_ENABLE_COMMENTS: false
+          # Note for a future move: gitleaks-action is free for repositories on
+          # a personal account and requires GITLEAKS_LICENSE for an
+          # organisation.  Transferring this repository to an org will break
+          # this step until that key is set.
