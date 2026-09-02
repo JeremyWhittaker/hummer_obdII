@@ -24,13 +24,13 @@ otherwise. `docs/CAPABILITIES.md` holds the per-capability evidence, and
 | **The read-only node** — Bluetooth SPP/RFCOMM to an OBDLink MX+, byte-exact JSONL transcripts, per-ECU ISO-TP reassembly for 29-bit CAN, WAL-mode SQLite, e-paper status | Proven, running on the node |
 | **The safety gate** — an allowlist every serial byte passes, plus `FORBIDDEN_SERVICES` as an independent second barrier; modes 04, 08 and the UDS write/control set can never be transmitted | Proven and tested; `safety.py` is not modified without the five-part process in `docs/SAFETY.md` |
 | **Per-ECU capture** — one request, up to eight answers, each attributed to the module that gave it, with `samples.ecu` recording which | Proven: eight modules answered `0142` across a 0.41 V spread |
-| **Schema v2** — additive-only migration, verified against a copy of the real database before the original was touched | Proven on the live node, backup taken first |
+| **Schema v3** — additive-only migration from v1 or v2, verified against a copy of the real database before the original was touched | Proven on the live node, backup taken first; `cycle_id` lands NULL, never a fabricated 0 |
 | **Services 02 and 06** — standard J1979 reads admitted through change control, needing no guessed identifier | Proven. `0600` advertises zero monitor IDs; `020000` advertises `02 0D 1F 20` |
 | **The capabilities report** — sanitized, offline, opens no serial device and SQLite read-only, safe to run mid-observation | Proven against the live database |
 | **The export** — deterministic JSONL/CSV/JSON a notebook, a spreadsheet or a language model can ingest without this repository | Proven against the live database |
 | **Bounded collector trials** — `--max-cycles` / `--duration-s`, sliced waits, a supervising systemd unit with no `[Install]` section and a rootless equivalent | Proven on a moving vehicle: 0 to 94 km/h, 539 valid samples, stopped itself cleanly after 422 cycles |
 | **The 12 V watch** — `ATRV` sampled with a guarantee narrower than the rest of the project's: not "read-only" but "nothing reaches the vehicle at all" | Proven; caught the sleep transition at 13.9 V to 12.7 V |
-| **The PiSugar2 cell watch** — chip identified by measurement, built around its refusals, no I2C write anywhere in the module | Monitoring proven, reading 4.04 V; the low-cell action is armed as `stop-collector` |
+| **The PiSugar2 cell watch** — chip identified by measurement, built around its refusals, no I2C write anywhere in the module | Monitoring proven; the identifying read was 4.05 V on the IP5209 pair (`docs/RUNBOOK.md`), and the low-cell action is armed as `stop-collector` |
 | **Package install on the node** — the seven `hummer-obd-*` console scripts now exist, so the runbook's commands run as written | Fixed and verified |
 
 ## In progress
@@ -50,11 +50,20 @@ otherwise. `docs/CAPABILITIES.md` holds the per-capability evidence, and
   that is built.
 
 - **Repository hygiene.** This file, `CHANGELOG.md`, `LICENSE` and
-  `.github/workflows/quality.yml` are the first pass. The lint job is
-  deliberately non-blocking today because the existing code does not pass
-  `ruff format --check` and has a handful of unused imports; making it
-  blocking is a follow-up that starts with a formatting commit, not with
-  loosening the rules.
+  `.github/workflows/quality.yml` are the first pass. Both lint steps are
+  advisory today, for two different reasons. `ruff check` passes as of the
+  commit that dropped three unused imports, so making *it* blocking is now a
+  one-line change waiting on a decision rather than on work. `ruff format
+  --check` still reports 34 of 36 files, so making *that* blocking is a
+  follow-up that starts with a formatting commit of its own — not with
+  loosening the rules, and not mixed into an unrelated change.
+
+- **One decoder path is unguarded.** `supported_freeze_frame_pids()` has no
+  direct test: setting its `skip` back to 0 — the exact one-byte regression
+  that was already fixed once — passes the entire suite. Everything else that
+  has been mutated in review died against a test. Named here rather than left
+  in a review comment, because an untested decoder is how a plausible wrong
+  number gets published.
 
 ## Blocked on physical conditions
 

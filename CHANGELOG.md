@@ -101,12 +101,14 @@ discount.
   time to be an adapter command, and a test proves that `0100` — a perfectly
   legal read-only request everywhere else — is refused here.
 
-- **A PiSugar2 cell watch** (`hummer-battery`). The chip was identified by
-  measurement rather than from the label: the IP5209 register pair reads
-  4.05 V and the IP5312 pair reads 2.60 V, and 2.60 V is below the voltage at
-  which the Pi could have taken the reading at all. `identify_chip()` repeats
-  that check at run time and refuses to answer if both profiles look
-  plausible. The module is built around its refusals, because a shutdown that
+- **A PiSugar2 cell watch** (`python -m hummer_obd.battery`, supervised as
+  `hummer-battery.service`). It is deliberately not one of the seven
+  `hummer-obd-*` console scripts: it is a supervisor, not an operator command.
+  The chip was identified by measurement rather than from the label — the
+  IP5209 register pair reads 4.05 V and the IP5312 pair reads 2.60 V, and
+  2.60 V is below the voltage at which the Pi could have taken the reading at
+  all. `identify_chip()` repeats that check at run time and refuses to answer
+  if both profiles look plausible. The module is built around its refusals, because a shutdown that
   fires wrongly strands the node: the threshold is a measured voltage and
   never a modelled percentage, an implausible reading clears the low streak
   instead of extending it, an I2C failure never counts towards a shutdown,
@@ -132,7 +134,7 @@ discount.
   MIL state and readiness monitors that the scalar sample shape cannot
   represent honestly.
 
-- **Storage schema v1 to v2, migrated in place.** The node holds readings
+- **Storage schema v3, migrated in place from v1 or v2.** The node holds readings
   nobody can take again, so `migrate()` only ever adds: `ALTER TABLE ADD
   COLUMN` and `CREATE TABLE IF NOT EXISTS`, never a drop, rename or rebuild,
   and it raises rather than opening a version it does not understand. Verified
@@ -140,6 +142,22 @@ discount.
   touched, then run on the original with a backup taken first: 7384 samples,
   18 DTC reads, 5 sessions, 1 vehicle_info and 5 events all byte-identical on
   their original columns, with `ecu` defaulting to `''` on old rows.
+
+  v3 followed with the same shape and the same guarantee: a `cycles` table plus
+  a **nullable** `cycle_id` on `samples`, `monitor_tests` and `dtc_reads` — a
+  column alone cannot record a pass that produced zero rows, and a sleeping
+  vehicle produces exactly that; an `ecu_modules` current-state index backfilled
+  from the append-only `vehicle_info` log, where an empty name never overwrites
+  a proven one; and `dtc_ecu_reads`, `monitor_status`, `monitor_readiness` and
+  `ecu_info` as child tables rather than widened ones, so no existing row
+  changes meaning. The new columns are nullable rather than `NOT NULL DEFAULT
+  0`, because `cycle_id = 0` would be a fabricated group id that reads like a
+  real one while `NULL` says "recorded before cycles existed", which is true.
+  `add_ecu_info` refuses service 09 item 02 outright — that is the VIN, and this
+  table is exported. Verified the same way against a copy first: 7440 samples,
+  27 DTC reads, 9 sessions, 16 vehicle_info and 5 events identical, version
+  2 to 3, `cycle_id` NULL not 0, and the backfill took exactly the eight real
+  modules while excluding two malformed rows a transient bug had written.
 
 - **The module map is measured, not inferred.** Each address was queried behind
   its own `ATCRA18DAF1<addr>` receive filter: 17 DMCM, 1D DMC2, 1E DMC3,
@@ -175,7 +193,8 @@ discount.
   a fault of its own.
 
 - **Test counts recorded at the capability milestones above**, in order:
-  235, 243, 252, 265, 337, 346, 366, 372. The suite is the acceptance record
+  235, 243, 252, 265, 337, 346, 366, 372, 393. The suite is the acceptance
+  record
   for a project that cannot re-run its measurements, so it grew with every
   capability rather than after them.
 
@@ -255,10 +274,19 @@ discount.
 
 - **The service 02 bitmap was one byte out.** A service 02 support bitmap
   carries a frame byte before the four bitmap bytes, so
-  `_supported_pids_for_mode` gained a skip parameter; a test asserts the same
-  bitmap bytes decode identically through service 01 and service 02. Reading
-  them shifted would have advertised a set of PIDs the vehicle never claimed:
-  plausible, and wrong.
+  `_supported_pids_for_mode` gained a `skip` parameter. Reading them shifted
+  would have advertised a set of PIDs the vehicle never claimed: plausible, and
+  wrong.
+
+  **This fix is currently unguarded, and that is a known gap rather than an
+  accepted one.** `supported_freeze_frame_pids()` has no direct test:
+  `tests/test_probe_integration.py` asserts only that a `supported_pids` key is
+  present in the probe summary, never what it decodes to. Setting `skip=0` — the
+  exact regression — still passes the whole suite. The `02 0D 1F 20` recorded in
+  `docs/VALIDATION.md` is the decoder's own output rather than an independent
+  reading, so it corroborates nothing about the offset. Closing this needs a test
+  that decodes a fixed `42 00 <frame> 40 08 00 03` payload and asserts the same
+  four bitmap bytes yield the same PID list through service 01 and service 02.
 
 - **systemd argument splitting in the battery unit.** `${VAR}` expands to a
   single argument and `$VAR` to whitespace-separated words. The braced form

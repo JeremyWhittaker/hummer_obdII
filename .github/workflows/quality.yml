@@ -7,6 +7,13 @@ name: quality
 on:
   push:
   pull_request:
+  # gitleaks-action only scans the whole history when the run was *not* a push
+  # or a pull request: for those two it passes `--log-opts` limiting the scan
+  # to the pushed commit range.  A manual run is therefore the only trigger
+  # here that answers "is there a secret anywhere in this repository's past?".
+  # Run it once by hand after enabling this workflow.  A weekly `schedule:`
+  # would automate that and is a deliberate open decision, not an oversight.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -30,13 +37,20 @@ jobs:
       - name: Install ruff
         run: python -m pip install "ruff==0.15.12"
 
-      # Both ruff steps are advisory today, and this is a measured decision
-      # rather than caution.  The existing code does not pass either check, so
-      # a blocking job would fail on its first run and the only way to green it
-      # would be a mass reformat mixed into an unrelated change.  Making these
-      # blocking is a follow-up that starts with a formatting commit of its
-      # own; the report is useful in the meantime, and a reviewer can see the
-      # findings inline on the diff.
+      # Both ruff steps are advisory, and the two reasons differ.
+      #
+      # `ruff check` passes on the tree as of the commit that removed the last
+      # unused imports, so this step being non-blocking is now a choice rather
+      # than a necessity: promoting it costs one line and buys a real gate.
+      # It is left advisory only so that a single lint opinion cannot block a
+      # merge without someone deciding it should.
+      #
+      # `ruff format --check` reports 34 of 36 files, so blocking *that* today
+      # would fail on its first run and the only way to green it would be a
+      # mass reformat mixed into an unrelated change.  That promotion starts
+      # with a formatting commit of its own.
+      #
+      # Re-measure before changing either line; do not trust this comment.
       - name: Lint
         continue-on-error: true
         run: ruff check --output-format=github src tests
@@ -50,10 +64,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # A secret is only removed from a repository by rewriting history, so
-          # scanning the checked-out tip would answer the easy half of the
-          # question.  gitleaks needs the whole history to answer the half that
-          # matters.
+          # Required, but it does not by itself buy a history scan.  On a push
+          # or a pull request gitleaks-action scans
+          # `<base>^..<head>` only, and resolving that range at all needs the
+          # full clone -- a shallow one makes the step fail rather than scan
+          # less.  The whole-history scan, which is the one that matters
+          # because a secret is only removed by rewriting history, happens on
+          # the `workflow_dispatch` trigger declared above.
           fetch-depth: 0
 
       # Blocking, unlike the lint steps above.  This repository's own rules
@@ -62,6 +79,12 @@ jobs:
       # build is a scan nobody reads.  If this ever fires, the finding is
       # either real or needs a `.gitleaksignore` entry carrying a written
       # justification -- never a silenced step.
+      #
+      # Unverified locally: gitleaks is not installed on the machine this was
+      # written on, so the first CI run is also the first time this step has
+      # ever executed.  `git ls-files` matches nothing credential-shaped and
+      # `hummer_pi_sd.env` has never been tracked, so a clean result is
+      # expected -- expected, not proven.
       - name: Scan for secrets
         uses: gitleaks/gitleaks-action@v2
         env:

@@ -7,6 +7,15 @@ version: 2
 
 updates:
   # Reads the dependencies and the `dev` extra declared in pyproject.toml.
+  #
+  # Expect this one to be quiet, and know why before reading its silence as
+  # "everything is current".  Every requirement here is an open lower bound
+  # (`Pillow>=9.2`, `pyserial>=3.5`, `pytest>=8`) and there is no lock file, so
+  # a new release already satisfies the constraint and dependabot has nothing
+  # to raise a pull request about.  It starts reporting the moment a pin, a
+  # ceiling or a lock file exists -- which is also what pinning the CI ruff
+  # version in `[project.optional-dependencies] dev` would create, instead of
+  # spelling it inline in the workflow where dependabot cannot see it.
   - package-ecosystem: pip
     directory: "/"
     schedule:
