@@ -1,11 +1,17 @@
-"""Collector behaviour: safe PID validation, buffering, backoff, reconnect."""
+"""Collector behaviour: safe PID validation, buffering, backoff, reconnect,
+and bounded trial runs that stop themselves."""
 
+import contextlib
+import io
+import signal
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from hummer_obd.collector import Collector
+from hummer_obd.collector import Collector, main as collector_main
 from hummer_obd.config import Config
 from hummer_obd.safety import UnsafeCommandError
 from hummer_obd.storage import Storage
@@ -127,6 +133,157 @@ class TestCollector(unittest.TestCase):
         logs = list((self.root / "logs" / "raw").glob("collect-*.jsonl"))
         self.assertEqual(len(logs), 1)
         self.assertIn("session_start", logs[0].read_text())
+
+
+class TestBoundedRun(unittest.TestCase):
+    """A trial run has to end by itself, promptly, and say why it stopped."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+
+    def _run(self, transport, cfg, **kwargs):
+        collector = Collector(cfg, logger=lambda *_: None, **kwargs)
+        with mock.patch("hummer_obd.collector.SerialTransport", return_value=transport):
+            rc = collector.run()
+        return rc, collector
+
+    def _events(self, cfg, kind):
+        with Storage(cfg.path(cfg.collector.database)) as store:
+            rows = store.conn.execute(
+                "SELECT detail FROM events WHERE kind=? ORDER BY id", (kind,)
+            ).fetchall()
+            return [row["detail"] for row in rows]
+
+    @contextlib.contextmanager
+    def _signal_handlers_restored(self):
+        """Put the process-wide SIGINT/SIGTERM handlers back after ``main``.
+
+        ``main`` installs ``collector.stop`` as the handler for both.  Left in
+        place those outlive the test and point at a dead Collector, so Ctrl-C
+        would be silently swallowed for the rest of the suite.
+        """
+        saved = {sig: signal.getsignal(sig)
+                 for sig in (signal.SIGINT, signal.SIGTERM)}
+        try:
+            yield
+        finally:
+            for sig, handler in saved.items():
+                signal.signal(sig, handler)
+
+    def _sample_count(self, cfg):
+        with Storage(cfg.path(cfg.collector.database)) as store:
+            return store.conn.execute("SELECT COUNT(*) AS n FROM samples").fetchone()["n"]
+
+    def test_max_cycles_stops_after_exactly_that_many_cycles(self):
+        cfg = make_config(self.root)
+        cfg.collector.max_cycles = 3
+        rc, collector = self._run(FakeTransport(), cfg)
+        self.assertEqual(rc, 0)
+        self.assertEqual(collector.cycles, 3)
+        self.assertEqual(self._sample_count(cfg), 6)  # three passes over two PIDs
+        self.assertEqual(self._events(cfg, "stopped"), ["max_cycles reached"])
+
+    def test_max_cycles_can_be_overridden_per_run(self):
+        cfg = make_config(self.root)
+        cfg.collector.max_cycles = 0  # unlimited in the deployed config
+        rc, collector = self._run(FakeTransport(), cfg, max_cycles=2)
+        self.assertEqual(rc, 0)
+        self.assertEqual(collector.cycles, 2)
+
+    def test_an_idle_cycle_counts_toward_max_cycles(self):
+        # A sleeping vehicle answers NO DATA to everything.  If those cycles
+        # did not count, a bounded trial would never end.
+        cfg = make_config(self.root)
+        cfg.collector.max_cycles = 2
+        rc, collector = self._run(FakeTransport(replies={}), cfg)
+        self.assertEqual(rc, 0)
+        self.assertEqual(collector.cycles, 2)
+        self.assertEqual(self._events(cfg, "idle_backoff"), ["no data this cycle"])
+        self.assertEqual(self._events(cfg, "stopped"), ["max_cycles reached"])
+
+    def test_duration_stops_without_overshooting_a_long_backoff(self):
+        cfg = make_config(self.root)
+        cfg.collector.poll_interval_s = 30.0
+        cfg.collector.idle_backoff_s = 30.0
+        cfg.collector.duration_s = 0.3
+        started = time.monotonic()
+        rc, collector = self._run(FakeTransport(), cfg)
+        elapsed = time.monotonic() - started
+        self.assertEqual(rc, 0)
+        self.assertEqual(collector.cycles, 1)  # the deadline landed inside the first sleep
+        self.assertLess(elapsed, 5.0)  # the 30s sleep was interrupted, not slept through
+        self.assertEqual(self._events(cfg, "stopped"), ["duration reached"])
+
+    def test_the_wait_between_cycles_wakes_promptly_on_stop(self):
+        collector = Collector(make_config(self.root), logger=lambda *_: None)
+        timer = threading.Timer(0.02, collector.stop)  # stands in for SIGTERM
+        with mock.patch("hummer_obd.collector._SLEEP_SLICE_S", 0.01):
+            timer.start()
+            started = time.monotonic()
+            collector._sleep(30.0, None)
+            elapsed = time.monotonic() - started
+        timer.cancel()
+        self.assertLess(elapsed, 1.0)
+
+    def test_once_is_unaffected_by_the_trial_limits(self):
+        cfg = make_config(self.root)
+        cfg.collector.max_cycles = 5
+        cfg.collector.duration_s = 0.0001  # long expired by the time the cycle ends
+        rc, collector = self._run(FakeTransport(), cfg, once=True)
+        self.assertEqual(rc, 0)
+        self.assertEqual(collector.cycles, 1)
+        self.assertEqual(self._sample_count(cfg), 2)
+        self.assertEqual(self._events(cfg, "stopped"), [])  # no limit was in force
+
+    def test_a_pass_cut_short_by_a_stop_does_not_count_as_a_cycle(self):
+        # SIGTERM lands between two PIDs of the same pass.  That half pass is
+        # not a cycle: counting it would let a bounded trial report one more
+        # cycle than it actually completed, and would let the last PID of the
+        # list be silently dropped from every reported count.
+        collector = Collector(make_config(self.root), logger=lambda *_: None)
+        transport = FakeTransport()
+        original_send = transport.send
+
+        def send(command, timeout=None):
+            reply = original_send(command, timeout)
+            if command == "010C":  # first PID of the pass; stop before the second
+                collector.stop()
+            return reply
+
+        transport.send = send
+        with mock.patch("hummer_obd.collector.SerialTransport", return_value=transport):
+            rc = collector.run()
+        self.assertEqual(rc, 0)
+        self.assertEqual(collector.cycles, 0)  # the pass never finished
+        self.assertEqual(self._events(make_config(self.root), "stopped"), [])
+
+    def test_non_positive_overrides_are_rejected(self):
+        for kwargs in ({"poll_interval_s": 0}, {"poll_interval_s": -1},
+                       {"max_cycles": -1}, {"duration_s": -0.5}):
+            with self.subTest(**kwargs):
+                with self.assertRaises(ValueError):
+                    Collector(make_config(self.root), logger=lambda *_: None, **kwargs)
+
+    def test_main_rejects_a_bad_interval_before_opening_the_device(self):
+        with mock.patch("hummer_obd.collector.SerialTransport") as serial:
+            with contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as caught:
+                    collector_main(["--force", "--root", str(self.root),
+                                    "--poll-interval-s", "0"])
+        self.assertEqual(caught.exception.code, 2)
+        serial.assert_not_called()
+
+    def test_main_runs_a_bounded_trial_and_returns_zero(self):
+        transport = FakeTransport()
+        with self._signal_handlers_restored():
+            with mock.patch("hummer_obd.collector.SerialTransport", return_value=transport):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    rc = collector_main(["--force", "--root", str(self.root),
+                                         "--max-cycles", "2", "--poll-interval-s", "0.01"])
+        self.assertEqual(rc, 0)
+        cfg = Config()
+        cfg.root = self.root
+        self.assertEqual(self._events(cfg, "stopped"), ["max_cycles reached"])
 
 
 if __name__ == "__main__":

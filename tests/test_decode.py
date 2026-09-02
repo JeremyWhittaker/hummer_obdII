@@ -10,6 +10,7 @@ from hummer_obd.decode import (
     decode_pid,
     decode_vin,
     mask_vin,
+    PID_DECODERS,
     parse_reply,
     supported_pids,
     supported_service09_pids,
@@ -263,6 +264,54 @@ class TestIncompleteMultiFrameFailsClosed(unittest.TestCase):
         self.assertEqual(reply.incomplete, 1)
         self.assertEqual(len(reply.frames), 1)
         self.assertEqual(reply.status, "ok")
+
+
+class TestPidsThisVehicleAdvertises(unittest.TestCase):
+    """PIDs the Hummer's own service 01 support bitmap advertises.
+
+    The vehicle advertises 01 0D 1C 1F 20 21 30 31 40 42 60 80 A0 A6, but the
+    original probe used a generic PID list that overlapped it in only three
+    places.  These cover the readings that were being left on the table.
+    """
+
+    def test_odometer_is_four_bytes_at_a_tenth_of_a_kilometre(self):
+        # 18DAF117 | 06 | 41 A6 00 12 D6 87  ->  0x0012D687 = 1234567 tenths
+        reply = parse_reply(b"18DAF1170641A60012D687\r\r>")
+        value = decode_pid("A6", reply)
+        self.assertEqual(value.name, "odometer")
+        self.assertEqual(value.unit, "km")
+        self.assertAlmostEqual(value.value, 123456.7)
+        self.assertEqual(value.status, "ok")
+
+    def test_odometer_short_frame_fails_closed_instead_of_inventing_a_reading(self):
+        reply = parse_reply(b"18DAF1170341A600\r\r>")
+        value = decode_pid("A6", reply)
+        self.assertIsNone(value.value)
+        self.assertEqual(value.status, "short_frame")
+
+    def test_warm_ups_since_codes_cleared(self):
+        value = decode_pid("30", parse_reply(b"18DAF11703413007\r\r>"))
+        self.assertEqual(value.value, 7.0)
+        self.assertEqual(value.unit, "count")
+
+    def test_obd_standard_code_is_an_enumeration_and_carries_no_unit(self):
+        value = decode_pid("1C", parse_reply(b"18DAF11703411C06\r\r>"))
+        self.assertEqual(value.value, 6.0)
+        self.assertEqual(value.unit, "")
+
+    def test_every_advertised_pid_is_either_decoded_or_explicitly_undecoded(self):
+        # Support-bitmap PIDs (20/40/60/80/A0) are pointers, not readings, and
+        # 01 is a composite (MIL bit plus readiness monitors) that the scalar
+        # PidValue shape cannot represent honestly.  Everything else the
+        # vehicle advertises must have a decoder.
+        advertised = ["01", "0D", "1C", "1F", "20", "21", "30",
+                      "31", "40", "42", "60", "80", "A0", "A6"]
+        bitmaps = {"20", "40", "60", "80", "A0"}
+        composite = {"01"}
+        missing = [p for p in advertised
+                   if p not in bitmaps and p not in composite
+                   and p not in PID_DECODERS]
+        self.assertEqual(missing, [])
 
 
 def parse_reply_from_frames(frame: bytes):

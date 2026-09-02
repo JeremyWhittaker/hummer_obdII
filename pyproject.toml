@@ -22,6 +22,8 @@ hummer-obd-probe = "hummer_obd.probe:main"
 hummer-obd-collector = "hummer_obd.collector:main"
 hummer-obd-display = "hummer_obd.display.status:main"
 hummer-obd-recover = "hummer_obd.btdiscover:main"
+hummer-obd-capabilities = "hummer_obd.capabilities:main"
+hummer-obd-export = "hummer_obd.export:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -22,17 +22,23 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import load_config
-from .decode import PID_DECODERS, decode_vin, mask_vin, parse_reply
+from .decode import PID_DECODERS, decode_cvns, decode_vin, mask_vin, parse_reply
 from .rawlog import RawLog
 from .safety import UnsafeCommandError, validate_all
 from .session import AdapterSession
 from .storage import Storage
 from .transport import SerialTransport, TransportError
 
-#: Service 01 PIDs the probe samples once, if the vehicle advertises them.
+#: Fallback service 01 PIDs, used only when the vehicle will not answer its own
+#: support bitmap.  When the bitmap *is* readable the probe asks for what the
+#: vehicle actually advertises instead, which is the only way to find readings
+#: a generic list does not contain.
 PROBE_PIDS = ["05", "0C", "0D", "11", "1F", "2F", "42", "46", "5B", "5C"]
 
-#: Service 09 items: 02 VIN, 04 calibration ID, 0A ECU name.
+#: Support-bitmap PIDs point at the next bank; they are not readings.
+SUPPORT_BITMAP_PIDS = frozenset({"00", "20", "40", "60", "80", "A0", "C0"})
+
+#: Fallback service 09 items: 02 VIN, 04 calibration ID, 0A ECU name.
 PROBE_SERVICE09 = ["02", "04", "0A"]
 
 
@@ -88,23 +94,33 @@ def run_probe(args) -> int:
             summary["supported_pids"] = supported
             print(f"  {len(supported)} PIDs: {' '.join(supported) if supported else '(none)'}")
 
+            # Ask for exactly what this vehicle advertises.  A fixed generic
+            # list silently skips readings the vehicle does have (this truck
+            # advertises an odometer) while wasting bus traffic on readings it
+            # does not.  The bitmap pointers are excluded: they are not data.
+            if supported:
+                targets = [p for p in supported if p not in SUPPORT_BITMAP_PIDS]
+                skipped = [p for p in PROBE_PIDS if p not in supported]
+            else:
+                targets = list(PROBE_PIDS)
+                skipped = []
+            summary["probed_pids"] = targets
+
             print("## current data")
             samples = {}
-            for pid in PROBE_PIDS:
-                if supported and pid not in supported:
-                    # The vehicle did not advertise this PID.  Record that
-                    # fact in the same shape as a reading, rather than asking
-                    # for something the ECU never claimed to answer.
-                    meta = PID_DECODERS.get(pid, {})
-                    samples[pid] = {
-                        "name": meta.get("name", f"PID {pid}"),
-                        "value": None,
-                        "unit": meta.get("unit", ""),
-                        "status": "not_supported",
-                        "raw": "",
-                    }
-                    print(f"  {pid} {meta.get('name', '')}: not advertised by the vehicle")
-                    continue
+            for pid in skipped:
+                # Record the "vehicle does not have this" answer in the same
+                # shape as a reading, so the absence is evidence too.
+                meta = PID_DECODERS.get(pid, {})
+                samples[pid] = {
+                    "name": meta.get("name", f"PID {pid}"),
+                    "value": None,
+                    "unit": meta.get("unit", ""),
+                    "status": "not_supported",
+                    "raw": "",
+                }
+                print(f"  {pid} {meta.get('name', '')}: not advertised by the vehicle")
+            for pid in targets:
                 value, reply = session.read_pid(pid)
                 samples[pid] = {
                     "name": value.name,
@@ -129,13 +145,24 @@ def run_probe(args) -> int:
             summary["vin_masked"] = mask_vin(vin)
             summary["vin_status"] = vin_reply.status
             print(f"  VIN: {mask_vin(vin)} [{vin_reply.status}]")
+            advertised09 = session.supported_service09_items()
+            summary["supported_service09"] = advertised09
+            # 02 is handled above and stays masked; never read it through the
+            # generic loop, which would put a VIN in the summary.
+            items09 = [p for p in (advertised09 or PROBE_SERVICE09)
+                       if p not in ("00", "02")]
             info = {}
-            for pid in PROBE_SERVICE09:
-                if pid == "02":
-                    continue
+            for pid in items09:
                 text, reply = session.read_service09_item(pid)
-                info[pid] = {"value": text, "status": reply.status}
-                print(f"  09{pid}: {text!r} [{reply.status}]")
+                if pid == "06":
+                    # CVNs are four-byte binary check values.  Rendering them
+                    # as ASCII produces noise that reads like a decode failure
+                    # when the reply was in fact perfectly good.
+                    value = decode_cvns(reply)
+                else:
+                    value = text
+                info[pid] = {"value": value, "status": reply.status}
+                print(f"  09{pid}: {value!r} [{reply.status}]")
             summary["service09"] = info
         finally:
             transport.close()

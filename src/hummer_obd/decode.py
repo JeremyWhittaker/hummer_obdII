@@ -287,9 +287,13 @@ PID_DECODERS: dict[str, dict] = {
     "0D": _t(lambda d: d[0], "km/h", "vehicle speed"),
     "0F": _t(lambda d: d[0] - 40, "degC", "intake air temperature"),
     "11": _t(lambda d: d[0] * 100 / 255, "%", "throttle position"),
+    # An enumeration, not a measurement: the value is the SAE code for the OBD
+    # standard the vehicle claims, so it carries no unit.
+    "1C": _t(lambda d: d[0], "", "OBD standard conformance code"),
     "1F": _t(lambda d: (d[0] << 8) + d[1], "s", "run time since engine start"),
     "21": _t(lambda d: (d[0] << 8) + d[1], "km", "distance with MIL on"),
     "2F": _t(lambda d: d[0] * 100 / 255, "%", "fuel tank level input"),
+    "30": _t(lambda d: d[0], "count", "warm-ups since codes cleared"),
     "31": _t(lambda d: (d[0] << 8) + d[1], "km", "distance since codes cleared"),
     "33": _t(lambda d: d[0], "kPa", "absolute barometric pressure"),
     "42": _t(lambda d: ((d[0] << 8) + d[1]) / 1000, "V", "control module voltage"),
@@ -297,6 +301,11 @@ PID_DECODERS: dict[str, dict] = {
     "5B": _t(lambda d: d[0] * 100 / 255, "%", "hybrid/EV battery pack remaining life"),
     "5C": _t(lambda d: d[0] - 40, "degC", "engine oil temperature"),
     "5E": _t(lambda d: ((d[0] << 8) + d[1]) / 20, "L/h", "engine fuel rate"),
+    # Four bytes at 0.1 km per bit (SAE J1979-DA).  This vehicle advertises A6
+    # in its service 01 support bitmap, which makes it the one genuinely
+    # useful standard-OBD reading the node was not asking for.
+    "A6": _t(lambda d: ((d[0] << 24) + (d[1] << 16) + (d[2] << 8) + d[3]) / 10,
+             "km", "odometer"),
 }
 
 

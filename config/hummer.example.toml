@@ -40,6 +40,12 @@ raw_log_dir = "logs/raw"
 # cycle.  Never probe harder to "wake" the vehicle.
 idle_backoff_s = 60.0
 max_consecutive_errors = 20
+# Bounded-trial limits for the staged rollout.  0 means "no limit", which is
+# the normal service behaviour.  Set one of these (or pass --max-cycles /
+# --duration-s) so a first continuous trial stops itself rather than relying
+# on an operator remembering to stop it.
+max_cycles = 0
+duration_s = 0.0
 
 [upload]
 # Disabled by default and refuses to start without an endpoint.  With upload
@@ -48,6 +54,16 @@ enabled = false
 endpoint = ""
 batch_size = 200
 interval_s = 300.0
+# Bearer token is read from this file, never stored in the config, so this
+# file stays safe to commit.  Empty means no Authorization header.
+token_file = ""
+# Refuse a plaintext http:// endpoint.  Only turn this off for a local test
+# receiver on the Pi itself.
+require_https = true
+timeout_s = 30.0
+# Must stay false.  Raw transcripts can contain an unmasked VIN and never
+# leave the Pi; setting this true is rejected at load time.
+allow_raw_logs = false
 
 [display]
 enabled = true

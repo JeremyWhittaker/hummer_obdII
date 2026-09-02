@@ -33,12 +33,56 @@ endorsed by General Motors, GMC, OBD Solutions, or Waveshare.
   and persistent RFCOMM binding.
 - Reconnect-aware polling, WAL-mode SQLite buffering, masked vehicle identity,
   and an uploader that is disabled by default.
-- A hardware-free PTY/ELM simulator and 134 tests (151 subtests) covering the
+- A hardware-free PTY/ELM simulator and 235 tests (216 subtests) covering the
   safety boundary, transport, decoding, storage, recovery, display, and
   end-to-end probe flow.
 - Conservative e-paper operation: full refreshes only, unchanged frames are
   skipped, and the panel sleeps between updates.
 - Headless deployment and systemd operation on a 512 MB-class Raspberry Pi.
+
+## Capabilities
+
+What this node can do, and what it deliberately cannot. Full detail, including
+the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
+
+### Proven on the reference vehicle
+
+| Capability | Result |
+|---|---|
+| Adapter identity | OBDLink MX+ r3.1.3, STN2255 v5.12.4, ELM327 v1.4b compatibility |
+| Protocol | ISO 15765-4, CAN 29-bit, 500 kbit/s, auto-detected and re-confirmable |
+| Standard PID discovery | all 14 Service 01 PIDs this vehicle advertises, read and decoded |
+| Odometer | Service 01 PID `A6`, four bytes at 0.1 km per bit |
+| Vehicle speed, run time, control-module voltage | live, from up to 8 responding ECUs |
+| Distance since codes cleared, distance with MIL on, warm-up count | live |
+| Diagnostic trouble codes | stored, pending and permanent, per responding module |
+| Vehicle information | VIN (masked outside the raw log), calibration IDs, calibration verification numbers, full module names |
+| Module inventory | 8 modules named by the vehicle, including three drive-motor controllers |
+| 12 V system voltage | `ATRV`, with **zero CAN traffic** — readable while the vehicle sleeps |
+| Vehicle-state detection | awake, gateway-refusing, and fully asleep are distinguishable |
+| Local persistence | byte-exact append-only transcript plus WAL-mode SQLite |
+| Bounded collection | self-stopping trials by cycle count or wall-clock duration |
+| Offline reporting | sanitized capability report that never opens the serial device |
+| Node health | e-paper status page, Bluetooth recovery, reboot-safe services |
+
+### Deliberately not available
+
+| Not available | Why |
+|---|---|
+| DTC clearing, actuator tests, any UDS write/control/security service | Permanently forbidden by the safety gate. Not a configuration option |
+| Mode 22 GM/Ultium enhanced PIDs | Rejected until identifiers are independently proven for this VIN — see [the validation plan](docs/ENHANCED_PID_VALIDATION.md) |
+| State of charge, pack voltage, pack temperature, range | Not exposed over standard OBD-II by this vehicle. Needs Mode 22 or passive CAN monitoring |
+| Remote commands (lock, unlock, precondition, start) | Out of scope. This node has no vehicle write authority of any kind |
+| GPS / location | No receiver, and location is not an OBD-II service |
+| OnStar / GM cloud data | A different system. Belongs in a separate broker with isolated credentials |
+| Raw transcript upload | Refused at config load: raw logs can contain an unmasked VIN |
+| Continuous collector autostart | Gated on a physical power/sleep result, not on software |
+
+Report the live state of a node at any time, without touching the vehicle:
+
+```bash
+hummer-obd-capabilities --root .
+```
 
 ## System overview
 
@@ -96,7 +140,9 @@ src/hummer_obd/
   session.py         adapter initialization and read-only query orchestration
   decode.py          OBD-II decoding and per-ECU 29-bit CAN ISO-TP reassembly
   storage.py         WAL-mode SQLite schema and local queue markers
-  collector.py       reconnect-aware poller; disabled by default
+  collector.py       reconnect-aware poller; disabled by default, bounded trials
+  capabilities.py    sanitized offline capability report; never opens the port
+  export.py          local export of stored telemetry for external ingestion
   probe.py           supervised one-shot probe and offline replay
   btdiscover.py      recovery/binding for an already bonded adapter
   display/status.py  hardware-free renderer and Waveshare panel writer
@@ -128,6 +174,13 @@ Render a hardware-free status frame:
 
 ```bash
 hummer-obd-display --once --simulate /tmp/hummer-status.png
+```
+
+Report what the node can do, reading only local evidence and never opening the
+serial device:
+
+```bash
+hummer-obd-capabilities --root .
 ```
 
 Replay an existing private transcript without touching a vehicle:
@@ -191,6 +244,11 @@ See [Validation](docs/VALIDATION.md) for the test matrix and evidence policy.
   data handling.
 - [Validation](docs/VALIDATION.md) — automated and hardware-backed acceptance
   results.
+- [Capabilities](docs/CAPABILITIES.md) — what the node, the adapter, and this
+  vehicle can actually do, split into proven, available-but-unproven, and
+  out of scope.
+- [Enhanced PID validation](docs/ENHANCED_PID_VALIDATION.md) — the evidence bar
+  Mode 22 identifiers must clear before any of them is allowed on the wire.
 - [Future maintainer handoff](docs/HANDOFF.md) — invariants, current state, and
   the safe next milestone for humans or coding agents.
 

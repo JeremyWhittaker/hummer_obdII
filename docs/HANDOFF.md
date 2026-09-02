@@ -42,7 +42,7 @@ power test is complete.
 | Probe | completed and reviewed; raw transcript remains private on the Pi |
 | Collector | one-shot proven; continuous unit disabled and config flag false |
 | Upload | disabled, endpoint empty |
-| Tests | 134 passed / 151 subtests under both test runners |
+| Tests | 235 passed / 216 subtests under both test runners |
 
 The final controlled reboot was also accepted: both SSH paths returned in about
 36 seconds, all required infrastructure/display/RFCOMM services were active,
@@ -52,6 +52,22 @@ remained off, and the full on-Pi suite passed.
 The public repository intentionally omits the Pi's address, tailnet name,
 adapter MAC, SSIDs, and VIN. Discover live values locally rather than adding
 them to this file.
+
+## Reading the vehicle's state before you touch anything
+
+Three adapter readings distinguish the states that otherwise look identical:
+
+| Reading | Meaning |
+|---|---|
+| positive data from 5-8 ECUs | vehicle serving diagnostics |
+| `7F <service> 22` from the gateway alone | gateway alive, refusing (`conditionsNotCorrect`) |
+| `NO DATA` **and** `ATCS T:00 R:00` | protocol right, request sent, bus silent: vehicle asleep |
+| `SEARCHING... / UNABLE TO CONNECT` | auto-detect found nothing: vehicle asleep |
+
+`ATCS T:00 R:00` is what makes "asleep" distinguishable from "adapter or wiring
+fault". If you must check the bus state, force `ATSP7` rather than repeating
+`ATSP0`: the protocol is known, and auto-search walks initialisation sequences
+this vehicle has no use for.
 
 ## Start-of-work checklist
 
@@ -85,8 +101,15 @@ logs, SQLite sessions, and journals.
 
 The next meaningful milestone is a power/sleep experiment, not a new decoder:
 
-1. confirm whether the Pi supply is ignition-switched or always live;
-2. measure baseline 12 V current with the vehicle asleep;
+1. ~~confirm whether the Pi supply is ignition-switched or always live~~ —
+   **answered on 2026-09-01: the OBD-II port is always live.** The adapter's
+   own `STDIX` counters showed a continuous multi-hour power-on session
+   spanning periods when the vehicle was off, and the owner independently
+   observed the port still powered after the truck shut itself down. Treat the
+   Pi and adapter as a permanent parasitic load;
+2. measure baseline 12 V current with the vehicle asleep. `ATRV` gives a
+   voltage trend with **zero CAN traffic** and is the cheapest first version of
+   this measurement;
 3. observe a complete vehicle sleep/wake cycle with the Pi and OBDLink attached
    while the continuous collector remains off;
 4. if safe, run a time-bounded polling trial and verify the vehicle still
@@ -96,6 +119,16 @@ The next meaningful milestone is a power/sleep experiment, not a new decoder:
 Only a successful physical result permits changing both
 `collector.enabled = true` and the systemd enable state. If the result is
 uncertain, leave both off.
+
+One encouraging observation, which is **not** sufficient on its own: the
+vehicle powered itself off normally with the adapter connected, shortly after
+diagnostic traffic. Adapter presence did not hold it awake. That says nothing
+yet about a two-second polling loop.
+
+Step 4 now has real tooling. `hummer-obd-collector --duration-s S
+--poll-interval-s S --force` runs a bounded trial that stops itself, and
+`hummer-obd-capabilities` reports node state without ever opening
+`/dev/rfcomm0`, so it is safe to run at any point during a sleep observation.
 
 ## Change procedure
 

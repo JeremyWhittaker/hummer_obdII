@@ -12,6 +12,10 @@ IMPLEMENTATION_CHECKLIST.md
 evidence/*.txt
 evidence/*.log
 evidence/*.png
+# Probe and capability JSON reports are runtime state: they hold raw diagnostic
+# frames and go stale the moment the node changes.  docs/CAPABILITIES.md is the
+# curated, publishable version, per the publication rules in docs/SAFETY.md.
+evidence/*.json
 
 # Runtime vehicle data and logs may contain VINs and diagnostic responses.
 data/

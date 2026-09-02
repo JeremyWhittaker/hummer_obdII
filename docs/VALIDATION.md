@@ -25,8 +25,8 @@ reference node.
 Latest result:
 
 ```text
-pytest:   134 passed
-unittest: 134 tests / 151 subtests passed
+pytest:   235 passed
+unittest: 235 tests / 216 subtests passed
 shell:    all repository shell scripts pass bash -n
 compile:  all Python modules compile
 ```
@@ -131,6 +131,191 @@ reads, preserved raw response hex in SQLite, and closed the session cleanly.
 Four non-advertised test PIDs returned `NO DATA`; they were removed from the
 continuous polling set. The resulting configured set is `010D`, `011F`, and
 `0142`.
+
+## Sleep-state capability probe and the power gate
+
+A second capability probe was run on 2026-09-01 at the owner's request, after
+the vehicle had been left parked. It produced the clearest evidence yet about
+both the adapter and the power gate, and it did so without ever escalating
+traffic to a sleeping vehicle.
+
+### Adapter identity, in full
+
+`STDIX` was requested for the first time. It returns the adapter's complete
+self-description in one reply:
+
+| Field | Result |
+|---|---|
+| Device | `OBDLink MX+ r3.1.3` |
+| Firmware | `STN2255 v5.12.4 [2025.12.15]` |
+| Manufacturer | `OBD Solutions LLC` |
+| Bootloader | `4.4` |
+| Bluetooth modem | `BT24H, R15` |
+| Engine cranks / starts | `0` / `0` |
+
+The serial number, Bluetooth device name and Bluetooth address it also returns
+are private identifiers and are recorded only on the node.
+
+`STSN`, `ATCS` and `STPRS` were also confirmed to answer for the first time.
+The engine crank and start counters reading zero is the expected result for a
+battery-electric vehicle.
+
+### Three distinct vehicle states are now distinguishable
+
+| Adapter reading | Interpretation |
+|---|---|
+| positive data from 5–8 ECUs | vehicle serving diagnostics |
+| `7F <service> 22` from the gateway only | gateway alive, refusing: `conditionsNotCorrect` |
+| `NO DATA` with `ATCS T:00 R:00` | protocol correct, request sent, no ECU on the bus |
+| `SEARCHING... / UNABLE TO CONNECT` | auto-detect found no protocol at all |
+
+The third row is new and it matters. With the protocol forced to `ATSP7`
+(`ISO 15765-4 (CAN 29/500)`, confirmed by `ATDP`), `0100` returned `NO DATA`
+while `ATCS` reported `T:00 R:00` — zero CAN transmit errors and zero receive
+errors. The adapter transmitted correctly and nothing answered. That separates
+"the vehicle is asleep" from "the adapter or wiring has a fault", which had
+previously been indistinguishable.
+
+Forcing the known protocol rather than repeating `ATSP0` auto-search was also
+the lower-traffic choice: auto-search walks every protocol, including K-line
+initialisation sequences this vehicle has no use for.
+
+### The OBD-II port is always live
+
+Two independent observations agree:
+
+1. The adapter's own `STDIX` counters showed a single continuous power-on
+   session of over seven hours, spanning periods when the vehicle was off.
+2. The owner directly observed that after the truck powered itself off, the
+   OBD-II port and the devices attached to it still had power.
+
+This resolves the first question in the safe-next-milestone list: the port is
+**not** ignition-switched, so the Pi and the adapter are a parasitic load on the
+12 V battery whenever they are attached.
+
+It also produced one encouraging negative result: the vehicle powered itself
+off normally while the adapter was connected, shortly after diagnostic traffic.
+Adapter presence alone did not hold the vehicle awake. That is **not** the same
+as proving a two-second polling loop lets the modules reach deep sleep, and it
+does not open the gate.
+
+### `ATRV` as a zero-traffic measurement
+
+`ATRV` reads connector voltage without a protocol, without an ECU and without
+any CAN traffic. Values observed so far:
+
+| Vehicle state | `ATRV` |
+|---|---|
+| awake, DC-DC converter running | 13.9 V |
+| powered off, bus silent | 12.7 V – 13.0 V |
+
+Trending this across a full sleep period is the measurement the continuous
+collector gate is waiting on, and it can be taken without waking the bus.
+
+### Capability gap found in our own code, not the vehicle
+
+The vehicle advertises 14 service 01 PIDs. The probe had been asking from a
+fixed generic list that overlapped that set in only three places, so **eight
+advertised PIDs had never been requested** — including `A6`, the odometer.
+
+Two fixes followed, neither of which changes the safety boundary:
+
+- `probe.py` now reads exactly what the vehicle's own support bitmap
+  advertises, minus the bitmap pointers, falling back to the generic list only
+  when the vehicle will not answer the bitmap. It also reads the service 09
+  support bitmap (`0900`) and asks for the items the vehicle advertises,
+  excluding `0902`, which stays on the separate masked path.
+- `decode.py` gained decoders for `A6` (odometer, four bytes at 0.1 km per
+  bit), `30` (warm-ups since codes cleared) and `1C` (OBD standard conformance
+  code). PID `01` is deliberately left undecoded: it is a composite of MIL
+  state and readiness monitors, and the scalar sample shape cannot represent it
+  honestly.
+
+The odometer reading itself remains **unproven**. `A6` is advertised by the
+vehicle but has not yet returned a value, and a probe run while the bus is
+asleep cannot prove it.
+
+### Commands transmitted
+
+```text
+ATZ ATE0 ATL0 ATS0 ATH1 ATAL ATAT1
+ATI AT@1 AT@2 STI STDI STDIX STSN ATRV ATCS
+ATSP0 0100 ATDP ATDPN STPRS
+0120 0140 0160 0180 01A0 01C0 0900
+ATSP7 ATDP ATDPN 0100 ATCS ATRV
+```
+
+No clear, control, write, security, or Mode 22 request appeared in either
+transcript. After the second run confirmed a silent bus, vehicle traffic was
+stopped rather than repeated: a sleeping vehicle is a wait condition.
+
+## Full standard-OBD capability probe
+
+With the vehicle awake on 2026-09-01, the improved probe read **every** Service
+01 PID the vehicle advertises rather than a fixed generic list. All fourteen
+answered.
+
+| PID | Reading | Value |
+|---|---|---|
+| `01` | monitor status since DTCs cleared | answered; left undecoded by design |
+| `0D` | vehicle speed | 0.0 km/h |
+| `1C` | OBD standard conformance code | 5 |
+| `1F` | run time since engine start | 1144 s |
+| `21` | distance travelled with MIL on | 0 km |
+| `30` | warm-ups since codes cleared | 2 |
+| `31` | distance travelled since codes cleared | 19 km |
+| `42` | control module voltage | 13.712 V |
+| `A6` | **odometer** | **2146.6 km** |
+
+`A6` is the headline result: the vehicle had been advertising an odometer all
+along and the old fixed probe list never asked for it. The four-byte,
+0.1 km-per-bit decoding was written before the reading was taken and matched on
+the first attempt.
+
+`01` remains deliberately undecoded. It is a composite of MIL state and
+readiness monitors and the scalar sample shape cannot represent it honestly;
+its raw bytes are preserved in the transcript.
+
+### Service 09 vehicle information
+
+`0900` advertises four items, and all four answered:
+
+| Item | Result |
+|---|---|
+| `0902` VIN | 17 characters, decoded, reported only masked |
+| `0904` calibration IDs | returned from every responding module |
+| `0906` calibration verification numbers | returned from 6 modules |
+| `090A` ECU names | full module names, listed below |
+
+`0906` exposed a real reporting defect. CVNs are four-byte binary values, and
+the probe was rendering them through the ASCII item decoder, which produced
+noise that read like a decode failure on a perfectly good reply. The probe now
+routes `0906` through `decode_cvns`.
+
+### Module inventory
+
+Service 09 PID `0A` named all eight responding modules:
+
+```text
+Gateway Module - GWM     BCM-BodyControl
+BSM-BatterySysMngr       BSCM-BrakeSystem
+DMCM-DriveMotorCtrl      BSM-BatterySysMngr
+DMC2-DriveMotorCtrl2
+DMC3-DriveMotorCtrl3
+```
+
+Three drive-motor controllers and two battery-system managers, consistent with
+a tri-motor Ultium truck. The mapping from these names to the eight responding
+CAN addresses (`17 1D 1E 28 40 45 CB CD`) is still unknown; closing it needs
+`ATCRA` receive filtering, which is already allowlisted.
+
+### Bounded collector trial
+
+The staged-trial path was exercised for the first time: a separate trial
+configuration polling `010D`, `0142`, `011F`, `01A6` and `0131` every two
+seconds, with `duration_s` set so the run stops itself. The deployed
+`config/hummer.toml` was not modified, and `collector.enabled` in it remains
+false.
 
 ## Resource result
 

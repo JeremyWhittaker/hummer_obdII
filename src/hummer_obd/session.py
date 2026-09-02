@@ -27,6 +27,7 @@ from .decode import (
     decode_vin,
     parse_reply,
     supported_pids,
+    supported_service09_pids as _decode_service09_support,
 )
 from .transport import Transport, TransportError
 
@@ -141,6 +142,17 @@ class AdapterSession:
             if next_bank not in pids:
                 break
         return sorted(set(found))
+
+    def supported_service09_items(self) -> list[str]:
+        """Ask which service 09 items the vehicle advertises.
+
+        Service 09 has a single support bitmap at ``0900`` rather than the
+        chain of banks service 01 uses, so one request is enough.
+        """
+        reply = self.ask("0900", timeout=8.0)
+        items = _decode_service09_support(reply, "00")
+        self._say(f"0900: {reply.status} -> {len(items)} items")
+        return items
 
     def read_pid(self, pid: str, timeout: float = 6.0):
         command = f"01{pid.upper()}"

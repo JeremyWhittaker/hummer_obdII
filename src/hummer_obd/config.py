@@ -44,6 +44,20 @@ class CollectorConfig:
     #: Stop polling and idle when the vehicle stops answering (asleep).
     idle_backoff_s: float = 60.0
     max_consecutive_errors: int = 20
+    #: Bounded-trial limits for a supervised staged rollout.  ``0`` means "no
+    #: limit", which is the normal service behaviour.  They exist so a first
+    #: continuous trial can be time-boxed and stop itself, instead of relying
+    #: on an operator remembering to press Ctrl-C.
+    max_cycles: int = 0
+    duration_s: float = 0.0
+
+    def validate(self) -> None:
+        if self.poll_interval_s <= 0:
+            raise ValueError("collector.poll_interval_s must be greater than zero")
+        if self.max_cycles < 0:
+            raise ValueError("collector.max_cycles must not be negative")
+        if self.duration_s < 0:
+            raise ValueError("collector.duration_s must not be negative")
 
 
 @dataclass
@@ -54,10 +68,34 @@ class UploadConfig:
     endpoint: str = ""
     batch_size: int = 200
     interval_s: float = 300.0
+    #: Path to a file holding a bearer token.  The token itself is never
+    #: stored in the configuration, so the config stays committable.
+    token_file: str = ""
+    #: Refuse a plaintext endpoint.  Vehicle telemetry is private data.
+    require_https: bool = True
+    timeout_s: float = 30.0
+    #: Raw transcripts may contain an unmasked VIN.  This exists only so the
+    #: refusal is explicit and tested; there is no code path that uploads raw
+    #: logs, and setting it true is still rejected.
+    allow_raw_logs: bool = False
 
     def validate(self) -> None:
-        if self.enabled and not self.endpoint:
+        if self.allow_raw_logs:
+            raise ValueError(
+                "upload.allow_raw_logs must stay false: raw transcripts can contain "
+                "an unmasked VIN and never leave the Pi"
+            )
+        if self.batch_size <= 0:
+            raise ValueError("upload.batch_size must be greater than zero")
+        if not self.enabled:
+            return
+        if not self.endpoint:
             raise ValueError("upload.enabled is true but upload.endpoint is empty")
+        if self.require_https and not self.endpoint.lower().startswith("https://"):
+            raise ValueError(
+                f"upload.endpoint {self.endpoint!r} is not https; set "
+                "upload.require_https = false only for a local test endpoint"
+            )
 
 
 @dataclass
@@ -114,6 +152,7 @@ def load_config(path: Optional[str | Path] = None, root: Optional[str | Path] = 
     if root is not None:
         cfg.root = Path(root)
     if path is None:
+        cfg.collector.validate()
         cfg.upload.validate()
         return cfg
     path = Path(path)
@@ -127,5 +166,6 @@ def load_config(path: Optional[str | Path] = None, root: Optional[str | Path] = 
             setattr(cfg, section, _build(section, data[section]))
     if root is None:
         cfg.root = path.resolve().parent.parent
+    cfg.collector.validate()
     cfg.upload.validate()
     return cfg
