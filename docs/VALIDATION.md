@@ -25,8 +25,8 @@ reference node.
 Latest result:
 
 ```text
-pytest:   372 passed
-unittest: 372 tests / 328 subtests passed
+pytest:   509 passed
+unittest: 509 tests / 391 subtests passed
 shell:    all repository shell scripts pass bash -n
 compile:  all Python modules compile
 ```
@@ -717,6 +717,89 @@ The decode side is separately verified offline: a service 02 bitmap carries an
 extra frame byte before the four bitmap bytes, and a test asserts that the same
 bitmap bytes decode identically through service 01 and service 02. Reading them
 one byte out would have advertised a set of PIDs the vehicle never claimed.
+
+## Schema version 3, and PID 01 settled offline
+
+### The migration
+
+Schema v3 adds durable polling cycles, a module-identity table, and per-module
+DTC / monitor-status / service-09 tables. One additive migration, following the
+v1-to-v2 structure exactly: every step individually guarded, version bump last,
+so a v1 and a v2 database upgrade through the same code path and neither can be
+half-applied.
+
+Verified against a **copy of the reference node's real database** before the
+original was touched:
+
+```text
+samples        7440 rows  identical
+dtc_reads        27 rows  identical
+sessions          9 rows  identical
+vehicle_info     16 rows  identical
+events            5 rows  identical
+monitor_tests     0 rows  identical
+EVERY ORIGINAL ROW AND COLUMN IDENTICAL: True
+version 2 -> 3      cycle_id on history: NULL (not 0)
+```
+
+The backfill took exactly the eight real module addresses and excluded the two
+malformed `vehicle_info` rows (`ecu:addresses`, `ecu:names`) that a transient
+bug wrote and that this record already discloses. Idempotent across two opens.
+
+The test fixture builds a v2 database the way the node's really was — v1 schema
+then `ALTER TABLE` — because a flat schema string would declare `ecu` mid-table
+and the byte-identity test would then be proving a shape the node does not
+have. Confirmed against the live `.schema`, where `samples.ecu` sits after
+`uploaded_at`.
+
+### PID 01 decoded, and cross-checked without touching the vehicle
+
+Service 01 PID 01 was previously stored as `undecoded`, because it is a
+composite of MIL state and readiness monitors that a scalar cannot represent.
+It now decodes into `monitor_status` plus one `monitor_readiness` row per bit.
+
+The decoder was validated **offline against the frames already on the node** —
+no vehicle access required. Every module returned the same reply:
+
+```text
+41 01 00 04 00 00
+```
+
+| Field | Value |
+|---|---|
+| MIL | off |
+| DTC count | 0 |
+| Supported monitors | **1 of 11** — `components` only |
+| Ignition table | spark |
+
+Three independent cross-checks agree, which is what makes this a validation
+rather than a plausible reading:
+
+1. the DTC count of zero matches the zero codes services 03/07/0A returned in
+   the same sessions;
+2. MIL off matches PID `21` reporting 0 km travelled with the lamp on; and
+3. a single supported monitor is exactly what a battery-electric vehicle should
+   report — no catalyst, oxygen sensor, evaporative or misfire monitors exist
+   to run.
+
+Bytes C and D are both zero, so the one genuinely ambiguous bit in the standard
+(spark byte B bit 4, called A/C refrigerant by older references and reserved by
+J1979-DA, and named `reserved_b4` here rather than guessed) never arises on
+this vehicle.
+
+### Adaptive collection policy
+
+`policy.py` is a pure state machine with no I/O, so every transition is testable
+without a fake transport. It is **not wired into the collector yet** and ships
+inert.
+
+Review caught one defect worth recording: `wake_volts` defaulted to 13.0 V,
+which sits exactly on top of the observed asleep band (12.7–13.0 V) with a
+`>=` comparison — so a resting vehicle would have been read as awake and OBD
+polling re-enabled on a truck that was merely parked. It is now 13.4 V, bounded
+on both sides by real readings: above the highest resting value and below the
+13.9 V running value. It is still not calibrated, and the honest version comes
+from trending `ATRV` across a full sleep period.
 
 ## Resource result
 

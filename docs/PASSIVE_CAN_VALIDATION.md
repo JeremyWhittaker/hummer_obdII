@@ -10,9 +10,9 @@ record what was searched for, what was not found, and what the single bounded
 experiment worth running would look like — so the next person with this idea
 spends an evening on it instead of a month.
 
-[The enhanced PID validation plan](ENHANCED_PID_VALIDATION.md) closes by
-calling passive monitoring "a candidate for evaluation, not a fallback that can
-be reached for because Mode 22 is blocked". This is that evaluation. The short
+[The enhanced PID validation plan](ENHANCED_PID_VALIDATION.md) lists passive
+monitoring "as a candidate for evaluation, not as a fallback that can be
+reached for because Mode 22 is blocked". This is that evaluation. The short
 version: the fallback is probably not there, one useful fact was confirmed
 along the way, and the research had limits worth stating out loud.
 
@@ -301,9 +301,11 @@ up as an incident. Do not send a follow-up request to investigate.
 
 Budget this as a low-probability experiment, not as a planned data source.
 
-The evidence says a 2024+ GM Global B vehicle does not hand out broadcast
-traffic at the OBD-II connector, the one public precedent for decoding GM pack
-data came from a tap somewhere else on a previous-generation platform, and no
+The evidence says a 2024+ GM Global B vehicle is treated as closed by the
+people best placed to open it and gives no reason to expect usable broadcast
+traffic at the OBD-II connector — the barrier itself is not pinned down, per
+the mechanism caveat above. The one public precedent for decoding GM pack data
+came from a tap somewhere else on a previous-generation platform, and no
 citable Ultium identifier or DBC exists in any of the places such a thing would
 live. Against that, the only confirmed positive is that if the experiment is
 ever run, it can be run without transmitting — which is a precondition, not a

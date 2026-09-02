@@ -33,7 +33,7 @@ endorsed by General Motors, GMC, OBD Solutions, or Waveshare.
   and persistent RFCOMM binding.
 - Reconnect-aware polling, WAL-mode SQLite buffering, masked vehicle identity,
   and an uploader that is disabled by default.
-- A hardware-free PTY/ELM simulator and 372 tests (328 subtests) covering the
+- A hardware-free PTY/ELM simulator and 509 tests (391 subtests) covering the
   safety boundary, transport, decoding, storage, recovery, display, and
   end-to-end probe flow.
 - Conservative e-paper operation: full refreshes only, unchanged frames are
@@ -157,7 +157,8 @@ src/hummer_obd/
   capabilities.py    sanitized offline capability report; never opens the port
   export.py          local export of stored telemetry for external ingestion
   voltage.py         12 V watch that provably transmits nothing to the vehicle
-  battery.py         PiSugar2 cell watch and graceful shutdown
+  battery.py         PiSugar2 cell watch and low-battery response
+  policy.py          adaptive awake/parked/asleep collection policy
   probe.py           supervised one-shot probe and offline replay
   btdiscover.py      recovery/binding for an already bonded adapter
   display/status.py  hardware-free renderer and Waveshare panel writer
@@ -260,6 +261,9 @@ See [Validation](docs/VALIDATION.md) for the test matrix and evidence policy.
   data handling.
 - [Validation](docs/VALIDATION.md) — automated and hardware-backed acceptance
   results.
+- [Passive CAN validation](docs/PASSIVE_CAN_VALIDATION.md) — why passive
+  monitoring at this vehicle's connector is very likely a dead end, and the
+  bounded experiment that would confirm it.
 - [Capabilities](docs/CAPABILITIES.md) — what the node, the adapter, and this
   vehicle can actually do, split into proven, available-but-unproven, and
   out of scope.

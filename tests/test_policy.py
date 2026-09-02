@@ -310,6 +310,40 @@ class TestAsleep(unittest.TestCase):
         self.assertEqual(decision.state, NOT_SERVING)
         self.assertEqual(policy.quiet_since, clock.now)
 
+    def test_a_silent_cycle_does_not_unseat_sleep_reached_by_the_window(self):
+        # Regression: ASLEEP can be reached by the window with asleep_streak
+        # still at 0.  Without the still_asleep short-circuit the next silent
+        # cycle falls through to _quiet, which sees a streak below the
+        # confirmation count and an elapsed of zero, and drops a sleeping
+        # vehicle back to the 45s parked interval.  Sleep confirmed one way
+        # must not need re-confirming the other way.
+        clock = Clock()
+        policy = Policy(clock=clock)
+        policy.decide(REFUSING)
+        clock.advance(900.0)
+        self.assertEqual(policy.decide(REFUSING).state, ASLEEP)
+        self.assertEqual(policy.asleep_streak, 0)
+        clock.advance(300.0)
+        decision = policy.decide(SILENT)
+        self.assertEqual(decision.state, ASLEEP)
+        self.assertEqual(decision.interval_s, 300.0)
+        self.assertFalse(decision.obd_allowed)
+        self.assertEqual(token(decision), "still_asleep")
+
+    def test_a_voltage_inside_the_recorded_asleep_band_does_not_wake(self):
+        # docs/VALIDATION.md and docs/CAPABILITIES.md both record the
+        # powered-off band as 12.7 V - 13.0 V.  12.9 V is unambiguously inside
+        # it, so it must not end a sleep observation.  The 13.0 V boundary
+        # itself is deliberately not asserted here: the default wake_volts
+        # sits exactly on it and waking there is a live, uncalibrated defect
+        # recorded in the module docstring, not behaviour worth pinning.
+        clock = Clock()
+        policy = Policy(PolicyConfig(asleep_confirm_cycles=1), clock=clock)
+        policy.decide(SILENT)
+        decision = policy.decide(Observation(volts=12.9))
+        self.assertEqual(decision.state, ASLEEP)
+        self.assertFalse(decision.obd_allowed)
+
     def test_the_wake_threshold_only_applies_from_asleep(self):
         # From RECENTLY_PARKED the OBD evidence is still arriving and is much
         # better than a voltage, so the voltage is not given a vote.

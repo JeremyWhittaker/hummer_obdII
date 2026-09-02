@@ -915,6 +915,21 @@ class TestMonitorStatus(unittest.TestCase):
         self.assertEqual(row.readiness, [])
         self.assertEqual(row.raw_hex, "0441018307")
 
+    def test_three_data_bytes_are_still_a_short_frame(self):
+        # 41 01 83 07 65: byte D is the one missing.  Four bytes are needed
+        # before any of them is read, so this is the boundary case that says
+        # so -- the alternative is an IndexError, or C decoded against a D
+        # that never arrived.
+        rows = decode_monitor_status(parse_reply("18DAF145054101830765\r>"))
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual((row.ecu, row.status), ("45", "short_frame"))
+        self.assertIsNone(row.mil_on)
+        self.assertIsNone(row.dtc_count)
+        self.assertEqual(row.ignition_type, "")
+        self.assertEqual(row.readiness, [])
+        self.assertEqual(row.raw_hex, "054101830765")
+
     def test_a_short_frame_from_one_module_does_not_hide_a_good_one(self):
         raw = "18DAF1450441018307\r" + COMPRESSION_MONITOR_STATUS
         rows = decode_monitor_status(parse_reply(raw))
@@ -1058,6 +1073,15 @@ class TestCanStatusCounters(unittest.TestCase):
         # is some other reply, and cropping it to two digits would turn text
         # nobody parsed into a plausible error count.
         self.assertEqual(parse_can_status("T:001 R:002"), (None, None))
+
+    def test_the_width_rule_applies_to_the_trailing_counter_too(self):
+        # The transmit field is bounded by the "R:" that has to follow it; the
+        # receive field is bounded by nothing but the end of the reply, so it
+        # is the one that silently crops.  "T:00 R:002" must be refused for the
+        # same reason as "T:001 R:002" and not reported as (0, 0).
+        self.assertEqual(parse_can_status("T:00 R:002"), (None, None))
+        self.assertEqual(parse_can_status("T:00 R:00A"), (None, None))
+        self.assertEqual(parse_can_status("T:00 R:00"), (0, 0))
 
 
 def parse_reply_from_frames(frame: bytes):

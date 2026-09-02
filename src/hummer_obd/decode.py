@@ -1167,8 +1167,12 @@ def decode_cvns_per_ecu(reply: AdapterReply) -> list[tuple[str, str]]:
 # --- adapter status ------------------------------------------------------
 #: ``T:xx R:xx`` inside an ``ATCS`` reply.  Each counter is printed as a
 #: two-character field, so a wider one is not this reply and is refused rather
-#: than reinterpreted.
-_CAN_STATUS = re.compile(r"T:\s*([0-9A-F]{1,2})\s*R:\s*([0-9A-F]{1,2})")
+#: than reinterpreted.  The negative lookaheads are what enforce that on *both*
+#: counters: without them the trailing ``R:`` field of ``T:00 R:002`` still
+#: matches its first two digits and a reply nobody parsed is reported as a
+#: plausible pair of error counts.
+_CAN_STATUS = re.compile(
+    r"T:\s*([0-9A-F]{1,2})(?![0-9A-F])\s*R:\s*([0-9A-F]{1,2})(?![0-9A-F])")
 
 
 def parse_can_status(text: str) -> tuple[Optional[int], Optional[int]]:

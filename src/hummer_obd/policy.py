@@ -61,13 +61,42 @@ rail arrives unfiltered, so it gets its own streak here.
 
 The two voltage thresholds are the least-proven numbers in this file
 --------------------------------------------------------------------
-``wake_volts = 13.0`` and ``low_volts = 12.2`` are reasoned from exactly two
-observations: 13.9 V with the DC-DC converter running, and 12.7 V five minutes
-later with the vehicle asleep.  13.0 V sits between them, and 12.2 V sits below
-the resting reading.  That is a defensible starting point and nothing more.
-Neither has been calibrated against a full sleep period, and both should be
-before any conclusion rests on them.  They are configuration, not constants,
-for that reason.
+``wake_volts = 13.0`` and ``low_volts = 12.2`` are reasoned from a very small
+record.  ``docs/VALIDATION.md`` caught one transition directly -- 13.9 V with
+the DC-DC converter running, then 12.7 V five minutes later with the vehicle
+asleep -- but the summary table there (and the identical one in
+``docs/CAPABILITIES.md``) does **not** record a single asleep value.  It
+records a band:
+
+===============================  ==================
+vehicle state                    ``ATRV``
+===============================  ==================
+awake, DC-DC converter running   13.9 V
+powered off, bus silent          12.7 V -- 13.0 V
+===============================  ==================
+
+A ``wake_volts`` of 13.0 would sit exactly **on** the top of that asleep band,
+and the comparison is ``>=``, so a 13.0 V reading -- a value the validation
+record itself lists as "powered off, bus silent" -- would wake the policy out
+of ASLEEP and re-enable OBD requests on a truck that is merely parked.  That is
+the wrong direction to be wrong in, so the default is **13.4 V**.
+
+13.4 is not a guess dressed up as a number: it is bounded on both sides by the
+two readings that exist.  It is strictly above the highest observed resting
+value (13.0) and strictly below the observed running value (13.9), so it cannot
+mistake rest for running, and the failure it *can* still have is the harmless
+one -- staying asleep a little longer than necessary on a vehicle that has
+genuinely woken, which costs some data and sends no traffic.
+
+It is still not calibrated.  The honest version of this number comes from
+trending ``ATRV`` across a full sleep period -- the measurement
+``docs/VALIDATION.md`` says the collector gate is waiting on -- and setting
+``wake_volts`` above the highest resting value that shows.
+
+``low_volts = 12.2`` sits below the whole recorded band and is the safer of the
+two, but it is no better calibrated.  Neither threshold has been checked
+against a full sleep period.  They are configuration, not constants, for that
+reason.
 """
 
 from __future__ import annotations
@@ -177,7 +206,11 @@ class PolicyConfig:
     #: Consecutive silent-with-clean-counters cycles required before sleep is
     #: declared.  More than one, because a single missed cycle is normal.
     asleep_confirm_cycles: int = 3
-    wake_volts: float = 13.0
+    #: Above the observed asleep band (12.7-13.0 V) and below the observed
+    #: running value (13.9 V), so a resting reading can never be mistaken for
+    #: a running one.  See the module docstring; calibrate against a full
+    #: sleep period before relying on it.
+    wake_volts: float = 13.4
     low_volts: float = 12.2
     #: Consecutive low readings on the vehicle's 12 V rail before stopping.
     #: Same reasoning as ``battery.py``: one low reading proves nothing.

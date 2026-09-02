@@ -47,7 +47,7 @@ power test is complete.
 | Collector | one-shot proven; continuous unit disabled and config flag false |
 | Battery | PiSugar2 (IP5209) on I2C bus 1; `hummer-battery` enabled and active, shuts down below 3.40 V sustained |
 | Upload | disabled, endpoint empty |
-| Tests | 372 passed / 328 subtests under both test runners |
+| Tests | 509 passed / 391 subtests under both test runners |
 
 The final controlled reboot was also accepted: both SSH paths returned in about
 36 seconds, all required infrastructure/display/RFCOMM services were active,
