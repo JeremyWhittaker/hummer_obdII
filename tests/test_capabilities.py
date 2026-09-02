@@ -149,6 +149,212 @@ def write_database(root: Path) -> Path:
     return path
 
 
+def write_coverage_session(store: Storage, session_uid: str, timestamps: list, **session_kwargs) -> int:
+    """A session with one sample per timestamp in *timestamps* (already ISO-8601).
+
+    Mirrors :func:`write_database`'s own trick of writing rows and then
+    rewriting their ``ts`` column directly: the sample value is irrelevant to
+    coverage, only the timestamp is, so nothing here decodes anything real.
+    """
+    sid = store.start_session(session_uid, **session_kwargs)
+    row_ids = [
+        store.add_sample(sid, PidValue("0D", "vehicle speed", 0.0, "km/h", "410d00", "ok"))
+        for _ in timestamps
+    ]
+    for row_id, ts in zip(row_ids, timestamps):
+        store.conn.execute("UPDATE samples SET ts=? WHERE id=?", (ts, row_id))
+    store.end_session(sid)
+    return sid
+
+
+class CoverageFixture(unittest.TestCase):
+    """A bare project root (config only) that individual tests fill with a
+    hand-built database, so each test controls its own session/sample layout
+    exactly instead of inheriting the shared fixture's timestamps.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.device = self.root / "fake-rfcomm0"
+        self.device.write_bytes(b"")
+        self.config_path = write_config(self.root, self.device)
+        self.cfg = load_config(self.config_path, root=self.root)
+        self.db_path = self.root / "data" / "hummer_obd.sqlite3"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def build(self, **kwargs):
+        with mock.patch.object(capabilities.shutil, "which", return_value=None):
+            return build_report(self.cfg, **kwargs)
+
+
+class TestCoverageSection(CoverageFixture):
+    def test_two_sessions_report_the_gap_between_them(self):
+        with Storage(self.db_path) as store:
+            write_coverage_session(store, "sess-a", [
+                "2026-09-01T10:00:00+00:00", "2026-09-01T10:01:00+00:00",
+            ])
+            write_coverage_session(store, "sess-b", [
+                "2026-09-01T10:06:00+00:00", "2026-09-01T10:07:00+00:00",
+            ])
+        coverage = self.build()["sections"]["coverage"]
+        self.assertEqual(coverage["sessions"]["count"], 2)
+        self.assertEqual(len(coverage["gaps"]), 1)
+        gap = coverage["gaps"][0]
+        self.assertEqual(gap["after_session"], "sess-a")
+        self.assertEqual(gap["before_session"], "sess-b")
+        self.assertAlmostEqual(gap["seconds"], 300.0)
+        self.assertEqual(gap["start"], "2026-09-01T10:01:00+00:00")
+        self.assertEqual(gap["end"], "2026-09-01T10:06:00+00:00")
+        self.assertAlmostEqual(coverage["longest_gap_s"], 300.0)
+        self.assertNotIn("note", coverage)  # a real gap was found; nothing to caveat
+
+    def test_a_gap_shorter_than_the_threshold_is_not_reported(self):
+        with Storage(self.db_path) as store:
+            write_coverage_session(store, "sess-a", [
+                "2026-09-01T10:00:00+00:00", "2026-09-01T10:00:10+00:00",
+            ])
+            write_coverage_session(store, "sess-b", [
+                "2026-09-01T10:00:40+00:00", "2026-09-01T10:00:50+00:00",
+            ])
+        coverage = self.build()["sections"]["coverage"]  # default threshold: 60s
+        self.assertEqual(coverage["gaps"], [])
+        self.assertIn("no gaps longer than 60.0s", coverage["note"])
+
+    def test_the_gap_threshold_is_configurable(self):
+        with Storage(self.db_path) as store:
+            write_coverage_session(store, "sess-a", [
+                "2026-09-01T10:00:00+00:00", "2026-09-01T10:00:10+00:00",
+            ])
+            write_coverage_session(store, "sess-b", [
+                "2026-09-01T10:00:40+00:00", "2026-09-01T10:00:50+00:00",
+            ])
+        coverage = self.build(gap_threshold_s=10.0)["sections"]["coverage"]
+        self.assertEqual(len(coverage["gaps"]), 1)
+        self.assertAlmostEqual(coverage["gaps"][0]["seconds"], 30.0)
+        self.assertEqual(coverage["gap_threshold_s"], 10.0)
+
+    def test_coverage_ratio_for_a_known_layout(self):
+        with Storage(self.db_path) as store:
+            # session a: 100s of samples, then a 50s gap, then 50s of session b.
+            write_coverage_session(store, "a", [
+                "2026-09-01T09:00:00+00:00", "2026-09-01T09:01:40+00:00",
+            ])
+            write_coverage_session(store, "b", [
+                "2026-09-01T09:02:30+00:00", "2026-09-01T09:03:20+00:00",
+            ])
+        coverage = self.build()["sections"]["coverage"]
+        self.assertAlmostEqual(coverage["observed_seconds"], 150.0)
+        self.assertAlmostEqual(coverage["total_span_seconds"], 200.0)
+        self.assertAlmostEqual(coverage["coverage_ratio"], 0.75)
+
+    def test_a_single_session_reports_no_gaps(self):
+        with Storage(self.db_path) as store:
+            write_coverage_session(store, "only", [
+                "2026-09-01T09:00:00+00:00", "2026-09-01T09:00:10+00:00",
+            ])
+        coverage = self.build()["sections"]["coverage"]
+        self.assertEqual(coverage["sessions"]["count"], 1)
+        self.assertEqual(coverage["gaps"], [])
+        self.assertIsNone(coverage["longest_gap_s"])
+        self.assertIn("only one session", coverage["note"])
+
+    def test_zero_and_one_sample_sessions_have_zero_duration(self):
+        with Storage(self.db_path) as store:
+            write_coverage_session(store, "empty", [])
+            write_coverage_session(store, "single", ["2026-09-01T09:00:00+00:00"])
+        coverage = self.build()["sections"]["coverage"]
+        recent = {item["session_uid"]: item for item in coverage["sessions"]["recent"]}
+        self.assertEqual(recent["empty"]["sample_count"], 0)
+        self.assertEqual(recent["single"]["sample_count"], 1)
+        self.assertAlmostEqual(coverage["observed_seconds"], 0.0)
+
+    def test_an_empty_root_with_no_database_still_produces_the_section(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cfg = load_config(root=root)
+            cfg.adapter.device = str(root / "no-such-device")
+            with mock.patch.object(capabilities.shutil, "which", return_value=None):
+                report = build_report(cfg)
+        coverage = report["sections"]["coverage"]
+        self.assertEqual(coverage["sessions"], {"count": 0, "recent": [], "omitted": 0})
+        self.assertEqual(coverage["gaps"], [])
+        self.assertIsNone(coverage["coverage_ratio"])
+        self.assertIn("no collector database", coverage["note"])
+        self.assertIn("### collection coverage", render_text(report))
+
+    def test_overlapping_sessions_do_not_produce_a_negative_gap(self):
+        with Storage(self.db_path) as store:
+            write_coverage_session(store, "a", [
+                "2026-09-01T09:00:00+00:00", "2026-09-01T09:03:20+00:00",  # 0..200s
+            ])
+            write_coverage_session(store, "b", [
+                "2026-09-01T09:01:40+00:00", "2026-09-01T09:05:00+00:00",  # 100..300s, overlaps a
+            ])
+        coverage = self.build()["sections"]["coverage"]
+        self.assertEqual(coverage["gaps"], [])
+        self.assertIsNone(coverage["longest_gap_s"])
+        for gap in coverage["gaps"]:
+            self.assertGreaterEqual(gap["seconds"], 0.0)
+
+    def test_an_unparsable_timestamp_does_not_crash_the_report(self):
+        with Storage(self.db_path) as store:
+            sid = store.start_session("bad-ts")
+            row_id = store.add_sample(
+                sid, PidValue("0D", "vehicle speed", 0.0, "km/h", "410d00", "ok")
+            )
+            store.conn.execute("UPDATE samples SET ts=? WHERE id=?", ("not-a-timestamp", row_id))
+            store.end_session(sid)
+        coverage = self.build()["sections"]["coverage"]  # must not raise
+        self.assertEqual(coverage["sessions"]["count"], 1)
+        self.assertEqual(coverage["sessions"]["recent"][0]["sample_count"], 1)
+        self.assertIsNone(coverage["first_sample"])
+        self.assertIsNone(coverage["last_sample"])
+        self.assertAlmostEqual(coverage["observed_seconds"], 0.0)
+
+    def test_a_timezone_naive_timestamp_does_not_crash_the_report(self):
+        """A naive value parses cleanly but cannot be compared to an aware one.
+
+        ``datetime.fromisoformat`` accepts ``"...T10:00:00"`` -- no ``+00:00``
+        -- without raising, so this is not caught by the plain "unparsable"
+        case; only mixing it into a comparison against an aware timestamp
+        raises, later and non-obviously.  It has to be excluded before that.
+        """
+        with Storage(self.db_path) as store:
+            write_coverage_session(store, "mixed", [
+                "2026-09-01T09:00:00+00:00",  # aware
+                "2026-09-01T09:00:10",        # naive: no offset
+            ])
+        coverage = self.build()["sections"]["coverage"]  # must not raise
+        self.assertEqual(coverage["sessions"]["recent"][0]["sample_count"], 2)
+        self.assertEqual(coverage["first_sample"], "2026-09-01T09:00:00+00:00")
+        self.assertEqual(coverage["last_sample"], "2026-09-01T09:00:00+00:00")
+        self.assertAlmostEqual(coverage["observed_seconds"], 0.0)
+
+    def test_the_recent_session_list_is_capped_at_ten_with_an_honest_omitted_count(self):
+        with Storage(self.db_path) as store:
+            for i in range(12):
+                write_coverage_session(store, f"sess-{i:02d}", [
+                    f"2026-09-01T{9 + i:02d}:00:00+00:00",
+                ])
+        coverage = self.build()["sections"]["coverage"]
+        self.assertEqual(coverage["sessions"]["count"], 12)
+        recent = coverage["sessions"]["recent"]
+        self.assertEqual(len(recent), 10)
+        self.assertEqual(coverage["sessions"]["omitted"], 2)
+        # the two oldest sessions are the ones left out, never a silent drop.
+        self.assertEqual(recent[0]["session_uid"], "sess-02")
+        self.assertEqual(recent[-1]["session_uid"], "sess-11")
+
+    def test_ended_at_reports_open_for_a_session_never_closed(self):
+        with Storage(self.db_path) as store:
+            store.start_session("still-running")
+        coverage = self.build()["sections"]["coverage"]
+        self.assertEqual(coverage["sessions"]["recent"][0]["ended_at"], "open")
+
+
 class CapabilitiesFixture(unittest.TestCase):
     """A project root with a config, evidence, a transcript and a database."""
 
@@ -472,11 +678,12 @@ class TestEmptyRoot(unittest.TestCase):
                 report = build_report(cfg)
             sections = report["sections"]
             for name in ("node", "safety_gate", "configuration", "evidence",
-                         "raw_logs", "database", "services", "deferred"):
+                         "raw_logs", "database", "coverage", "services", "deferred"):
                 self.assertIn(name, sections)
             self.assertEqual(sections["evidence"]["summaries"], 0)
             self.assertEqual(sections["raw_logs"]["files"], [])
             self.assertFalse(sections["database"]["present"])
+            self.assertIn("no collector database", sections["coverage"]["note"])
             self.assertFalse(sections["node"]["adapter_device"]["exists"])
             self.assertIn("### not available / deferred", render_text(report))
 
@@ -548,7 +755,8 @@ class TestCommandLine(CapabilitiesFixture):
         text = stdout.getvalue()
         self.assertEqual(rc, 0)
         for heading in ("### node", "### safety gate", "### configuration",
-                        "### database (read-only)", "### not available / deferred"):
+                        "### database (read-only)", "### collection coverage",
+                        "### not available / deferred"):
             self.assertIn(heading, text)
         self.assertNotIn("\x1b[", text)  # no colour escapes
 

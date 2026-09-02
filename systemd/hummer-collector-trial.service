@@ -1,0 +1,62 @@
+[Unit]
+Description=Hummer Pi bounded read-only collector trial
+Documentation=file:/home/jeremy/hummer-obd/docs/RUNBOOK.md
+After=network-online.target bluetooth.service hummer-rfcomm.service
+Wants=hummer-rfcomm.service
+
+# At most five starts an hour before systemd gives up entirely, so a restart
+# loop cannot quietly poll a parked vehicle all night.  These are [Unit] keys:
+# systemd silently ignores them under [Service], which would leave the loop
+# unbounded while looking correct.
+StartLimitIntervalSec=3600
+StartLimitBurst=5
+
+# A *trial* is the supervised step between one --once cycle and the always-on
+# collector.  It exists because a trial started by hand over SSH dies with the
+# SSH session: a dropped link once stopped a collector and left nothing to
+# restart it, losing three minutes of a drive.  Local logging was never the
+# problem; supervision was.
+#
+# This unit is installed but NOT enabled, and it is not meant to be enabled.
+# Start it deliberately for one bounded run:
+#
+#     sudo systemctl start hummer-collector-trial
+#     systemctl status hummer-collector-trial
+#     sudo systemctl stop hummer-collector-trial      # ends it early
+#
+# Settings live in /etc/default/hummer-collector-trial.
+
+[Service]
+Type=simple
+User=jeremy
+WorkingDirectory=/home/jeremy/hummer-obd
+Environment=PYTHONPATH=/home/jeremy/hummer-obd/src
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/etc/default/hummer-collector-trial
+ExecStart=/usr/bin/python3 -m hummer_obd.collector \
+    --config ${TRIAL_CONFIG} \
+    --root /home/jeremy/hummer-obd \
+    --force \
+    --duration-s ${TRIAL_DURATION_S} \
+    --poll-interval-s ${TRIAL_INTERVAL_S}
+
+# A crash is recoverable and should be recovered: that is the entire point.
+# A clean exit is the trial finishing its own --duration-s and must NOT be
+# restarted, which is why this is on-failure and not always.
+Restart=on-failure
+RestartSec=30
+
+# Belt and braces against a mistyped TRIAL_DURATION_S.  The collector bounds
+# itself; this bounds the collector.  The restart-loop bound is in [Unit].
+RuntimeMaxSec=7200
+
+# SIGTERM must have time to close the SQLite session and flush the raw log.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+NoNewPrivileges=true
+ProtectHome=read-only
+ReadWritePaths=/home/jeremy/hummer-obd
+
+# Deliberately no [Install] section.  This unit is started by hand for a single
+# supervised trial; it must never be enabled to start at boot.

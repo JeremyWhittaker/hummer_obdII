@@ -34,12 +34,16 @@ echo "### systemd units"
 sudo cp \
     systemd/hummer-display.service \
     systemd/hummer-collector.service \
+    systemd/hummer-collector-trial.service \
     systemd/hummer-rfcomm.service \
     systemd/hummer-btdiscover.service \
     /etc/systemd/system/
+# Trial settings are operator-editable and must not be clobbered on re-run.
+[ -f /etc/default/hummer-collector-trial ] || \
+    sudo cp config/hummer-collector-trial.default /etc/default/hummer-collector-trial
 sudo systemctl daemon-reload
 echo "  installed (no unit was enabled by this script)"
-for unit in hummer-display hummer-collector hummer-rfcomm hummer-btdiscover; do
+for unit in hummer-display hummer-collector hummer-collector-trial hummer-rfcomm hummer-btdiscover; do
     printf '  %-20s %s\n' "$unit" "$(systemctl is-enabled $unit 2>&1)"
 done
 

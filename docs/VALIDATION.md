@@ -25,8 +25,8 @@ reference node.
 Latest result:
 
 ```text
-pytest:   253 passed
-unittest: 253 tests / 223 subtests passed
+pytest:   265 passed
+unittest: 265 tests / 223 subtests passed
 shell:    all repository shell scripts pass bash -n
 compile:  all Python modules compile
 ```
@@ -373,12 +373,43 @@ invented for a composite the sample shape cannot represent.
 
 ### Honest note on collection continuity
 
-There was an approximately three minute gap between the two sessions. The
-operator's access point dropped, and the command that was meant to restart the
-collector with a wider PID set was cut off after stopping the old one and
-before the new one detached. Nothing was lost from the first session, but no
-samples were taken during the gap. Subsequent remote changes were sent as a
-single atomic payload so they cannot half-apply.
+There was a gap between the two sessions, and it is worth being precise about
+both its size and its cause, because the obvious reading of each is wrong.
+
+The gap was **66.9 seconds**, measured between the last sample of one session
+and the first of the next. It was described in conversation at the time as
+"about three minutes", from memory of the timeline rather than from the data.
+The coverage report built in response to this incident is what produced the
+real figure, which is a reasonable argument for having built it.
+
+Collection is entirely local. Each response is written to an append-only JSONL
+transcript and `os.fsync`'d before it is parsed, and decoded samples go to a
+WAL-mode SQLite database on the node's own disk. Nothing in that path touches
+the network, so a dropped access point cannot lose a sample.
+
+The gap was an operating mistake, not a storage or a network failure. The trial
+had been started as a background process over SSH rather than under systemd.
+When a wider PID set was wanted, a single remote command stopped the running
+collector and then started a new one; the link dropped between those two steps,
+so the stop succeeded and the start never ran. Nothing was supervising the
+process, so nothing restarted it.
+
+Two changes followed:
+
+- `systemd/hummer-collector-trial.service` -- a supervised, bounded trial unit.
+  It survives an SSH session closing, restarts the collector on failure, caps a
+  restart loop at five starts per hour, caps each start at two hours regardless
+  of configuration, does not restart a clean exit, and has no `[Install]`
+  section so it cannot be enabled at boot. The runbook now tells operators to
+  use it and says plainly not to use `nohup` over SSH.
+- The capabilities report gained a collection-coverage section, so a gap is
+  visible and auditable from the local database rather than noticed by
+  accident. Run against the reference node it reports the two real gaps: the
+  66.9 second one above, and the expected 85 minute idle period between the
+  parked evening probe and the drive.
+
+Remote changes are now also sent as a single atomic payload so they cannot
+half-apply.
 
 ## Sleep observation
 

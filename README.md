@@ -33,7 +33,7 @@ endorsed by General Motors, GMC, OBD Solutions, or Waveshare.
   and persistent RFCOMM binding.
 - Reconnect-aware polling, WAL-mode SQLite buffering, masked vehicle identity,
   and an uploader that is disabled by default.
-- A hardware-free PTY/ELM simulator and 253 tests (223 subtests) covering the
+- A hardware-free PTY/ELM simulator and 265 tests (223 subtests) covering the
   safety boundary, transport, decoding, storage, recovery, display, and
   end-to-end probe flow.
 - Conservative e-paper operation: full refreshes only, unchanged frames are
@@ -62,7 +62,7 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | Live driving telemetry | speed to 94 km/h, odometer, pack voltage under load, all from a bounded trial |
 | Vehicle-state detection | awake, gateway-refusing, and fully asleep are distinguishable |
 | Local persistence | byte-exact append-only transcript plus WAL-mode SQLite |
-| Bounded collection | self-stopping trials by cycle count or wall-clock duration |
+| Bounded collection | self-stopping trials by cycle count or wall-clock duration, under systemd supervision |
 | Offline reporting | sanitized capability report that never opens the serial device |
 | Node health | e-paper status page, Bluetooth recovery, reboot-safe services |
 
@@ -150,7 +150,7 @@ src/hummer_obd/
   display/status.py  hardware-free renderer and Waveshare panel writer
 config/              safe example configuration
 scripts/             deployment, pairing, SD-card, Wi-Fi, and smoke tooling
-systemd/             display, RFCOMM, recovery, and collector units
+systemd/             display, RFCOMM, recovery, collector, and trial units
 tests/               unit and PTY-backed integration tests
 docs/                architecture, build, operations, safety, and handoff notes
 ```

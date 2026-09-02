@@ -678,6 +678,218 @@ def _sessions(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     ]
 
 
+#: Sessions shown in the coverage section's per-session list; older sessions
+#: still count towards every total, they just are not enumerated by name.
+_COVERAGE_RECENT_LIMIT = 10
+
+
+def _parse_ts(value: Any) -> Optional[datetime]:
+    """Parse a stored ISO-8601 timestamp, or say nothing rather than crash.
+
+    ``samples.ts`` is written by this project's own code and should always be
+    parseable, but the coverage section exists precisely to survive whatever
+    the database on a real Pi actually contains -- including a row a future
+    schema change, a hand edit, or a partial write left malformed.
+
+    A timestamp with no UTC offset parses cleanly but is not "unparsable" in
+    the way ``except ValueError`` catches -- it is a landmine instead: mixing
+    one naive value into comparisons against the timezone-aware values every
+    other row has raises ``TypeError`` the moment they are compared, not when
+    they are parsed. Every timestamp this project writes carries an offset
+    (:func:`hummer_obd.storage._now`), so one that does not is treated the
+    same as one that cannot be parsed at all: skip the row, do not crash.
+    """
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed
+
+
+def _duration(seconds: Optional[float]) -> str:
+    """Render a span for a human, not for a spreadsheet.
+
+    A coverage report is read by someone deciding whether a gap matters, and
+    "5112.597165s" makes them do arithmetic before they can judge it.  Full
+    precision stays in the JSON; only the text rendering is rounded.
+    """
+    if seconds is None:
+        return "(none)"
+    seconds = float(seconds)
+    if seconds < 90:
+        return f"{seconds:.1f}s"
+    minutes, rest = divmod(seconds, 60)
+    if minutes < 90:
+        return f"{seconds:.0f}s ({int(minutes)}m {int(rest):02d}s)"
+    hours, minutes = divmod(int(minutes), 60)
+    return f"{seconds:.0f}s ({hours}h {minutes:02d}m)"
+
+
+def _coverage_gaps(windows: list[dict[str, Any]], gap_threshold_s: float) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Intervals between temporally consecutive sessions.
+
+    *windows* must already be sorted by ``first_ts``.  A session whose window
+    starts before the previous session's window has ended is an overlap, not
+    a gap -- reporting a negative "gap" would be nonsense, so those pairs are
+    left out of both the full and the threshold-filtered list entirely.
+    """
+    intervals: list[dict[str, Any]] = []
+    for prev, cur in zip(windows, windows[1:]):
+        if cur["first_ts"] <= prev["last_ts"]:
+            continue  # overlap, not a gap
+        seconds = (cur["first_ts"] - prev["last_ts"]).total_seconds()
+        intervals.append({
+            "after_session": prev["uid"],
+            "before_session": cur["uid"],
+            "start": prev["last_ts"].isoformat(),
+            "end": cur["first_ts"].isoformat(),
+            "seconds": seconds,
+        })
+    reported = sorted(
+        (gap for gap in intervals if gap["seconds"] > gap_threshold_s),
+        key=lambda gap: gap["seconds"],
+        reverse=True,
+    )
+    return intervals, reported
+
+
+def _compute_coverage(conn: sqlite3.Connection, gap_threshold_s: float) -> dict[str, Any]:
+    """Everything the coverage section reports, read from one connection.
+
+    Sample timestamps -- not ``sessions.started_at``/``ended_at`` -- are the
+    evidence a gap is built from: a session row can be started and never
+    properly closed, but a run of samples is proof the collector was actually
+    talking to the adapter during that window.
+    """
+    session_rows = conn.execute(
+        "SELECT id, session_uid, started_at, ended_at FROM sessions ORDER BY id"
+    ).fetchall()
+    counts = {
+        row["session_id"]: row["n"]
+        for row in conn.execute("SELECT session_id, COUNT(*) AS n FROM samples GROUP BY session_id")
+    }
+
+    windows: dict[int, dict[str, datetime]] = {}
+    first_sample: Optional[datetime] = None
+    last_sample: Optional[datetime] = None
+    for row in conn.execute("SELECT session_id, ts FROM samples"):
+        ts = _parse_ts(row["ts"])
+        if ts is None:
+            continue  # unparsable timestamp: skip the row, not the report
+        window = windows.setdefault(row["session_id"], {"first_ts": ts, "last_ts": ts})
+        if ts < window["first_ts"]:
+            window["first_ts"] = ts
+        if ts > window["last_ts"]:
+            window["last_ts"] = ts
+        if first_sample is None or ts < first_sample:
+            first_sample = ts
+        if last_sample is None or ts > last_sample:
+            last_sample = ts
+
+    detail: list[dict[str, Any]] = []
+    ordered_windows: list[dict[str, Any]] = []
+    observed_seconds = 0.0
+    for row in session_rows:
+        sid = row["id"]
+        window = windows.get(sid)
+        if window is not None:
+            observed_seconds += (window["last_ts"] - window["first_ts"]).total_seconds()
+            ordered_windows.append({
+                "uid": row["session_uid"],
+                "first_ts": window["first_ts"],
+                "last_ts": window["last_ts"],
+            })
+        detail.append({
+            "session_uid": row["session_uid"],
+            "started_at": row["started_at"] or "",
+            "ended_at": row["ended_at"] or "open",
+            "sample_count": counts.get(sid, 0),
+        })
+    ordered_windows.sort(key=lambda w: w["first_ts"])
+
+    all_intervals, reported_gaps = _coverage_gaps(ordered_windows, gap_threshold_s)
+
+    total_span_seconds = None
+    if first_sample is not None and last_sample is not None:
+        total_span_seconds = (last_sample - first_sample).total_seconds()
+
+    longest_gap_s = max((gap["seconds"] for gap in all_intervals), default=None)
+
+    coverage_ratio = None
+    if total_span_seconds:  # guards both None and exactly-zero span
+        # Overlapping sessions could in principle push observed_seconds past
+        # total_span_seconds; capped at 1.0 so the ratio stays a fraction.
+        coverage_ratio = max(0.0, min(1.0, observed_seconds / total_span_seconds))
+
+    session_count = len(detail)
+    recent = detail[-_COVERAGE_RECENT_LIMIT:]
+    note = ""
+    if session_count == 0:
+        note = "no sessions recorded; nothing to evaluate for coverage"
+    elif session_count == 1:
+        note = "only one session recorded; no gap is measurable without a second session"
+    elif not reported_gaps:
+        note = f"no gaps longer than {gap_threshold_s}s were found between {session_count} sessions"
+
+    result: dict[str, Any] = {
+        "sessions": {
+            "count": session_count,
+            "recent": recent,
+            "omitted": max(0, session_count - len(recent)),
+        },
+        "first_sample": first_sample.isoformat() if first_sample else None,
+        "last_sample": last_sample.isoformat() if last_sample else None,
+        "total_span_seconds": total_span_seconds,
+        "observed_seconds": observed_seconds,
+        "gaps": reported_gaps,
+        "longest_gap_s": longest_gap_s,
+        "coverage_ratio": coverage_ratio,
+    }
+    if note:
+        result["note"] = note
+    return result
+
+
+def _coverage_section(cfg: Config, gap_threshold_s: float = 60.0) -> dict[str, Any]:
+    """Make gaps in local collection visible instead of discovered by accident.
+
+    Derived entirely from ``sessions``/``samples`` in the collector's own
+    database, through the same read-only connection every other database
+    section uses.
+    """
+    path = Path(cfg.path(cfg.collector.database))
+    section: dict[str, Any] = {
+        "gap_threshold_s": gap_threshold_s,
+        "sessions": {"count": 0, "recent": [], "omitted": 0},
+        "first_sample": None,
+        "last_sample": None,
+        "total_span_seconds": None,
+        "observed_seconds": 0.0,
+        "gaps": [],
+        "longest_gap_s": None,
+        "coverage_ratio": None,
+    }
+    if not path.exists():
+        section["note"] = "no collector database; nothing has been recorded on this node"
+        return section
+    try:
+        conn = open_database_readonly(path)
+    except sqlite3.Error as exc:
+        section["error"] = str(exc)
+        return section
+    try:
+        section.update(_compute_coverage(conn, gap_threshold_s))
+    except sqlite3.Error as exc:
+        section["error"] = str(exc)
+    finally:
+        conn.close()
+    return section
+
+
 def _latest_values(conn: sqlite3.Connection, cfg: Config) -> dict[str, Any]:
     """Newest recorded reading for each PID the collector is configured to poll.
 
@@ -859,7 +1071,8 @@ def _where(path: str | Path) -> str:
 
 
 def build_report(cfg: Config, *, config_source: str = "built-in defaults",
-                 json_path: Optional[Path] = None) -> dict[str, Any]:
+                 json_path: Optional[Path] = None,
+                 gap_threshold_s: float = 60.0) -> dict[str, Any]:
     """Assemble the whole report from on-disk evidence.
 
     *json_path*, when given, is excluded from the evidence scan so a previous
@@ -875,6 +1088,7 @@ def build_report(cfg: Config, *, config_source: str = "built-in defaults",
         "evidence": _evidence_section(cfg, exclude=exclude),
         "raw_logs": _raw_logs_section(cfg),
         "database": _database_section(cfg),
+        "coverage": _coverage_section(cfg, gap_threshold_s=gap_threshold_s),
         "services": services,
         "deferred": _deferred_section(cfg, services, gate),
     }
@@ -1035,6 +1249,33 @@ def render_text(report: dict[str, Any]) -> str:
             rows.append((key, db[key]))
     block("database (read-only)", rows)
 
+    coverage = sections.get("coverage", {})
+    cov_sessions = coverage.get("sessions", {})
+    rows = [
+        ("gap threshold", f"{coverage.get('gap_threshold_s')}s"),
+        ("sessions", cov_sessions.get("count", 0)),
+        ("first sample", coverage.get("first_sample")),
+        ("last sample", coverage.get("last_sample")),
+        ("total span", _duration(coverage.get("total_span_seconds"))),
+        ("observed", _duration(coverage.get("observed_seconds", 0.0))),
+        ("coverage ratio", "(none)" if coverage.get("coverage_ratio") is None
+                           else f"{float(coverage['coverage_ratio']):.3f}"),
+        ("longest gap", _duration(coverage.get("longest_gap_s"))),
+    ]
+    for item in cov_sessions.get("recent", []):
+        rows.append((f"session {item['session_uid']}",
+                     f"{item['started_at']} -> {item['ended_at']} ({item['sample_count']} samples)"))
+    if cov_sessions.get("omitted"):
+        rows.append(("older sessions omitted", cov_sessions["omitted"]))
+    for gap in coverage.get("gaps", []):
+        rows.append((f"gap after {gap['after_session']}",
+                     f"{_duration(gap['seconds'])} until {gap['before_session']} "
+                     f"({gap['start']} -> {gap['end']})"))
+    for key in ("note", "error"):
+        if coverage.get(key):
+            rows.append((key, coverage[key]))
+    block("collection coverage", rows)
+
     services = sections.get("services", {})
     rows = [(unit, f"{state.get('enabled')}/{state.get('active')}")
             for unit, state in sorted(services.get("units", {}).items())]
@@ -1097,6 +1338,13 @@ def main(argv=None) -> int:
                         help=f"write the JSON report here (default: <root>/evidence/{DEFAULT_JSON_NAME})")
     parser.add_argument("--no-json", action="store_true", help="do not write a JSON report")
     parser.add_argument("--quiet", action="store_true", help="suppress the console report")
+    parser.add_argument(
+        "--gap-threshold-s",
+        dest="gap_threshold_s",
+        type=float,
+        default=60.0,
+        help="minimum length, in seconds, of a gap between sessions worth reporting (default: 60.0)",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -1109,7 +1357,9 @@ def main(argv=None) -> int:
     if not args.no_json:
         destination = Path(args.json_path) if args.json_path else Path(cfg.root) / "evidence" / DEFAULT_JSON_NAME
 
-    report = build_report(cfg, config_source=config_source, json_path=destination)
+    report = build_report(
+        cfg, config_source=config_source, json_path=destination, gap_threshold_s=args.gap_threshold_s
+    )
 
     written = ""
     if destination is not None:

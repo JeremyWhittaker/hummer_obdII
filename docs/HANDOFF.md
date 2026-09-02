@@ -42,7 +42,7 @@ power test is complete.
 | Probe | completed and reviewed; raw transcript remains private on the Pi |
 | Collector | one-shot proven; continuous unit disabled and config flag false |
 | Upload | disabled, endpoint empty |
-| Tests | 253 passed / 223 subtests under both test runners |
+| Tests | 265 passed / 223 subtests under both test runners |
 
 The final controlled reboot was also accepted: both SSH paths returned in about
 36 seconds, all required infrastructure/display/RFCOMM services were active,

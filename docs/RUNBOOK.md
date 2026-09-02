@@ -315,6 +315,52 @@ sudo systemctl restart hummer-display.service hummer-rfcomm.service
 
 Do not restart or enable the collector as an incidental part of a deployment.
 
+## Running a bounded collector trial
+
+A trial is the supervised step between one `--once` cycle and the always-on
+collector. Run it through systemd, **never** as a background process over SSH.
+
+The reason is concrete. A trial was once started with `nohup` over SSH, and a
+later command meant to restart it with a wider PID set was cut off after
+stopping the old process and before the new one detached. Local logging was
+never at risk -- every sample is fsync'd to the node's own disk and nothing in
+the collector path touches the network -- but nothing was left to restart the
+process. Supervision, not storage, was the gap.
+
+```bash
+# 1. Write a SEPARATE trial config.  Never edit config/hummer.toml for a trial.
+sudoedit /etc/default/hummer-collector-trial     # TRIAL_CONFIG, duration, interval
+
+# 2. Start one bounded run.  It survives your SSH session closing.
+sudo systemctl start hummer-collector-trial
+
+# 3. Watch it without touching the vehicle.
+systemctl status hummer-collector-trial
+journalctl -u hummer-collector-trial -f
+
+# 4. It stops itself at TRIAL_DURATION_S.  To end it early:
+sudo systemctl stop hummer-collector-trial
+```
+
+What the unit guarantees:
+
+| Concern | How it is bounded |
+|---|---|
+| Your SSH session dies | systemd owns the process, not your shell |
+| The collector crashes | `Restart=on-failure`, `RestartSec=30` |
+| A crash loop polls a parked vehicle all night | `StartLimitBurst=5` per `StartLimitIntervalSec=3600`, then systemd gives up |
+| `TRIAL_DURATION_S` is mistyped | `RuntimeMaxSec=7200` hard ceiling per start |
+| The trial finishes normally | it exits 0, and `Restart=on-failure` does not restart a clean exit |
+| A trial silently becomes permanent | the unit has no `[Install]` section, so it cannot be enabled at boot |
+| A trial leaves config changed | `TRIAL_CONFIG` is a separate file; `config/hummer.toml` is never touched |
+
+After a trial, confirm the vehicle still sleeps before considering another:
+
+```bash
+hummer-obd-voltage --root . --interval-s 300 --duration-s 3600   # no CAN traffic
+hummer-obd-capabilities --root .                                 # opens no serial device
+```
+
 ## Troubleshooting
 
 ### Pi appears online but SSH times out

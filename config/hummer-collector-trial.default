@@ -1,0 +1,16 @@
+# Settings for hummer-collector-trial.service.
+# Install to /etc/default/hummer-collector-trial and edit before each trial.
+#
+# TRIAL_CONFIG must be a SEPARATE config file, never config/hummer.toml, so a
+# trial can never leave the deployed configuration changed behind it.
+TRIAL_CONFIG=/home/jeremy/hummer-obd/config/hummer-trial.toml
+
+# Wall-clock bound.  The collector stops itself at this point and exits 0, and
+# systemd does not restart a clean exit.  Keep it well under RuntimeMaxSec
+# (7200) in the unit, which is the backstop, not the bound.
+TRIAL_DURATION_S=1800
+
+# Conservative polling interval for a first continuous trial.  Start slow: the
+# open question is whether polling stops the vehicle sleeping, and a 2 second
+# loop is the aggressive end of that experiment, not the starting point.
+TRIAL_INTERVAL_S=60
