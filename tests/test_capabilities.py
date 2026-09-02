@@ -247,6 +247,7 @@ class TestSanitize(unittest.TestCase):
             ("tailnet 100.64.0.15", "tailnet [redacted-ipv4]"),
             ("v6 fe80::1ff:fe23:4567:890a", "v6 [redacted-ipv6]"),
             ("host hummer-pi.tail9f2c.ts.net", "host [redacted-tailnet-host]"),
+            ("host HUMMER-PI.TAIL9F2C.TS.NET", "host [redacted-tailnet-host]"),
             ("serial 123456786122", "serial ********6122"),
         ]
         for raw, expected in cases:

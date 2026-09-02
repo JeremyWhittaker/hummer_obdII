@@ -105,7 +105,10 @@ GATE_REFUSE_SAMPLES = (
 # left to whoever is doing the pasting.  Order matters below: MAC addresses are
 # taken before IPv6, because both are colon-separated hex.
 
-_TAILNET_RE = re.compile(r"(?<![\w.-])[A-Za-z0-9][A-Za-z0-9-]*(?:\.[A-Za-z0-9-]+)*\.ts\.net\b")
+#: Case-insensitive: DNS is, and a hostname copied out of a UI may not be
+#: lower-cased.  The literal ``ts.net`` suffix is still required, so this
+#: widens what is caught without widening what is matched.
+_TAILNET_RE = re.compile(r"(?<![\w.-])[A-Za-z0-9][A-Za-z0-9-]*(?:\.[A-Za-z0-9-]+)*\.ts\.net\b", re.I)
 _MAC_RE = re.compile(r"(?<![0-9A-Fa-f:])([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})(?![0-9A-Fa-f:])")
 #: The same address written with hyphens, which is how an adapter's own
 #: device-description string (``AT@2``, ``STDI``) often reports it.  It needs
@@ -348,17 +351,16 @@ def _safe_endpoint(endpoint: str) -> str:
         return endpoint
     try:
         parts = urlsplit(endpoint)
-        host = parts.hostname or ""
-        port = parts.port
-        has_credentials = bool(parts.username or parts.password)
     except ValueError:
         # An endpoint we cannot parse is an endpoint we cannot vouch for.
         return "[unparsable-endpoint]"
     if not parts.scheme or not parts.netloc:
         return endpoint  # not a URL at all; the generic sanitizer still runs
-    if port:
-        host = f"{host}:{port}"
-    if has_credentials:
+    # Split userinfo off the authority by hand rather than rebuilding from
+    # ``parts.hostname``/``parts.port``, which lower-cases the host and drops
+    # the brackets around an IPv6 literal.
+    host = parts.netloc.rsplit("@", 1)[-1]
+    if host != parts.netloc:
         host = f"[redacted-credentials]@{host}"
     trimmed = f"{parts.scheme}://{host}{parts.path}"
     if parts.query or parts.fragment:
@@ -383,7 +385,7 @@ def _configuration_section(cfg: Config) -> dict[str, Any]:
         },
         "upload": {
             "enabled": cfg.upload.enabled,
-            "endpoint": cfg.upload.endpoint,
+            "endpoint": _safe_endpoint(cfg.upload.endpoint),
             "require_https": cfg.upload.require_https,
             "batch_size": cfg.upload.batch_size,
             "interval_s": cfg.upload.interval_s,
