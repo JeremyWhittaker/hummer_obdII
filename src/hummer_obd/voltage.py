@@ -124,7 +124,12 @@ class VoltageWatch:
         new = not self.output.exists()
         self.output.parent.mkdir(parents=True, exist_ok=True)
         with open(self.output, "a", newline="") as fh:
-            writer = csv.DictWriter(fh, fieldnames=CSV_FIELDS)
+            # "\n", not the csv module's default "\r\n".  This file is
+            # appended to over hours and read back with shell tooling on the
+            # node; a stray carriage return turns the last column into "ok\r"
+            # and silently breaks every cut/awk that looks at it.  export.py
+            # pins the same terminator for the same reason.
+            writer = csv.DictWriter(fh, fieldnames=CSV_FIELDS, lineterminator="\n")
             if new:
                 writer.writeheader()
             writer.writerow(row)

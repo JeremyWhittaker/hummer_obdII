@@ -33,7 +33,7 @@ endorsed by General Motors, GMC, OBD Solutions, or Waveshare.
   and persistent RFCOMM binding.
 - Reconnect-aware polling, WAL-mode SQLite buffering, masked vehicle identity,
   and an uploader that is disabled by default.
-- A hardware-free PTY/ELM simulator and 252 tests (223 subtests) covering the
+- A hardware-free PTY/ELM simulator and 253 tests (223 subtests) covering the
   safety boundary, transport, decoding, storage, recovery, display, and
   end-to-end probe flow.
 - Conservative e-paper operation: full refreshes only, unchanged frames are

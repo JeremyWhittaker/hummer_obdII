@@ -126,6 +126,22 @@ class TestRunLoop(unittest.TestCase):
             self.assertTrue(rows[0]["status"].startswith("unreachable"))
             self.assertEqual(rows[0]["volts"], "")
 
+    def test_rows_end_with_a_bare_newline_not_crlf(self):
+        """Shell tooling on the node reads this file while it is being written.
+
+        The csv module defaults to CRLF, which makes the last column parse as
+        ``ok\r`` under cut/awk and breaks comparisons that look obviously
+        correct.  export.py pins the same terminator.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "v.csv"
+            watch = VoltageWatch(make_config(Path(tmp)), output=out)
+            watch._append({"ts_utc": "t", "volts": "13.9",
+                           "can_status": "T:00 R:00", "status": "ok"})
+            raw = out.read_bytes()
+            self.assertNotIn(b"\r", raw)
+            self.assertTrue(raw.endswith(b",ok\n"))
+
     def test_a_non_positive_interval_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             for bad in (0, -1):
