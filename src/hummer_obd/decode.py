@@ -551,6 +551,15 @@ def decode_freeze_frame(pid: str, reply: AdapterReply, frame: int = 0) -> PidVal
 
 
 # --- service 01 PID 01: MIL, stored-code count and readiness monitors ----
+#
+# Bit layout below is SAE J1979 / ISO 15031-5 service 01 PID 01: byte A carries
+# the MIL bit and this module's stored-code count, byte B the three continuous
+# monitors and the ignition-type selector, and bytes C and D the support and
+# completeness bits for the non-continuous monitors.  The provenance is written
+# down for the same reason :data:`UAS_SCALINGS` records its own: a bit name is
+# an assertion about what a reading means, and an unsourced one is indis-
+# tinguishable from a guess.
+
 #: The three continuous monitors, in the bit order byte B reports them.
 _CONTINUOUS_MONITORS: tuple[str, ...] = ("misfire", "fuel_system", "components")
 
@@ -561,11 +570,18 @@ _CONTINUOUS_MONITORS: tuple[str, ...] = ("misfire", "fuel_system", "components")
 #: NOx/SCR aftertreatment monitor on a compression one, so reading bit 3
 #: wrongly does not fail, it mislabels every non-continuous row.
 #:
-#: Spark bit 4 is ``reserved_b4`` deliberately.  Older ELM-derived references
-#: name it the A/C refrigerant monitor while J1979-DA lists the bit as
-#: reserved, and those two cannot both be written onto a stored row.  The bit's
-#: value is still reported in full; only the claim about what it monitors is
-#: withheld, on the same grounds that keep an unverified UAS scaling out of
+#: The reserved entries are named for **byte C**, which is where these bits
+#: live -- ``reserved_c4``, not ``reserved_b4``.  An earlier draft named them
+#: after byte B and would have written rows reading ``monitor='reserved_b4'``
+#: alongside ``src_byte='C'``, which contradicts itself on the row.  ``monitor``
+#: is a persisted text column, so the rename had to happen before anything
+#: stored one.
+#:
+#: Spark bit 4 stays unnamed deliberately.  Older ELM-derived references call
+#: it the A/C refrigerant monitor while J1979-DA lists the bit as reserved, and
+#: those two cannot both be written onto a stored row.  The bit's value is
+#: still reported in full; only the claim about what it monitors is withheld,
+#: on the same grounds that keep an unverified UAS scaling out of
 #: :data:`UAS_SCALINGS`.
 _NON_CONTINUOUS_MONITORS: dict[str, tuple[str, ...]] = {
     "spark": (
@@ -573,7 +589,7 @@ _NON_CONTINUOUS_MONITORS: dict[str, tuple[str, ...]] = {
         "heated_catalyst",
         "evaporative_system",
         "secondary_air_system",
-        "reserved_b4",
+        "reserved_c4",
         "oxygen_sensor",
         "oxygen_sensor_heater",
         "egr_or_vvt_system",
@@ -581,9 +597,9 @@ _NON_CONTINUOUS_MONITORS: dict[str, tuple[str, ...]] = {
     "compression": (
         "nmhc_catalyst",
         "nox_scr_aftertreatment",
-        "reserved_b2",
+        "reserved_c2",
         "boost_pressure",
-        "reserved_b4",
+        "reserved_c4",
         "exhaust_gas_sensor",
         "pm_filter",
         "egr_or_vvt_system",

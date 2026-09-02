@@ -892,14 +892,14 @@ class TestMonitorStatus(unittest.TestCase):
         # J1979-DA reserves the bit.  Both cannot be printed on a stored row,
         # so the bit is reported and the claim about it is withheld.
         bits = self.readiness(SPARK_MONITOR_STATUS)
-        self.assertIn("reserved_b4", bits)
-        self.assertEqual(bits["reserved_b4"].src_bit, 4)
+        self.assertIn("reserved_c4", bits)
+        self.assertEqual(bits["reserved_c4"].src_bit, 4)
         self.assertNotIn("ac_refrigerant", bits)
 
     def test_the_compression_table_reserves_bits_two_and_four(self):
         bits = self.readiness(COMPRESSION_MONITOR_STATUS)
-        self.assertEqual(bits["reserved_b2"].src_bit, 2)
-        self.assertEqual(bits["reserved_b4"].src_bit, 4)
+        self.assertEqual(bits["reserved_c2"].src_bit, 2)
+        self.assertEqual(bits["reserved_c4"].src_bit, 4)
 
     def test_a_short_frame_decodes_no_bits_at_all(self):
         # 41 01 83 07: two of the four data bytes.  Byte A and byte B are

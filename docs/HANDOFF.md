@@ -188,6 +188,16 @@ not solve a missing-source problem by copying them into Git.
 - Large package purges can make a Zero 2 W appear offline for a long time due
   to SD-card I/O and thermal throttling. Never interrupt `apt`/`dpkg` blindly.
 - An unchanged e-paper screen may be intentional; identical frames are skipped.
+- **Never run mutation testing in the shared working tree.** A review agent
+  mutated `safety.py` to check whether a test would catch it, added
+  `"ATMA",  # MUTANT` to the read-only allowlist, and left it there. `ATMA` is
+  the passive-CAN monitor command, so the mutation had quietly opened the one
+  boundary this project exists to hold. It was caught by the routine
+  `git diff -- src/hummer_obd/safety.py` check and never reached a commit, but
+  a second agent committed from the same tree minutes later and the only reason
+  nothing bad landed was timing. Mutation testing belongs in a `git worktree`,
+  and `git diff -- src/hummer_obd/safety.py` must be empty before every commit
+  regardless.
 
 ## Definition of done
 

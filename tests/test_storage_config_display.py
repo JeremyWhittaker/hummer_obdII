@@ -808,6 +808,49 @@ class TestCycleAndModuleWriters(unittest.TestCase):
             self.assertEqual(len(events), 1)
             self.assertIn("Old Name", events[0]["detail"])
 
+    def test_a_refused_answer_is_not_stored_as_an_absence_of_faults(self):
+        """Three very different answers all carry ``codes == []``.
+
+        A module reporting none, a module refusing with
+        ``conditionsNotCorrect``, and a truncated frame are the same empty list
+        on the decoder's dataclass. If a reader ever checks ``codes`` alone,
+        "the gateway would not answer" silently becomes "the gateway has no
+        faults" -- which on a vehicle is the most dangerous direction for that
+        error to run. ``status`` and ``code_count`` are stored beside the codes
+        precisely so the three stay distinguishable in the database.
+        """
+        from hummer_obd.decode import EcuDtcResult
+
+        with Storage(self.path) as store:
+            sid = store.start_session("collect-dtc")
+            store.add_dtc_ecu_reads(sid, [
+                EcuDtcResult(ecu="45", mode="03", codes=[], status="ok",
+                             raw_hex="024300"),
+                EcuDtcResult(ecu="28", mode="03", codes=[], status="negative_response",
+                             raw_hex="037f0322", detail="conditionsNotCorrect"),
+                EcuDtcResult(ecu="17", mode="03", codes=[], status="short_frame",
+                             raw_hex="03"),
+                EcuDtcResult(ecu="40", mode="03", codes=["P0143"], status="ok",
+                             raw_hex="0243010143"),
+            ])
+            rows = {r["ecu"]: r for r in store.conn.execute(
+                "SELECT ecu, codes, code_count, status, detail FROM dtc_ecu_reads")}
+
+        # All four look identical on codes alone, except the one with a fault.
+        self.assertEqual(rows["45"]["codes"], "")
+        self.assertEqual(rows["28"]["codes"], "")
+        self.assertEqual(rows["17"]["codes"], "")
+        # But status keeps them apart, which is the whole point.
+        self.assertEqual(rows["45"]["status"], "ok")
+        self.assertEqual(rows["28"]["status"], "negative_response")
+        self.assertEqual(rows["17"]["status"], "short_frame")
+        self.assertIn("conditionsNotCorrect", rows["28"]["detail"])
+        # "reported none" is a positive observation and must be countable as
+        # one: it is evidence the module answered at all.
+        self.assertEqual(rows["45"]["code_count"], 0)
+        self.assertEqual(rows["40"]["code_count"], 1)
+        self.assertEqual(rows["40"]["codes"], "P0143")
+
     def test_service_09_item_02_is_refused_structurally(self):
         # That is the VIN, and ecu_info is exported. Making it impossible beats
         # a rule someone has to remember.
