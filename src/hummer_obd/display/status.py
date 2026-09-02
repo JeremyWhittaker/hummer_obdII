@@ -17,21 +17,43 @@ returns a PIL image, and ``--simulate`` writes it to a PNG.
 
 from __future__ import annotations
 
+import json
+import math
 import os
 import re
 import shutil
 import socket
 import subprocess
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 WIDTH = 250
 HEIGHT = 122
+R8_STATE_PATH = Path("/home/jeremy/unidenr8/.state/state.json")
+R8_STATE_SCHEMA = 1
+R8_STATE_MAX_BYTES = 64 * 1024
+R8_STATE_MAX_AGE_SECONDS = 90.0
 
-__all__ = ["StatusData", "gather_status", "render_status_image", "main"]
+_R8_STATUSES = frozenset({
+    "starting", "obd-blocked", "connecting", "incompatible", "degraded",
+    "streaming", "reconnecting", "stopped",
+})
+_R8_BANDS = frozenset({
+    "K", "KA", "X", "LASER", "MRCD", "MRCT", "RT3", "RT4", "K POP", "KA POP",
+})
+_R8_DIRECTIONS = frozenset({"front", "side", "rear", "unknown"})
+
+__all__ = [
+    "R8_STATE_PATH",
+    "StatusData",
+    "gather_status",
+    "read_r8_display_line",
+    "render_status_image",
+    "main",
+]
 
 
 def _run(cmd: list[str], timeout: float = 4.0) -> str:
@@ -54,6 +76,7 @@ class StatusData:
     tailscale_ip: str = ""
     uptime: str = ""
     temperature: str = ""
+    r8_state: str = ""
     obd_state: str = "unknown"
     updated: str = ""
 
@@ -65,7 +88,7 @@ class StatusData:
             self.hostname or "(unknown host)",
             f"wifi {wifi}",
             f"lan  {self.lan_ip or '-'}",
-            f"ts   {self.tailscale_ip or '-'}",
+            self.r8_state or f"ts   {self.tailscale_ip or '-'}",
             f"up {self.uptime or '-'}   {self.temperature or '-'}",
             f"obd  {self.obd_state}",
         ]
@@ -146,6 +169,133 @@ def _read_obd_state(cfg=None) -> str:
     return "not bound"
 
 
+def _read_small_json(path: Path) -> Any:
+    """Read one bounded JSON document, or raise a normal parse/I/O error."""
+    with path.open("r", encoding="utf-8") as handle:
+        payload = handle.read(R8_STATE_MAX_BYTES + 1)
+    if len(payload) > R8_STATE_MAX_BYTES:
+        raise ValueError("R8 state exceeds the display input limit")
+    return json.loads(payload)
+
+
+def _r8_document_age(document: dict[str, Any], now: datetime) -> float | None:
+    stamp = document.get("updated_at")
+    if not isinstance(stamp, str):
+        return None
+    try:
+        updated = datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
+    except ValueError:
+        return None
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return (now.astimezone(timezone.utc) - updated).total_seconds()
+
+
+def _r8_voltage(value: Any) -> str:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return "--V"
+    number = float(value)
+    if not math.isfinite(number) or not 0.0 <= number <= 30.0:
+        return "--V"
+    return f"{number:.1f}V"
+
+
+def _r8_alert_line(alerts: Any, voltage: str) -> str | None:
+    if not isinstance(alerts, list) or not alerts:
+        return None
+    alert = alerts[0]
+    if not isinstance(alert, dict):
+        return f"r8 {voltage} alert"
+
+    band = alert.get("band")
+    strength = alert.get("strength")
+    direction = alert.get("direction")
+    if (
+        not isinstance(band, str)
+        or band not in _R8_BANDS
+        or isinstance(strength, bool)
+        or not isinstance(strength, int)
+        or not 0 <= strength <= 8
+        or not isinstance(direction, str)
+        or direction not in _R8_DIRECTIONS
+    ):
+        return f"r8 {voltage} alert"
+    suffix = "" if direction == "unknown" else f" {direction}"
+    return f"r8 {voltage} {band} {strength}/8{suffix}"
+
+
+def read_r8_display_line(
+    path: str | os.PathLike[str] = R8_STATE_PATH,
+    *,
+    now: datetime | None = None,
+    max_age_s: float = R8_STATE_MAX_AGE_SECONDS,
+) -> str:
+    """Build a safe display line from the collector's untrusted state file.
+
+    No free-form value from the file is rendered. Missing, malformed, future,
+    or unknown-schema input falls back to the existing Tailscale line. A valid
+    but old document gets a fixed stale marker instead of stale telemetry.
+    """
+    try:
+        document = _read_small_json(Path(path))
+    except (OSError, UnicodeError, ValueError, RecursionError):
+        return ""
+    if not isinstance(document, dict) or document.get("schema") != R8_STATE_SCHEMA:
+        return ""
+
+    age = _r8_document_age(document, now or datetime.now(timezone.utc))
+    if age is None or age < -30.0:
+        return ""
+    if age > max_age_s:
+        return "r8 stale"
+
+    collector = document.get("collector")
+    obd = document.get("obd")
+    link = document.get("link")
+    telemetry = document.get("telemetry")
+    if not all(isinstance(value, dict) for value in (collector, obd, link, telemetry)):
+        return ""
+
+    status = collector.get("status")
+    if not isinstance(status, str) or status not in _R8_STATUSES:
+        return ""
+    if obd.get("healthy") is False:
+        return "r8 paused: obd"
+    if obd.get("healthy") is not True:
+        return ""
+    if status == "stopped":
+        return "r8 stopped"
+    if status in {"starting", "connecting", "reconnecting"}:
+        return "r8 connecting"
+    if status == "obd-blocked":
+        return "r8 paused: obd"
+    if status == "incompatible":
+        return "r8 incompatible"
+    if status == "degraded":
+        return "r8 degraded"
+    if link.get("connected") is not True:
+        return "r8 disconnected"
+    if link.get("compatible") is not True:
+        return "r8 incompatible"
+    if telemetry.get("stale") is not False:
+        return "r8 data stale"
+
+    voltage = _r8_voltage(telemetry.get("voltage"))
+    alerts = document.get("alerts")
+    if not isinstance(alerts, list):
+        return ""
+    alert_line = _r8_alert_line(alerts, voltage)
+    if alert_line:
+        return alert_line
+    gps_locked = telemetry.get("gps_locked")
+    if not isinstance(gps_locked, bool):
+        return "r8 data invalid"
+    gps = "GPS" if gps_locked is True else "no-fix"
+    return f"r8 {voltage} {gps} clear"
+
+
 def gather_status(cfg=None) -> StatusData:
     ssid, signal = _read_wifi()
     return StatusData(
@@ -156,6 +306,7 @@ def gather_status(cfg=None) -> StatusData:
         tailscale_ip=_read_tailscale_ip(),
         uptime=_read_uptime(),
         temperature=_read_temperature(),
+        r8_state=read_r8_display_line(),
         obd_state=_read_obd_state(cfg),
         updated=datetime.now(timezone.utc).strftime("%H:%MZ"),
     )
