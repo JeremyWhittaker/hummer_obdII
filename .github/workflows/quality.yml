@@ -86,7 +86,7 @@ jobs:
       # `hummer_pi_sd.env` has never been tracked, so a clean result is
       # expected -- expected, not proven.
       - name: Scan for secrets
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # A gitleaks report embeds the matched secret.  Workflow artifacts on
