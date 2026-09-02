@@ -305,6 +305,9 @@ fault", which otherwise look identical.
 | Local export for external/AI ingestion | `export.py` | Proven — jsonl and csv exported from the live database, per-module attribution included |
 | Bluetooth recovery for an already-bonded adapter; cannot pair, trust or remove | `btdiscover.py` | Proven |
 | E-paper status page, full refreshes only, unchanged frames skipped | `display/status.py` | Proven |
+| Adaptive collection policy (awake / parked / asleep) | `policy.py` | Available, unproven — ships inert, not yet wired into the collector |
+| Durable polling cycles and per-module DTC / monitor / service 09 storage | `storage.py` schema v3 | Available, unproven on the wire. The migration is proven: verified row-identical against a copy of the live node database |
+| Service 01 PID `01` decoded into MIL state and readiness monitors | `decode.py`, `monitor_status` | **Proven offline** — validated against frames already stored, with three independent cross-checks |
 | PiSugar2 cell monitoring | `battery.py` | Proven — reads the live pack; chip identified by measurement, not by label |
 | Low-battery response | `battery.py` | Proven — stops vehicle polling and leaves the node reachable. Halting is available but **not** the default: a PiSugar2 cannot power the Pi back on |
 | Hardware-free PTY/ELM simulator | `tests/elm_simulator.py` | Proven |
