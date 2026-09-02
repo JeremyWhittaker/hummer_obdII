@@ -69,14 +69,16 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | Offline reporting | sanitized capability report that never opens the serial device |
 | Node health | e-paper status page, Bluetooth recovery, reboot-safe services |
 | Battery monitoring | PiSugar2 cell read over I2C, with the power IC identified by measurement rather than by label |
+| **HV battery state of charge** | **proven**: one supervised enhanced read (UDS service `22`, identifier `0x27C6`) returns a reproducible value the published decoder maps to ~82 %. Cross-check against the dashboard is still outstanding — see [GM enhanced candidates](docs/GM_ENHANCED_CANDIDATES.md) |
 
 ### Deliberately not available
 
 | Not available | Why |
 |---|---|
 | DTC clearing, actuator tests, any UDS write/control/security service | Permanently forbidden by the safety gate. Not a configuration option |
-| Mode 22 GM/Ultium enhanced PIDs | Rejected until identifiers are independently proven for this VIN — see [the validation plan](docs/ENHANCED_PID_VALIDATION.md) |
-| State of charge, pack voltage, pack temperature, range | Not exposed over standard OBD-II by this vehicle. Needs Mode 22 or passive CAN monitoring |
+| Mode 22 in unattended collection | Service `22` is still refused by the gate the collector uses. Enhanced reads exist only behind a separate, narrower gate that accepts an exact enumerated identifier and must be run deliberately — see [GM enhanced candidates](docs/GM_ENHANCED_CANDIDATES.md) |
+| Identifier sweeping / guessing | An identifier is added only when a fetchable source names it exactly. The gate refuses `0x27C5` and `0x27C7` — one step either side of the one that works |
+| Pack voltage, pack temperature, cell balance, range | Not exposed over standard OBD-II, and no sourced enhanced identifier for them has been found yet. State of charge is the one signal that has been obtained |
 | Remote commands (lock, unlock, precondition, start) | Out of scope. This node has no vehicle write authority of any kind |
 | GPS / location | No receiver, and location is not an OBD-II service |
 | OnStar / GM cloud data | A different system. Belongs in a separate broker with isolated credentials |

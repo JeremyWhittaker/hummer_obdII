@@ -816,6 +816,13 @@ node did during the window reached the CAN bus. `ATCS` read `T:00 R:00` on
 **all 127 samples**, which is the independent confirmation: the adapter
 transmitted nothing and logged no bus errors for the entire measurement.
 
+The watch kept running after this section was first written, and the complete
+trace was retrieved from the node on 2026-09-02 once it came back online. It
+holds **158 samples**, every one of them `T:00 R:00` with status `ok` and no
+transport failure, so the zero-traffic claim now covers the longer file rather
+than the 127-sample prefix it was written against. The figures below are
+unchanged: they were re-derived from the full trace and reproduce exactly.
+
 ### Result
 
 ```text
@@ -836,10 +843,47 @@ transmitted nothing and logged no bus errors for the entire measurement.
 | Settled slope (first 30 min excluded) | **-15.9 mV/hour** (12.90 to 12.80 V over 6.27 h) |
 | Final resting voltage | **12.80 V** |
 
+### A second sleep cycle, from the same trace
+
+The full 158-sample file shows what happened next, and it is worth recording
+because it is an *independent repeat* rather than more of the same window:
+
+```text
+12:45Z  12.8 V   end of the window measured above
+12:50Z  13.5 V   brief power-up
+12:55Z  13.5 V   still awake
+13:00Z  12.7 V   asleep again
+15:28Z  12.8 V   still asleep, 2.5 h later
+```
+
+| Measure | Sleep window 1 | Sleep window 2 |
+|---|---|---|
+| Span | 05:59Z-12:45Z, 6.77 h | 13:00Z-15:28Z, 2.47 h |
+| Samples | 82 | 31 |
+| Range | 12.50-12.90 V | 12.50-12.90 V |
+| Settled slope (first 30 min excluded) | -15.9 mV/hour | **+0.0 mV/hour** (12.80 to 12.80 V over 1.97 h) |
+
+The second window is the more interesting number. It is **flat** -- 12.80 V at
+both ends, no measurable fall across two hours -- which is what the section
+above predicted on physical grounds: resting voltage flattens once the surface
+charge has relaxed, so a slope taken from a freshly-parked battery is mostly
+relaxation and a slope taken later is mostly nothing. Two sleep cycles in one
+day with the hardware attached, the second showing no measurable decline at
+all, is a stronger result for the collector gate than either window alone.
+
+**A caution about this trace.** The node has no RTC (`timedatectl` reports
+`RTC time: n/a`), so its clock is set from NTP after boot. These timestamps are
+trustworthy because the watch ran unbroken and ended *before* the node lost
+power, but a trace that spans a reboot should not be assumed to be continuous
+in time. The 18.5-minute gap at 02:52Z-03:11Z is the only interruption in this
+one, and it is inside the awake period rather than either sleep window.
+
 ### What this does and does not establish
 
 **Established.** The vehicle reaches sleep and *stays* asleep for seven hours
-with the Pi and the OBDLink attached to an always-live port, and the 12 V rail
+with the Pi and the OBDLink attached to an always-live port -- and, per the
+second window above, does so again on the same day after a brief wake, which
+rules out the first result being a one-off. The 12 V rail
 ends the window at 12.80 V — squarely inside the healthy resting range for a
 12 V lead-acid battery, not sagging. Nothing about the attached hardware
 prevented sleep or visibly depleted the rail overnight.

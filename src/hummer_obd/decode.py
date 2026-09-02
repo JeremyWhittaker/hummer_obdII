@@ -78,14 +78,21 @@ _NEGATIVE_RESPONSE_CODES = {
     0x11: "serviceNotSupported",
     0x12: "subFunctionNotSupported",
     0x13: "incorrectMessageLengthOrInvalidFormat",
+    0x14: "responseTooLong",
     0x21: "busyRepeatRequest",
     0x22: "conditionsNotCorrect",
+    0x24: "requestSequenceError",
+    0x25: "noResponseFromSubnetComponent",
+    0x26: "failurePreventsExecutionOfRequestedAction",
     0x31: "requestOutOfRange",
     0x33: "securityAccessDenied",
+    0x34: "authenticationRequired",
     0x35: "invalidKey",
     0x36: "exceedNumberOfAttempts",
     0x37: "requiredTimeDelayNotExpired",
     0x78: "responsePending",
+    0x7E: "subFunctionNotSupportedInActiveSession",
+    0x7F: "serviceNotSupportedInActiveSession",
 }
 
 
@@ -262,7 +269,45 @@ def split_can_header(frame: bytes) -> tuple[bytes, bytes]:
     """
     if len(frame) >= 5 and frame[0] == 0x18 and frame[1] in (0xDA, 0xDB):
         return frame[:4], frame[4:]
+    # GM Global B enhanced diagnostics do not use the legislated 18 DA/DB form.
+    # This vehicle answers a service 22 request as
+    # ``14 2A F1 CB 05 62 27 C6 D1 8A``: priority 0x14, second byte 0x2A.
+    # Without this branch byte 0 is 0x14, whose high nibble 1 means "first frame
+    # of a multi-frame message", so the reply is filed as incomplete and the
+    # payload is discarded -- which is exactly what happened to the first real
+    # enhanced read taken from this truck.
+    #
+    # The pattern is widened only as far as the evidence supports, and a PCI
+    # sanity check stops it swallowing ordinary payload bytes that happen to
+    # begin 14 2A: the byte after a real header must be an ISO-TP PCI whose
+    # length agrees with how many bytes actually followed it.
+    if (
+        len(frame) >= 5
+        and frame[0] in (0x14, 0x18)
+        and frame[1] in (0x2A, 0x2B)
+        and _plausible_pci(frame[4:])
+    ):
+        return frame[:4], frame[4:]
     return b"", frame
+
+
+def _plausible_pci(rest: bytes) -> bool:
+    """True when *rest* opens with an ISO-TP PCI byte consistent with its length.
+
+    Used only to confirm a candidate 29-bit header, so it errs towards saying
+    no: a frame that fails this check is left whole rather than being split on
+    a guess.
+    """
+    if not rest:
+        return False
+    kind = rest[0] >> 4
+    if kind == 0x0:  # single frame; low nibble is the payload length
+        return 0 < (rest[0] & 0x0F) <= len(rest) - 1
+    if kind == 0x1:  # first frame; a 12-bit total length follows
+        return len(rest) >= 2
+    if kind in (0x2, 0x3):  # consecutive frame, or flow control
+        return True
+    return False
 
 
 def _reassemble_isotp(frames: list[bytes], headers: list[str],

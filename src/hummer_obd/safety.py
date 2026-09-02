@@ -12,9 +12,15 @@ Design notes
   known-dangerous service through (defence in depth).
 * The gate refuses command batching (``\r``, ``\n``, ``;``) so a validated
   command cannot smuggle a second, unvalidated one behind it.
-* Mode ``22`` (enhanced read-by-identifier) is *not* enabled in this build.  It
-  is read-only in principle, but GM/Ultium identifiers are unproven on this VIN
-  and the current assignment defers them.
+* Mode ``22`` (enhanced read-by-identifier) is **refused by**
+  :func:`validate_command`, which is the gate every unattended code path uses.
+  A second, deliberately narrower gate --
+  :func:`validate_enhanced_command` -- accepts service ``22`` for an *exact,
+  enumerated* set of identifiers with published provenance, and nothing else.
+  Keeping them as two functions is the point: the collector calls
+  ``validate_command``, so no configuration mistake, flag, or bug in the
+  experimental path can put an enhanced read on the wire during unattended
+  collection.  There is still no runtime bypass and no DID sweeping.
 """
 
 from __future__ import annotations
@@ -26,8 +32,10 @@ __all__ = [
     "UnsafeCommandError",
     "ALLOWED_OBD_MODES",
     "FORBIDDEN_SERVICES",
+    "ENHANCED_READ_DIDS",
     "normalize",
     "validate_command",
+    "validate_enhanced_command",
     "is_safe",
     "describe_command",
 ]
@@ -127,6 +135,17 @@ _ALLOWED_AT_PATTERNS: Final[tuple[re.Pattern[str], ...]] = (
     re.compile(r"^ATCF[0-9A-F]{3,8}$"),   # CAN filter
     re.compile(r"^ATCM[0-9A-F]{3,8}$"),   # CAN mask
     re.compile(r"^STP[0-9]{1,2}$"),    # STN set protocol
+    # CAN priority byte for 29-bit headers.  ``ATSH`` only carries the low three
+    # bytes of a 29-bit ID, so the priority nibble that turns DACBF1 into
+    # 0x14DACBF1 has to be set separately.  Addressing configuration only.
+    re.compile(r"^ATCP[0-9A-F]{2}$"),
+    # ISO 15765-2 flow control.  These decide what the *adapter* sends back
+    # when an ECU answers with a multi-frame response; they cannot originate a
+    # request.  Mode 09 already needs multi-frame reception, so this is read
+    # path plumbing rather than anything new in kind.
+    re.compile(r"^ATFCSH[0-9A-F]{3,8}$"),   # flow control header
+    re.compile(r"^ATFCSD[0-9A-F]{2,10}$"),  # flow control data (max 5 bytes)
+    re.compile(r"^ATFCSM[0-2]$"),           # flow control mode
 )
 
 _HEX_ONLY = re.compile(r"^[0-9A-F]+$")
@@ -230,6 +249,105 @@ def validate_command(command: str) -> str:
         )
 
     raise _reject(raw, "unhandled command shape")  # pragma: no cover - defensive
+
+
+#: Enhanced (UDS service ``22`` ReadDataByIdentifier) identifiers this project
+#: will transmit *under supervision only*.  This is an exact enumeration, not a
+#: range and not a prefix: an identifier that is not a key here is refused.
+#:
+#: The rule for adding an entry is that a **public source must name the exact
+#: identifier**, so that nothing here is a guess.  "Plausible", "adjacent to a
+#: known one", or "the next number up" are not sources.  Sweeping the
+#: identifier space is what this structure exists to prevent -- an ECU asked
+#: for an identifier it does not have answers ``7F 22 31``, but an ECU asked
+#: for thousands of them in sequence is being probed, and that is neither
+#: read-only in spirit nor something this project does to someone's vehicle.
+#:
+#: Provenance for each entry is recorded in ``docs/GM_ENHANCED_CANDIDATES.md``.
+#: Being listed here means "may be transmitted", **not** "is known to work on
+#: this VIN" -- validation status lives in the documentation, not the gate.
+ENHANCED_READ_DIDS: Final[dict[str, str]] = {
+    "27C6": (
+        "HV battery state of charge -- meatpiHQ/wican-fw vehicle_profiles/bt1/"
+        "bt1.json, a profile whose car_model names the Hummer EV explicitly"
+    ),
+}
+
+# The production gate must never learn service 22.  If a future edit adds it to
+# ALLOWED_OBD_MODES, the collector would start sending enhanced reads
+# unattended, which is exactly the outcome the two-gate split exists to make
+# impossible.  Fail at import rather than on a vehicle.
+assert "22" not in ALLOWED_OBD_MODES, (
+    "service 22 must never be in the unattended allowlist; "
+    "enhanced reads go through validate_enhanced_command()"
+)
+
+
+def validate_enhanced_command(command: str) -> str:
+    """Validate a *supervised* enhanced read and return its normalised form.
+
+    This is a second gate, narrower than :func:`validate_command` rather than
+    wider: it accepts adapter commands on exactly the same terms (by delegating
+    to ``validate_command``), and it accepts service ``22`` for an identifier
+    listed in :data:`ENHANCED_READ_DIDS` -- nothing else.  Every other OBD
+    service is refused here, *including the ones the collector is allowed to
+    send*, because a caller reaching for this function is asking for the
+    experimental path and should not get the routine one by accident.
+
+    Nothing in the unattended collection path calls this.  That separation is
+    the safety property, so it is worth stating plainly: enabling an enhanced
+    read requires editing :data:`ENHANCED_READ_DIDS` in source and running a
+    tool that transmits it explicitly.  There is no flag that widens
+    ``validate_command``.
+    """
+    if command is None:
+        raise UnsafeCommandError("refused None: no command")
+    raw = command
+    if any(ch in raw for ch in ("\r", "\n", ";", "\x00")):
+        raise _reject(raw, "command batching/termination characters are not allowed")
+
+    cmd = normalize(raw)
+    if not cmd:
+        raise _reject(raw, "empty command")
+
+    # Adapter configuration reuses the production gate verbatim, so the
+    # experimental path cannot quietly widen what AT/ST commands are legal.
+    if cmd.startswith("AT") or cmd.startswith("ST"):
+        return validate_command(cmd)
+
+    if len(cmd) > MAX_COMMAND_LENGTH:
+        raise _reject(raw, f"longer than {MAX_COMMAND_LENGTH} characters")
+    if not _HEX_ONLY.match(cmd):
+        raise _reject(raw, "not a hexadecimal request")
+
+    mode = cmd[:2]
+    if mode in FORBIDDEN_SERVICES:
+        raise _reject(raw, f"service {mode} is permanently forbidden (write/control/clear)")
+    if mode != "22":
+        raise _reject(
+            raw,
+            "the enhanced gate only accepts service 22; routine read services "
+            "go through validate_command()",
+        )
+
+    did = cmd[2:]
+    if not did:
+        raise _reject(raw, "service 22 requires an identifier")
+    # A bare ``22`` with no identifier, or one carrying several identifiers in a
+    # single request, is refused: one supervised read means one identifier.
+    if len(did) != 4:
+        raise _reject(
+            raw,
+            f"service 22 takes exactly one two-byte identifier, got {len(did)} "
+            f"hex digits ({did!r})",
+        )
+    if did not in ENHANCED_READ_DIDS:
+        raise _reject(
+            raw,
+            f"identifier {did} is not in the supervised enhanced allowlist "
+            f"{sorted(ENHANCED_READ_DIDS)}; identifiers are never guessed",
+        )
+    return cmd
 
 
 def is_safe(command: str) -> bool:

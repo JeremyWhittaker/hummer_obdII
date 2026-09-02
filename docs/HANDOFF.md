@@ -16,10 +16,16 @@ power test is complete.
 
 1. Never send Mode 04 or any DTC-clear command.
 2. Never send Mode 08 or a UDS write/control/security/reset/routine command.
-3. Keep Mode 22 rejected until an exact identifier set is independently
-   validated for the exact vehicle and accepted through the safety process.
-   Services 02 and 06 were added on 2026-09-01 because they are standard and
-   need no guessed identifier; that reasoning does not extend to Mode 22.
+3. Keep Mode 22 rejected **in `validate_command`**, the gate every unattended
+   path uses, permanently. Services 02 and 06 were added on 2026-09-01 because
+   they are standard and need no guessed identifier; that reasoning does not
+   extend to Mode 22, and Mode 22 was *not* added to `ALLOWED_OBD_MODES` -- an
+   import-time assertion fails the build if anyone adds it.
+   On 2026-09-02 a separate, narrower gate `validate_enhanced_command()` was
+   added for supervised reads of an exact enumerated identifier set
+   (`ENHANCED_READ_DIDS`, currently one entry). Identifiers are never guessed,
+   incremented or swept; each needs a fetchable source naming it exactly. See
+   `docs/GM_ENHANCED_CANDIDATES.md`.
 4. Every command must pass `safety.validate_command()` immediately before
    serial I/O; do not add a bypass.
 5. Preserve raw TX/RX bytes append-only before parsing.
@@ -30,7 +36,8 @@ power test is complete.
    wake it.
 8. Keep the continuous collector disabled until the physical power gate is
    satisfied. Overnight stability **is** now observed — 6.8 hours asleep with
-   the hardware attached, rail at 12.80 V. What remains is the half that
+   the hardware attached, rail at 12.80 V, and a second 2.5-hour sleep the same
+   day whose settled slope was flat at +0.0 mV/hour. What remains is the half that
    matters most: whether the vehicle still sleeps while the collector is
    *actively polling*. Every sleep observation so far had polling stopped,
    which is the correct control and is not the condition being gated.

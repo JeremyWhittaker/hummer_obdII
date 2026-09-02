@@ -20,6 +20,53 @@ discount.
 
 ### Added
 
+- **High-voltage battery state of charge, over OBD.** The project previously
+  stated that EV battery data could not be obtained through this port. That was
+  wrong. A single supervised UDS `ReadDataByIdentifier` request for identifier
+  `0x27C6`, addressed to `0x14DACBF1` with CAN priority `0x14`, returns a
+  reproducible value from this vehicle: `62 27 C6 D1 8A`, which the published
+  decoder maps to roughly 82 %. The identifier came from a community profile
+  that names this vehicle, not from a guess. **The value has not yet been
+  cross-checked against the dashboard**, so the honest claim is a stable
+  reading in a plausible range rather than a confirmed percentage.
+  See `docs/GM_ENHANCED_CANDIDATES.md`.
+- **A second safety gate, deliberately narrower than the first.**
+  `safety.validate_enhanced_command()` accepts service `22` only for an
+  identifier enumerated in `ENHANCED_READ_DIDS`, and refuses every other
+  service — including the ordinary read services the collector is allowed to
+  send. Service `22` was **not** added to `ALLOWED_OBD_MODES`; an import-time
+  assertion now fails the build if it ever is, so unattended collection cannot
+  transmit an enhanced read regardless of configuration. The gate refuses
+  `0x27C5` and `0x27C7`, one step either side of the identifier that works,
+  which is the anti-sweep property and is asserted by test.
+- **`hummer_obd.enhanced`**, a supervised experiment runner. Dry run by
+  default: without `--confirm` it prints and validates the exact byte sequence
+  it would send and never opens the serial device. One request per identifier
+  per run, no loop. Records the connector voltage alongside every read, because
+  a `NO DATA` at 12.8 V and one at 13.8 V are different results.
+- Adapter commands `ATCP`, `ATFCSH`, `ATFCSD` and `ATFCSM` on the read-only
+  allowlist. `ATCP` is required because `ATSH` carries only three of the four
+  bytes of a 29-bit identifier; the `ATFCS*` group configures ISO 15765-2 flow
+  control for multi-frame replies, which service 09 already depends on.
+
+### Fixed
+
+- **A GM enhanced reply was parsed as an incomplete multi-frame message and
+  discarded.** `split_can_header` recognised only the legislated `18 DA`/`18 DB`
+  29-bit form. This vehicle answers an enhanced read as `14 2A F1 CB ...`, so
+  byte 0 was `0x14`, whose high nibble reads as "first frame of a multi-frame
+  message"; the parser waited for continuation frames that never arrived and
+  dropped the payload. The first real enhanced read from this truck was very
+  nearly lost to this, and survived only because the raw transcript is written
+  before parsing. The pattern is now widened, guarded by an ISO-TP PCI
+  plausibility check so it cannot swallow ordinary payload bytes.
+- Seven negative-response codes added to the decoder, including `0x34`
+  `authenticationRequired`, which is the one a gatewayed GM module is most
+  likely to return for a protected identifier.
+- `hummer_obd.enhanced` stored the adapter voltage with the adapter's carriage
+  returns and `>` prompt embedded, because `str.strip()` does not remove a
+  trailing `>`. The evidence field now carries the value alone.
+
 - **The read-only telemetry node itself.** A Raspberry Pi Zero 2 W talks to an
   OBDLink MX+ over Bluetooth Classic SPP and a persistent RFCOMM binding,
   preserves byte-exact diagnostic responses, decodes a small set of standard

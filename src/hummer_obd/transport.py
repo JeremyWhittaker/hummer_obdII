@@ -2,7 +2,9 @@
 
 Responsibilities:
 
-* refuse to transmit anything the safety gate has not approved,
+* refuse to transmit anything the safety gate has not approved -- by default
+  :func:`safety.validate_command`, so every existing caller is unattended-safe
+  and service ``22`` is refused here even if some caller upstream forgot,
 * write every transmitted and received byte to the append-only raw log
   *before* any parsing happens,
 * read until the adapter's ``>`` prompt with a bounded timeout,
@@ -57,9 +59,17 @@ class SerialTransport(Transport):
         reconnect_max_s: float = 120.0,
         serial_module=None,
         sleeper: Optional[Callable[[float], None]] = None,
+        validator: Optional[Callable[[str], str]] = None,
     ) -> None:
         self.device = device
         self.rawlog = rawlog
+        #: The gate applied to every command before it reaches the wire.  This
+        #: is a *second* check, independent of whatever the caller already did,
+        #: and it defaults to the unattended-safe gate.  A caller running a
+        #: supervised experiment passes the narrower enhanced gate explicitly;
+        #: there is deliberately no way to pass something permissive, because
+        #: the default being safe is what makes forgetting harmless.
+        self._validator = validator or validate_command
         self.baudrate = baudrate
         self.read_timeout_s = read_timeout_s
         self.command_timeout_s = command_timeout_s
@@ -125,7 +135,7 @@ class SerialTransport(Transport):
     # -- I/O -------------------------------------------------------------
     def send(self, command: str, timeout: Optional[float] = None) -> Response:
         """Validate, transmit and read one command.  Raw bytes are logged."""
-        safe = validate_command(command)  # raises UnsafeCommandError
+        safe = self._validator(command)  # raises UnsafeCommandError
         if not self.is_open:
             raise TransportError("transport is not open")
         payload = (safe + "\r").encode("ascii")

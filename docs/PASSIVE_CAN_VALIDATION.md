@@ -25,7 +25,7 @@ remaining life) is not advertised; neither is `46` (ambient air temperature).
 
 | Signal wanted | Why it matters | Standard OBD-II on this VIN |
 |---|---|---|
-| State of charge | The single number the display exists to show | Not available |
+| State of charge | The single number the display exists to show | **Obtained** — but by enhanced UDS read (`0x27C6`), not passively. See [GM enhanced candidates](GM_ENHANCED_CANDIDATES.md) |
 | Pack voltage | Health and charge state of the traction battery | Not available |
 | Pack current / power | Draw while driving, rate while charging | Not available |
 | Pack temperature | Thermal behaviour under load and fast charge | Not available |

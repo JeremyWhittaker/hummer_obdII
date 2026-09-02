@@ -122,11 +122,18 @@ reads whatever the vehicle's own support bitmap advertises.
 
 Equally important is what is *absent*. The vehicle does **not** advertise
 `5B` (hybrid/EV battery remaining life) or `46` (ambient air temperature); both
-answered `NO DATA` when asked directly. There is no standard-OBD path on this
-vehicle to state of charge, pack voltage, pack temperature, cell balance,
+answered `NO DATA` when asked directly. There is no **standard-OBD** path on
+this vehicle to state of charge, pack voltage, pack temperature, cell balance,
 charge state, or range. That gap is the entire motivation for
 [enhanced PID validation](ENHANCED_PID_VALIDATION.md), and it is not something
 a better decoder can fix.
+
+It is, however, something an *enhanced* read can fix, and as of 2026-09-02 one
+of those signals has been obtained. A single supervised UDS `ReadDataByIdentifier`
+request for identifier `0x27C6` returns a reproducible state of charge from this
+vehicle. The remaining signals in that list are still unavailable, because no
+sourced identifier for them has been found — not because the path does not
+exist. See [GM enhanced candidates](GM_ENHANCED_CANDIDATES.md).
 
 ### Service 09 — vehicle information
 
@@ -318,8 +325,10 @@ Each of these is a deliberate boundary, not an oversight.
 
 | Not available | Why |
 |---|---|
-| **Mode 22 enhanced GM/Ultium PIDs** | Rejected by the safety gate. Identifiers are unproven on this VIN and this project does not guess them. Plan: [ENHANCED_PID_VALIDATION.md](ENHANCED_PID_VALIDATION.md). Note that modes 02 and 06 were added instead precisely because they are standard and need no guessing |
-| **State of charge, pack voltage, pack temperature, range** | Not exposed over standard OBD on this vehicle. Requires Mode 22 or passive CAN monitoring |
+| **Mode 22 during unattended collection** | Service `22` is refused by `validate_command`, the gate the collector uses, and that has not changed. Enhanced reads live behind `validate_enhanced_command`, a separate and narrower gate that no unattended path calls |
+| **Enhanced identifiers other than `0x27C6`** | Not guessed. An identifier is added only when a fetchable public source names it exactly; the gate refuses the identifiers immediately adjacent to the one that works |
+| **Pack voltage, pack temperature, cell balance, range** | No standard-OBD path, and no sourced enhanced identifier found yet. Unlike state of charge, these remain genuinely unobtained |
+| **State of charge** | ~~Not available~~ — **obtained 2026-09-02** via enhanced identifier `0x27C6`. Kept in this table only as a pointer: see [GM enhanced candidates](GM_ENHANCED_CANDIDATES.md) |
 | **GPS / location** | No GPS receiver on the Pi, and location is not available over OBD |
 | **OnStar / GM cloud data** | Different system entirely. Belongs in a separate broker with isolated credentials and a command allowlist, never in this read-only OBD node |
 | **Remote commands** (lock/unlock, preconditioning, remote start) | Out of scope by design. This node has no vehicle write authority of any kind |

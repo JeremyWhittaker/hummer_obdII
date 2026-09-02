@@ -73,9 +73,51 @@ change:
 5. a supervised first live request with byte-exact logging and transcript
    review.
 
-Mode 22 remains out of scope until identifiers are validated for the exact
-vehicle. A third-party app label or an Internet PID list is not sufficient
-evidence.
+Mode 22 remains out of scope **for unattended collection**, permanently. What
+changed on 2026-09-02 is not that the gate was widened but that a second,
+narrower gate was added beside it; see the change record below. A third-party
+app label or an Internet PID list is still not sufficient evidence to add an
+identifier, and identifiers are never guessed, incremented or swept.
+
+### Change record: supervised enhanced reads, 2026-09-02
+
+Service `22` (`ReadDataByIdentifier`) became transmittable **for exactly one
+identifier, on a path no unattended code calls.** Against the five requirements
+above:
+
+1. **Why it is read-only.** Service `22` reads a value the ECU already holds.
+   It has no sub-function that writes, actuates, resets, unlocks or clears; the
+   write counterpart is service `2E`, which is in `FORBIDDEN_SERVICES` and
+   stays there. An ECU asked for an identifier it does not have answers
+   `7F 22 31` rather than doing something unexpected.
+2. **Allowlist updated without weakening the denylist.** `FORBIDDEN_SERVICES`
+   is unchanged. `ALLOWED_OBD_MODES` is *also* unchanged — service `22` was
+   deliberately **not** added to it, and an import-time assertion now fails the
+   build if anyone ever adds it. The new capability lives in
+   `validate_enhanced_command`, which accepts service `22` only for an
+   identifier enumerated in `ENHANCED_READ_DIDS` and refuses every other
+   service, including the ordinary read services the collector may send.
+3. **Tests.** `tests/test_enhanced.py` asserts that the collector's gate still
+   refuses `2227C6`; that the enhanced gate refuses the adjacent identifiers
+   `0x27C5` and `0x27C7`, multi-identifier requests, every forbidden service,
+   and command batching; and that the transport's default validator is still
+   the unattended one, so a caller that forgets gets the safe behaviour.
+4. **Offline acceptance.** The tool is a dry run by default: without `--confirm`
+   it prints the exact byte sequence it would send, validates all of it, and
+   never opens the serial device.
+5. **Supervised first live request, byte-exact.** Run 2026-09-02 22:33 UTC with
+   the vehicle awake and attended, transcript in `logs/enhanced-raw.jsonl`,
+   evidence in `evidence/enhanced-bt1-decoded.json`. One request, no loop.
+
+The identifier came from a published profile that names this vehicle, not from
+inference. Full provenance and the response analysis are in
+[GM enhanced candidates](GM_ENHANCED_CANDIDATES.md).
+
+Two adapter-command groups were allowlisted alongside it: `ATCP` (CAN priority
+byte, needed because `ATSH` carries only three of the four header bytes) and
+`ATFCSH`/`ATFCSD`/`ATFCSM` (ISO 15765-2 flow control). These configure how the
+adapter addresses and how it acknowledges a multi-frame *reply*; they cannot
+originate a request, and mode 09 already depends on multi-frame reception.
 
 ### Change record: services 02 and 06, 2026-09-01
 
