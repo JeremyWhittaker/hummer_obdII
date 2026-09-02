@@ -25,8 +25,8 @@ reference node.
 Latest result:
 
 ```text
-pytest:   346 passed
-unittest: 346 tests / 326 subtests passed
+pytest:   347 passed
+unittest: 347 tests / 328 subtests passed
 shell:    all repository shell scripts pass bash -n
 compile:  all Python modules compile
 ```
@@ -165,7 +165,7 @@ battery-electric vehicle.
 | Adapter reading | Interpretation |
 |---|---|
 | positive data from 5–8 ECUs | vehicle serving diagnostics |
-| `7F <service> 22` from the gateway only | gateway alive, refusing: `conditionsNotCorrect` |
+| `7F <service> 22` from ECU `28` only | `BSCM-BrakeSystem` alive, refusing: `conditionsNotCorrect`. Not the gateway; that is `45` |
 | `NO DATA` with `ATCS T:00 R:00` | protocol correct, request sent, no ECU on the bus |
 | `SEARCHING... / UNABLE TO CONNECT` | auto-detect found no protocol at all |
 
@@ -736,16 +736,39 @@ The memory figures are workload snapshots, not guarantees.
 
 ## Open acceptance gate
 
-Continuous collector autostart is **not accepted yet**. No full vehicle
-sleep/wake cycle or ignition-switched Pi power behavior has been documented.
-Until that physical test is complete, the correct state is:
+Continuous collector autostart is **not accepted yet**, and the reason is now
+narrower than it was.
+
+**What has been observed.** With the Pi and the OBDLink attached to an
+always-live OBD-II port and *no polling running*, the vehicle reached sleep
+normally about five minutes after parking: 13.9 V with the DC-DC converter
+running, 12.7 V once it stopped. That was measured with `hummer-obd-voltage`,
+which sends only adapter commands and puts **zero bytes on the CAN bus**, so
+the observation cannot have influenced what it observed.
+
+**What is still unproven, and why the gate stays shut.**
+
+1. **Overnight 12 V stability.** A single 12.7 V reading minutes after shutdown
+   is not a drain measurement. What matters is whether the rail holds across a
+   full night with the hardware attached, and no such night has been recorded:
+   every attempt so far has been made while the vehicle was plugged in, which
+   holds the rail up and measures nothing.
+2. **Sleep behaviour while actively polling.** Every sleep observation to date
+   had polling stopped. That is the correct control, but it is not the
+   condition the gate is actually about: whether a continuous diagnostic loop
+   keeps modules awake is exactly the question, and it has not been asked.
+
+Until both are answered the correct state is:
 
 ```text
 collector.enabled = false
 hummer-collector.service = disabled / inactive
 ```
 
-This is an electrical/power-management gate, not a software test failure.
+This is an electrical/power-management gate, not a software test failure. The
+tooling for the next step exists: `hummer-collector-trial.service` runs a
+supervised, self-stopping trial, and `hummer-obd-voltage` can watch the rail
+afterwards without touching the bus.
 
 ## Expanded command capability probe
 

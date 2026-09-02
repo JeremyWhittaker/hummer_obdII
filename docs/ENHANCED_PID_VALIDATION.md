@@ -29,23 +29,42 @@ they are drawn from stay private on the node.
 | Physical response form | `18DAF1<ss>`, where `F1` is the tester and `<ss>` the responding ECU |
 | Modules answering `03`/`07` | eight distinct modules, zero codes each |
 | Modules answering `0A` | five distinct modules, zero codes each |
-| Module observed refusing (`7F <svc> 22`) | the gateway, address `28` |
-| Service 09 PID `0A` | `GatDMCBCMBSMBSMDMCDMCBSC` — Gateway, DMC, BCM, BSM, BSM, DMC, DMC, BSC |
+| Module observed refusing (`7F <svc> 22`) | address `28`, `BSCM-BrakeSystem` |
+| Service 09 PID `0A` | full module names, mapped to addresses (below) |
 | Service 09 PID `04` | calibration IDs `135240240857240850` |
 
-Three consequences matter for what follows. The ECU-name string yields eight
-three-character names for eight responding modules, but the order in which
-names appear is not proof of which name belongs to which address — so a
-candidate record that names a module must also give the address, and the
-pairing itself needs evidence. The responder *addresses* themselves are not
-published in this repository and are not reproduced here: only the counts and
-the refusing gateway address are established above. The eight and five source
-addresses exist in the private byte-exact transcript on the node, and
-extracting them from it is a prerequisite of the plan below — writing a
-plausible-looking address down from memory is the same error as writing a
-plausible-looking identifier down. And the calibration IDs identify this
-build: a source claiming to describe this vehicle should be checked against
-them rather than against the model name.
+### The module map, measured
+
+This was an open prerequisite when this document was written and is now
+closed. Each address was queried behind its own `ATCRA18DAF1<addr>` receive
+filter and answered service 09 PID `0A` for itself, so every pairing is
+measured rather than inferred from the order of a concatenated string:
+
+| Address | Module | | Address | Module |
+|---|---|---|---|---|
+| `17` | `DMCM-DriveMotorCtrl` | | `40` | `BCM-BodyControl` |
+| `1D` | `DMC2-DriveMotorCtrl2` | | `45` | `Gateway Module - GWM` |
+| `1E` | `DMC3-DriveMotorCtrl3` | | `CB` | `BSM-BatterySysMngr` |
+| `28` | `BSCM-BrakeSystem` | | `CD` | `BSM-BatterySysMngr` |
+
+**An earlier version of this document called address `28` the gateway.** That
+was an inference from `28` being the only module still answering `7F <svc> 22`
+while the vehicle shut down, and it was wrong: `28` is the brake system
+controller and the gateway is `45`. The module that stays reachable longest
+during shutdown is the brake controller. That correction matters here more than
+anywhere else in the project, because an enhanced-PID request has to be
+addressed to a specific module, and addressing the wrong one is exactly the
+class of mistake this document exists to prevent.
+
+It is also a worked example of the rule below: the original pairing looked
+reasonable, was derived from real observed behaviour, and was still wrong.
+Only the per-address query settled it.
+
+Two further consequences matter. Three of the eight modules are drive motor
+controllers and two are battery system managers, which is where any pack, cell
+or thermal identifier would live if one is ever validated. And the calibration
+IDs identify this build: a source claiming to describe this vehicle should be
+checked against them rather than against the model name.
 
 ## Why this is deferred
 

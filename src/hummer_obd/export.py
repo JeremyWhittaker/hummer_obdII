@@ -100,6 +100,9 @@ _FIELD_DESCRIPTIONS: dict[str, dict[str, str]] = {
         "ts": "UTC ISO-8601 time the reading was stored",
         "session_uid": "session this reading was taken in",
         "pid": "service 01 parameter id, two hex digits",
+        "ecu": "address of the module that gave this answer; several modules "
+               "answer the same request with their own values, and an empty "
+               "string means the reading predates per-module attribution",
         "request": "the exact read-only request that produced it",
         "name": "human name of the parameter",
         "value": "decoded numeric value, null when the vehicle did not answer",
@@ -313,7 +316,7 @@ class Exporter:
 
     def _samples(self, conn: sqlite3.Connection) -> list[dict]:
         rows = conn.execute(
-            "SELECT s.id, s.ts, s.pid, s.name, s.value, s.unit, s.status, s.raw_hex,"
+            "SELECT s.id, s.ts, s.pid, s.name, s.value, s.unit, s.status, s.raw_hex, s.ecu,"
             " s.uploaded_at, sess.session_uid AS session_uid"
             " FROM samples s LEFT JOIN sessions sess ON sess.id = s.session_id"
         ).fetchall()
@@ -343,6 +346,10 @@ class Exporter:
                 "ts": _utc_text(row["ts"]),
                 "session_uid": row["session_uid"],
                 "pid": pid,
+                # Which module answered.  Several modules answer the same
+                # request with different values, so an export that dropped
+                # this would turn a distribution into an unattributed list.
+                "ecu": row["ecu"] or "",
                 "request": f"01{pid}",
                 "name": name,
                 "value": float(row["value"]) if row["value"] is not None else None,

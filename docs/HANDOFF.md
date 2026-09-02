@@ -29,7 +29,9 @@ power test is complete.
 7. Treat a sleeping vehicle as a wait condition. Do not increase traffic to
    wake it.
 8. Keep the continuous collector disabled until the physical power gate is
-   satisfied.
+   satisfied. Sleep with the hardware attached and polling stopped has been
+   observed; overnight 12 V stability and sleep behaviour while actively
+   polling are both still unproven, and either one is enough to keep it off.
 
 ## Last verified deployment state
 
@@ -44,7 +46,7 @@ power test is complete.
 | Probe | completed and reviewed; raw transcript remains private on the Pi |
 | Collector | one-shot proven; continuous unit disabled and config flag false |
 | Upload | disabled, endpoint empty |
-| Tests | 346 passed / 326 subtests under both test runners |
+| Tests | 347 passed / 328 subtests under both test runners |
 
 The final controlled reboot was also accepted: both SSH paths returned in about
 36 seconds, all required infrastructure/display/RFCOMM services were active,
@@ -62,7 +64,7 @@ Three adapter readings distinguish the states that otherwise look identical:
 | Reading | Meaning |
 |---|---|
 | positive data from 5-8 ECUs | vehicle serving diagnostics |
-| `7F <service> 22` from the gateway alone | gateway alive, refusing (`conditionsNotCorrect`) |
+| `7F <service> 22` from ECU `28` alone | `BSCM-BrakeSystem` alive, refusing (`conditionsNotCorrect`). Not the gateway; that is `45` |
 | `NO DATA` **and** `ATCS T:00 R:00` | protocol right, request sent, bus silent: vehicle asleep |
 | `SEARCHING... / UNABLE TO CONNECT` | auto-detect found nothing: vehicle asleep |
 

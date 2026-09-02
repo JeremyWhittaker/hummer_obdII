@@ -53,6 +53,9 @@ independent barrier.
 * Continuous collector autostart additionally requires a verified vehicle
   sleep/wake cycle with acceptable 12 V draw, or confirmed ignition-switched
   power for the Pi. A successful one-shot does not satisfy this power gate.
+  Sleep with the hardware attached and polling stopped has been observed; what
+  remains unproven is overnight 12 V stability and whether the vehicle still
+  sleeps while the collector is actively polling.
 * Bluetooth pairing acts only on a device that unambiguously identifies itself
   as an OBDLink adapter. Ambiguity stops the process.
 
@@ -99,15 +102,25 @@ were added to `ALLOWED_OBD_MODES`. Against the five requirements above:
    byte is written.
 4. **Offline acceptance.** Exercised against the PTY/ELM simulator with an
    assertion on the exact transmitted command list.
-5. **Supervised first live request.** *Not yet done.* The vehicle was asleep
-   when these were added. Until a supervised, byte-exact live request has been
-   run and its transcript reviewed, treat services 02 and 06 as **permitted but
-   unproven on this vehicle**.
+5. **Supervised first live request.** *Done, and both answered.*
+   - **Service 06 is proven**: `0600` returned a positive response advertising
+     **zero** monitor IDs. The service works and this vehicle exposes no
+     on-board monitors through it. An empty supported-MID bitmap is an answer,
+     not a failure.
+   - **Service 02 is proven at the service level**: `020000` returned a
+     positive response advertising four freeze-frame PIDs (`02 0D 1F 20`).
+     **No freeze frame has ever been read**, because a frame only exists once a
+     DTC has been stored and this vehicle has none. That distinction is worth
+     keeping: the request path is demonstrated, the frame contents are not, and
+     they cannot be until the vehicle develops a fault of its own. Inducing one
+     to exercise a decoder is not acceptable.
 
 The freeze-frame read is additionally gated by behaviour rather than by the
-gate: the probe only requests it when a DTC read actually returned stored
-codes. With zero DTCs there is no freeze frame to fetch, and asking would be
-bus traffic that buys nothing.
+gate. The probe always asks `020000` — what a frame *would* contain, which
+costs one request and is how service 02 was demonstrated at all on a healthy
+vehicle — but requests individual frame readings only when a DTC read actually
+returned stored codes. With zero DTCs there is no freeze frame to fetch, and
+asking for one would be bus traffic that buys nothing.
 
 ## Publication rules
 

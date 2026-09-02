@@ -33,7 +33,7 @@ endorsed by General Motors, GMC, OBD Solutions, or Waveshare.
   and persistent RFCOMM binding.
 - Reconnect-aware polling, WAL-mode SQLite buffering, masked vehicle identity,
   and an uploader that is disabled by default.
-- A hardware-free PTY/ELM simulator and 346 tests (326 subtests) covering the
+- A hardware-free PTY/ELM simulator and 347 tests (328 subtests) covering the
   safety boundary, transport, decoding, storage, recovery, display, and
   end-to-end probe flow.
 - Conservative e-paper operation: full refreshes only, unchanged frames are
@@ -53,15 +53,16 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | Protocol | ISO 15765-4, CAN 29-bit, 500 kbit/s, auto-detected and re-confirmable |
 | Standard PID discovery | all 14 Service 01 PIDs this vehicle advertises, read and decoded |
 | Odometer | Service 01 PID `A6`, four bytes at 0.1 km per bit |
-| Vehicle speed, run time, control-module voltage | live, from up to 8 responding ECUs |
+| Vehicle speed, run time, 12 V control-module voltage | live, from up to 8 responding ECUs. This is the low-voltage supply each module sees, **not** HV pack voltage |
 | Distance since codes cleared, distance with MIL on, warm-up count | live |
 | Diagnostic trouble codes | stored, pending and permanent, per responding module |
 | Per-module attribution | every ECU's own answer to a PID, not just the first (eight voltages, 0.41 V spread) |
-| Freeze frame and monitor tests | services 02 and 06, standard reads, permitted and awaiting a live run |
+| On-board monitoring (service 06) | **proven**: answers, and advertises **zero** monitor IDs on this vehicle |
+| Freeze frame (service 02) | **proven**: `020000` advertises `02 0D 1F 20`. No frame has been read, because the vehicle has no stored DTC to produce one |
 | Vehicle information | VIN (masked outside the raw log), calibration IDs, calibration verification numbers, full module names |
 | Module inventory | 8 modules named by the vehicle, including three drive-motor controllers |
 | 12 V system voltage | `ATRV`, with **zero CAN traffic** — sampled on a timer while the vehicle sleeps |
-| Live driving telemetry | speed to 94 km/h, odometer, pack voltage under load, all from a bounded trial |
+| Live driving telemetry | speed to 94 km/h, odometer, and 12 V control-module voltage under load, from a bounded trial |
 | Vehicle-state detection | awake, gateway-refusing, and fully asleep are distinguishable |
 | Local persistence | byte-exact append-only transcript plus WAL-mode SQLite |
 | Bounded collection | self-stopping trials by cycle count or wall-clock duration, under systemd supervision |
@@ -79,7 +80,7 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | GPS / location | No receiver, and location is not an OBD-II service |
 | OnStar / GM cloud data | A different system. Belongs in a separate broker with isolated credentials |
 | Raw transcript upload | Refused at config load: raw logs can contain an unmasked VIN |
-| Continuous collector autostart | Gated on a physical power/sleep result, not on software |
+| Continuous collector autostart | Gated on two unproven physical results: overnight 12 V stability, and sleep while actively polling |
 
 Report the live state of a node at any time, without touching the vehicle:
 
@@ -219,9 +220,10 @@ The short version is:
    a one-shot collector cycle.
 
 The continuous collector is intentionally still off on the validated vehicle.
-A two-second diagnostic loop may prevent vehicle modules from sleeping, so
-autostart remains gated on a full sleep/wake observation or confirmed
-ignition-switched Pi power.
+Sleep with the Pi and adapter attached *and polling stopped* has been observed
+with a zero-CAN-traffic voltage watch. Two things remain unproven: overnight
+12 V stability with the hardware attached, and whether the vehicle still sleeps
+while a diagnostic loop is actively polling. Autostart stays gated on both.
 
 ## Validated result
 

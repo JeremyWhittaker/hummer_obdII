@@ -13,6 +13,7 @@ from unittest import mock
 
 from hummer_obd import export, storage
 from hummer_obd.decode import PidValue, mask_vin
+from hummer_obd.export import main
 from hummer_obd.storage import Storage
 
 VIN = "1GT40FDA3RU100234"
@@ -361,6 +362,54 @@ class TestOutput(ExportFixture):
         records = self.lines(out.read_text(encoding="utf-8"))
         self.assertEqual(records[0]["source_database"], "other.sqlite3")
         self.assertEqual([r["session_uid"] for r in records[1:]], ["config-only"])
+
+
+class TestPerModuleAttributionSurvivesTheExport(unittest.TestCase):
+    """Several modules answer one request, each with its own value.
+
+    An export that dropped the module address would turn a distribution into an
+    unattributed list of numbers -- eight different voltages with no way to say
+    which module reported which.  That is the specific loss the ``ecu`` column
+    was added to the schema to prevent, so it has to reach the export too.
+    """
+
+    def test_the_module_address_reaches_every_format(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db = root / "data" / "hummer_obd.sqlite3"
+            with Storage(db) as store:
+                sid = store.start_session("probe-per-ecu")
+                for ecu, volts in (("45", 13.747), ("28", 13.910), ("1D", 13.500)):
+                    store.add_sample(sid, PidValue(
+                        pid="42", name="control module voltage", value=volts,
+                        unit="V", raw_hex="0441423675", status="ok", ecu=ecu))
+                store.end_session(sid)
+
+            out = root / "e.jsonl"
+            self.assertEqual(main(["--root", str(root), "--format", "jsonl",
+                                   "--include", "samples", "--output", str(out)]), 0)
+            records = [json.loads(line) for line in out.read_text().splitlines()]
+            samples = [r for r in records if r["kind"] == "sample"]
+            self.assertEqual({s["ecu"] for s in samples}, {"45", "28", "1D"})
+            self.assertEqual({(s["ecu"], s["value"]) for s in samples},
+                             {("45", 13.747), ("28", 13.910), ("1D", 13.500)})
+
+            out_csv = root / "e.csv"
+            self.assertEqual(main(["--root", str(root), "--format", "csv",
+                                   "--include", "samples", "--output", str(out_csv)]), 0)
+            rows = list(csv.DictReader(io.StringIO(out_csv.read_text())))
+            self.assertIn("ecu", rows[0])
+            self.assertEqual({r["ecu"] for r in rows}, {"45", "28", "1D"})
+
+            out_json = root / "e.json"
+            self.assertEqual(main(["--root", str(root), "--format", "json",
+                                   "--include", "samples", "--output", str(out_json)]), 0)
+            payload = json.loads(out_json.read_text())
+            self.assertEqual({s["ecu"] for s in payload["samples"]}, {"45", "28", "1D"})
+            # The meta record has to describe the field, or an ingesting reader
+            # has no way to know what "ecu" means.
+            self.assertIn("ecu", json.dumps(payload["meta"]))
+
 
 
 if __name__ == "__main__":  # pragma: no cover

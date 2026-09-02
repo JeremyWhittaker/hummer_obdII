@@ -272,7 +272,7 @@ Knowing how the truck refuses is as useful as knowing how it answers.
 | Observed | Meaning | When |
 |---|---|---|
 | Positive data from 5–8 ECUs | vehicle serving diagnostics | vehicle awake |
-| `7F <service> 22` from ECU `28` only | gateway is alive and refusing: `conditionsNotCorrect` | vehicle shutting down / not in a data-serving state |
+| `7F <service> 22` from ECU `28` only | `BSCM-BrakeSystem` is alive and refusing: `conditionsNotCorrect`. It is the module that stays reachable longest during shutdown -- not the gateway, which is `45` | vehicle shutting down / not in a data-serving state |
 | `NO DATA` with `ATCS T:00 R:00` | protocol correct, request transmitted, **no ECU on the bus at all** | vehicle fully asleep |
 | `SEARCHING... / UNABLE TO CONNECT` | auto-detect could not find any protocol | vehicle fully asleep |
 
@@ -301,8 +301,8 @@ fault", which otherwise look identical.
 | Sleeping-vehicle idle backoff instead of escalation | `collector.py` | Proven |
 | Bounded self-stopping collector trial | `collector.py --max-cycles/--duration-s` | Proven — two bounded drive sessions |
 | Zero-CAN-traffic 12 V watch | `voltage.py` | Proven — running during a sleep observation |
-| Sanitized offline capabilities report | `capabilities.py` | Available, unproven |
-| Local export for external/AI ingestion | `export.py` | Available, unproven |
+| Sanitized offline capabilities report | `capabilities.py` | Proven — run on the node against the live database |
+| Local export for external/AI ingestion | `export.py` | Proven — jsonl and csv exported from the live database, per-module attribution included |
 | Bluetooth recovery for an already-bonded adapter; cannot pair, trust or remove | `btdiscover.py` | Proven |
 | E-paper status page, full refreshes only, unchanged frames skipped | `display/status.py` | Proven |
 | Hardware-free PTY/ELM simulator | `tests/elm_simulator.py` | Proven |
@@ -350,7 +350,15 @@ Consequences:
 - The correct next measurement is a 12 V trend over a full sleep period, which
   `ATRV` can supply with zero bus traffic.
 
-Until that trend exists, the accepted state remains:
+**Observed so far**: with polling stopped, the vehicle reached sleep about five
+minutes after parking (13.9 V to 12.7 V), watched with zero CAN traffic.
+
+**Still unproven**: overnight 12 V stability with the hardware attached — every
+attempt so far was made while the truck was plugged in, which holds the rail up
+and measures nothing — and whether the vehicle still sleeps while the collector
+is *actively polling*, which is the condition the gate is actually about.
+
+Until both are answered, the accepted state remains:
 
 ```text
 collector.enabled = false
