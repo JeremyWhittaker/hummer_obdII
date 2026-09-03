@@ -121,9 +121,27 @@ DECODERS: dict[str, Callable[[bytes], dict]] = {
     "27C7": lambda p: {"range_mi": round(_u24(p, 0) / 103, 2)} if len(p) >= 3 else {},
     "27C0": lambda p: {"dist_since_chg_mi": round(_u24(p, 0) / 16.09344, 2)} if len(p) >= 3 else {},
     "0046": lambda p: {"temp_f": round((p[0] - 40) * 1.8 + 32, 1)} if p else {},
-    # This vehicle answers 0x5401 with a SINGLE byte (observed 0x96), so the
-    # published two-byte "/4350 kW" equation cannot apply and is not used.
-    # The byte is kept raw until a charging session gives it a reference.
+    # This vehicle answers 0x5401 with a SINGLE byte, so the published two-byte
+    # "/4350 kW" equation cannot apply and is not used.  A charging session has
+    # now given it the reference this comment used to be waiting for, and the
+    # answer is that it is not power at all:
+    #
+    #   * It correlates with pack current at -0.81 over 297 paired samples, so
+    #     it is certainly tied to charging.
+    #   * But while charging it sits at 147-152 across a measured 1.85 to
+    #     16.51 kW -- a ninefold power range holding one plateau.  Power it is
+    #     not.
+    #   * It is zero in 227 of 254 samples taken while not charging.
+    #   * And after a charge ended -- state of charge flat at 89.653, energy
+    #     flat at 172.03, current at zero -- it decayed monotonically to zero
+    #     over three and a half minutes: 36, 33, 30, 26, 23, 20, 16, 13, 6, 0.
+    #
+    # A plateau while working, then a slow ramp to zero after the work stops,
+    # is what a demand or duty signal looks like -- a pump or fan winding down,
+    # or a thermal-management output.  It is not battery temperature either:
+    # that correlation is -0.25.  Still kept raw, because "tied to charging and
+    # shaped like a duty cycle" is not a unit, and naming it would be inventing
+    # one.  Recorded in docs/PACK_ARCHITECTURE.md.
     "5401": lambda p: {"charger_5401_raw": p.hex().upper()} if p else {},
     "2AF5": _cell_summary,
     "33E5": lambda p: {"dmc2_v": round(p[0] / 10, 1)} if p else {},

@@ -35,6 +35,23 @@ discount.
   enumerated identifiers; neither is in the drive recorder, and the unattended
   collector still refuses service 22 entirely.
 
+- **`0x5401` is answered: it is not charger power.** The decoder kept this byte
+  raw with a note saying it would stay so "until a charging session gives it a
+  reference." The corpus contains one. The byte correlates with pack current at
+  −0.81 over 297 paired samples, so it is certainly tied to charging — and just
+  as certainly not power, because while charging it holds 147–152 across a
+  measured **1.85 to 16.51 kW**, a ninefold power range moving it by at most
+  five counts. It reads zero in 227 of 254 samples taken while not charging.
+
+  The decisive evidence is the end of a charge: with state of charge flat at
+  89.653 %, energy flat at 172.03 kWh and current at zero — charging already
+  over — it decayed monotonically to zero across three and a half minutes
+  (36, 33, 30, 26, 23, 20, 16, 13, 6, 0). A plateau while working and a slow
+  ramp down afterwards is what a demand or duty signal looks like, not a power
+  reading, and not battery temperature either (correlation −0.25). It stays raw
+  because "shaped like a duty cycle" is not a unit, but the question the code
+  posed is now closed.
+
 - **The `0x2AF5` index hypothesis was tested and refuted.** The suggestion that
   byte 7 names the weakest cell was checked against 1314 cycles where `0x2AF5`
   and `0x2B43` were read back to back: byte 7 matched the array's minimum index

@@ -144,6 +144,54 @@ The bytes are preserved. The next useful evidence is state variation the corpus
 does not yet contain: an AC charge, a cold start, a hard drive with a hot pack.
 Until then they stay raw and unnamed.
 
+## `0x5401` is not charger power
+
+The decoder kept this byte raw with a note saying it would stay that way "until
+a charging session gives it a reference." The recorded corpus contains one, and
+it settles the question in the negative.
+
+| evidence | value |
+|---|---|
+| correlation with pack current | **−0.81** over 297 paired samples |
+| value while charging | 147–152 |
+| power range across those samples | **1.85 – 16.51 kW** |
+| value while not charging | zero in **227 of 254** samples |
+
+So it is certainly tied to charging — and just as certainly not power, because a
+ninefold change in measured power moves it by at most five counts.
+
+The decisive evidence is the end of a charge. Over three and a half minutes,
+with state of charge flat at 89.653 %, energy flat at 172.03 kWh, and pack
+current at zero — that is, with charging already finished — the byte decayed
+monotonically to zero:
+
+```
+07:00:01   36        soc 89.653   energy 172.04   pack_a  0.0
+07:00:16   33        soc 89.653   energy 172.04   pack_a -0.55
+07:00:30   30        soc 89.653   energy 172.04   pack_a  0.0
+07:01:18   26        soc 89.653   energy 172.03   pack_a  0.3
+07:01:43   23        soc 89.653   energy 172.03   pack_a -0.25
+07:02:10   20        soc 89.653   energy 172.03   pack_a  0.0
+07:02:43   16        soc 89.653   energy 172.03   pack_a  0.0
+07:03:10   13        soc 89.653   energy 172.03   pack_a  0.0
+07:03:30    6        soc 89.653   energy 172.03   pack_a  0.0
+07:03:37    0        soc 89.653   energy 172.03   pack_a  0.0
+```
+
+A plateau while working and a slow ramp to zero after the work stops is what a
+**demand or duty signal** looks like — a pump or fan winding down, or a
+thermal-management output. It is not battery temperature: that correlation is
+−0.25, and a temperature does not decay to zero.
+
+One gap is worth stating rather than glossing: no value between 37 and 146 was
+ever observed. The drop from the charging plateau to the start of that ramp
+happened faster than the sample interval, so the shape between them is
+unmeasured.
+
+It stays raw. "Tied to charging and shaped like a duty cycle" is not a unit, and
+naming a column after it would be inventing one. But the open question the code
+posed is now answered: whatever `0x5401` is, it is not charger DC power.
+
 ## What this node can and cannot see
 
 | granularity | available |
