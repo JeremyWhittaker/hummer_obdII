@@ -192,6 +192,75 @@ def _integrate(rows: list[dict], key: str, *, only_negative=False, only_positive
     return total
 
 
+#: Cells in series, measured as ``pack_v / cell_avg_v`` over 297 samples:
+#: mean 95.991, standard deviation 0.041.  Two identifiers on two different
+#: modules, so the ratio is not one decoder's artefact.
+EXPECTED_SERIES_CELLS: float = 96.0
+
+#: Usable capacity the vehicle works from, as ``energy_kwh / (soc_pct/100)``.
+#: Held between 191.84 and 191.94 kWh across an eleven-point swing in charge.
+EXPECTED_PACK_KWH: float = 191.9
+
+
+def _ratio(rows: list[dict], top: str, bottom: str,
+           scale: float = 1.0) -> Optional[dict]:
+    """Mean and spread of one column divided by another.
+
+    Two independently scaled fields whose ratio holds constant is the strongest
+    evidence available here that both scalings are right, because a wrong scale
+    on either would make the ratio drift as the underlying quantity moved.
+    """
+    values = [
+        r[top] / (r[bottom] * scale)
+        for r in rows
+        if isinstance(r.get(top), (int, float))
+        and isinstance(r.get(bottom), (int, float))
+        and r[bottom]
+    ]
+    if len(values) < 2:
+        return None
+    mean = sum(values) / len(values)
+    variance = sum((v - mean) ** 2 for v in values) / len(values)
+    sd = variance ** 0.5
+    return {
+        "mean": round(mean, 4),
+        "sd": round(sd, 4),
+        "samples": len(values),
+        "cv_pct": round(100 * sd / mean, 3) if mean else None,
+    }
+
+
+def _cross_checks(rows: list[dict]) -> dict:
+    """Relationships between columns that should hold whatever the vehicle did.
+
+    Every one of these divides one decoded field by another decoded field, so
+    they check the *decoders* rather than the drive.  If a scaling silently
+    changes -- a byte offset moves, a divisor is edited, a source is
+    re-interpreted -- these numbers move away from figures that have already
+    been measured across a thousand samples, and the session says so instead of
+    quietly reporting wrong physics.
+    """
+    checks: dict = {}
+    series = _ratio(rows, "pack_v", "cell_avg_v")
+    if series:
+        series["expected"] = EXPECTED_SERIES_CELLS
+        checks["series_cells"] = series
+    capacity = _ratio(rows, "energy_kwh", "soc_pct", scale=0.01)
+    if capacity:
+        capacity["expected"] = EXPECTED_PACK_KWH
+        checks["implied_pack_kwh"] = capacity
+    at_full = _ratio(rows, "range_mi", "soc_pct", scale=0.01)
+    if at_full:
+        checks["range_at_full_mi"] = at_full
+    efficiency = _ratio(rows, "range_mi", "energy_kwh")
+    if efficiency:
+        checks["vehicle_efficiency_mi_per_kwh"] = efficiency
+    rail = _ratio(rows, "volts", "dmc2_v")
+    if rail:
+        checks["adapter_over_module_volts"] = rail
+    return checks
+
+
 def _sampling(rows: list[dict], expected_period_s: Optional[float]) -> dict:
     """How well the session was actually sampled.
 
@@ -462,6 +531,22 @@ def analyze(rows: list[dict], *, path: str = "", expected_period_s: Optional[flo
                 "magnitude; one of pack current or the energy slope is not "
                 "what it is labelled"
             )
+    checks = _cross_checks(rows)
+    if checks:
+        report["cross_checks"] = checks
+        for key, expected, tolerance, label in (
+            ("series_cells", EXPECTED_SERIES_CELLS, 0.5, "cells in series"),
+            ("implied_pack_kwh", EXPECTED_PACK_KWH, 5.0, "usable pack capacity"),
+        ):
+            got = checks.get(key)
+            if got and abs(got["mean"] - expected) > tolerance:
+                warnings.append(
+                    f"{label} measured {got['mean']} against an expected "
+                    f"{expected}; a decoder scaling may have changed, because "
+                    f"this ratio is a property of the pack rather than of the "
+                    f"drive"
+                )
+
     report["warnings"] = warnings
     return report
 
@@ -525,6 +610,25 @@ def format_report(report: dict) -> str:
         for key in keys:
             if key in block:
                 out.append(_line(key.replace("_", " "), block[key]))
+
+    checks = report.get("cross_checks")
+    if checks:
+        out.append("")
+        out.append("cross-checks  (ratios between decoded fields: these test the")
+        out.append("               decoders, not the drive)")
+        for key, unit in (("series_cells", " cells in series"),
+                          ("implied_pack_kwh", " kWh usable"),
+                          ("range_at_full_mi", " mi at 100%"),
+                          ("vehicle_efficiency_mi_per_kwh", " mi/kWh assumed"),
+                          ("adapter_over_module_volts", " ATRV / module volts")):
+            got = checks.get(key)
+            if not got:
+                continue
+            expected = f"  (expected {got['expected']})" if "expected" in got else ""
+            out.append(
+                f"  {got['mean']:>10}{unit:<24} sd {got['sd']:<8} "
+                f"n={got['samples']}{expected}"
+            )
 
     cross = report.get("power_cross_check")
     if cross:

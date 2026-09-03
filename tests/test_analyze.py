@@ -180,6 +180,73 @@ class TestEnergyAndEfficiency(unittest.TestCase):
         self.assertNotIn("efficiency_mi_per_kwh", report["energy"])
 
 
+class TestDecoderCrossChecks(unittest.TestCase):
+    """Ratios between decoded fields test the decoders, not the drive.
+
+    Each divides one decoded field by another, so a scaling that silently
+    changes -- a byte offset moving, a divisor edited, a source reinterpreted --
+    moves these away from figures already measured across a thousand samples.
+    """
+
+    def test_series_cell_count_falls_out_of_pack_and_cell_voltage(self):
+        rows = _rows([
+            (0, {"pack_v": 392.40, "cell_avg_v": 4.0885}),
+            (10, {"pack_v": 389.89, "cell_avg_v": 4.0595}),
+        ])
+        got = analyze_session(rows)["cross_checks"]["series_cells"]
+        self.assertAlmostEqual(got["mean"], 96.0, delta=0.1)
+        self.assertEqual(got["expected"], analyze.EXPECTED_SERIES_CELLS)
+
+    def test_usable_capacity_falls_out_of_energy_and_charge(self):
+        rows = _rows([
+            (0, {"energy_kwh": 172.52, "soc_pct": 89.653}),
+            (10, {"energy_kwh": 164.45, "soc_pct": 85.451}),
+        ])
+        got = analyze_session(rows)["cross_checks"]["implied_pack_kwh"]
+        self.assertAlmostEqual(got["mean"], 192.0, delta=1.5)
+
+    def test_a_changed_scaling_is_flagged_rather_than_reported_as_physics(self):
+        # Half the pack voltage: the drive is unremarkable, the decoder is not.
+        rows = _rows([
+            (0, {"pack_v": 196.2, "cell_avg_v": 4.0885}),
+            (10, {"pack_v": 195.0, "cell_avg_v": 4.0595}),
+        ])
+        report = analyze_session(rows)
+        self.assertAlmostEqual(report["cross_checks"]["series_cells"]["mean"], 48.0, delta=0.5)
+        self.assertTrue(
+            any("cells in series" in w for w in report["warnings"]),
+            f"a decoder scaling change must be called out, got {report['warnings']}",
+        )
+
+    def test_a_correct_session_raises_no_cross_check_warning(self):
+        rows = _rows([
+            (0, {"pack_v": 392.40, "cell_avg_v": 4.0885,
+                 "energy_kwh": 172.52, "soc_pct": 89.653}),
+            (10, {"pack_v": 389.89, "cell_avg_v": 4.0595,
+                  "energy_kwh": 164.45, "soc_pct": 85.451}),
+        ])
+        warnings = analyze_session(rows)["warnings"]
+        self.assertFalse([w for w in warnings if "expected" in w], warnings)
+
+    def test_a_ratio_needs_two_samples_before_it_claims_anything(self):
+        rows = _rows([(0, {"pack_v": 392.40, "cell_avg_v": 4.0885})])
+        self.assertNotIn("series_cells", analyze_session(rows).get("cross_checks", {}))
+
+    def test_a_zero_denominator_does_not_divide(self):
+        rows = _rows([
+            (0, {"pack_v": 392.40, "cell_avg_v": 0.0}),
+            (10, {"pack_v": 389.89, "cell_avg_v": 0.0}),
+        ])
+        analyze_session(rows)  # must not raise
+
+    def test_the_checks_are_shown_in_the_text_report(self):
+        rows = _rows([
+            (0, {"pack_v": 392.40, "cell_avg_v": 4.0885}),
+            (10, {"pack_v": 389.89, "cell_avg_v": 4.0595}),
+        ])
+        self.assertIn("cells in series", format_report(analyze_session(rows)))
+
+
 class TestPowerCrossCheck(unittest.TestCase):
     """The two power columns carry opposite signs; the report must normalise."""
 
