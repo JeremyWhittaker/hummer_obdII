@@ -593,6 +593,59 @@ class TestADeadLinkEndsTheProcess(unittest.TestCase):
         )
 
 
+class TestDrivingBelowTheWakeBand(unittest.TestCase):
+    """The failure that lost a real commute on 2026-09-03.
+
+    The truck idled awake for 23 minutes at 13.9 V, which topped up its 12 V
+    battery.  The DC-DC then dropped to float and the entire 12.6-mile drive
+    happened at 12.9-13.1 V -- under WAKE_VOLTS.  The recorder read that as
+    "asleep", ended the session, and slept 300 s at a time while the odometer
+    moved 20.3 km.  Voltage cannot answer "is this vehicle awake"; whether its
+    modules answer can.
+    """
+
+    def test_a_vehicle_that_answers_keeps_recording_below_the_wake_band(self):
+        # Every enhanced read succeeds; only the 12 V rail looks asleep.
+        fake = _Fake(volts_sequence=[12.9] * 40)
+        session = record(fake, interval_s=0, max_cycles=5, sleeper=lambda s: None,
+                         clock=_bounded_clock())
+        self.assertEqual(
+            session.cycles, 5,
+            "a truck answering enhanced reads is awake whatever the rail says",
+        )
+        self.assertEqual(len(session.rows), 5)
+
+    def test_low_voltage_ends_the_session_only_once_answers_have_stopped(self):
+        # Now the link is gone *and* the rail is low: that really is asleep,
+        # and it should end cleanly rather than raise for a restart.
+        fake = _Droppable(drop_after_sends=len(SESSION_INIT), volts_sequence=[])
+        fake._replies["ATRV"] = "12.9V\r\r>"
+
+        class _AsleepLink(_Droppable):
+            """Nothing on the CAN bus answers, but ATRV still reads low."""
+
+            def send(self, command, timeout=None):
+                self.sends += 1
+                if command == "ATRV":
+                    self.sent.append(command)
+                    return Response(command=command, data=b"12.9V\r\r>", elapsed_s=0.01)
+                if self.drop_after_sends and self.sends > self.drop_after_sends:
+                    self.dead = True
+                if self.dead:
+                    self.sent.append(command)
+                    raise TransportError("no answer")
+                return _Fake.send(self, command, timeout)
+
+        asleep = _AsleepLink(drop_after_sends=len(SESSION_INIT))
+        session = record(asleep, interval_s=0, duration_s=100.0,
+                         sleeper=lambda s: None, clock=_bounded_clock())
+        self.assertEqual(
+            asleep.reconnects, 0,
+            "a sleeping vehicle is not a broken link and must not be reconnected",
+        )
+        self.assertLess(session.cycles, 3, "it should stop promptly, not grind on")
+
+
 class TestWakeThreshold(unittest.TestCase):
     def test_threshold_sits_between_the_measured_bands(self):
         # Asleep measured 12.7-12.9 V, running 13.7-13.9 V.

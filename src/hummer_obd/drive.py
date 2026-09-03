@@ -427,6 +427,12 @@ def record(
             session.errors.append(f"cycle decoded nothing ({dead_cycles} consecutive)")
             say(f"  [{row['elapsed_s']:>8.1f}s] decoded nothing "
                 f"({dead_cycles}/{DEAD_CYCLES_BEFORE_EXIT})")
+            # A sleeping vehicle and a broken link both stop decoding.  Only
+            # one of them is a fault, and the voltage tells them apart *here*,
+            # where it is corroborated by silence, rather than on its own.
+            if _asleep(transport, timeout):
+                say("  nothing answered and the rail is low; vehicle asleep")
+                break
             if dead_cycles >= DEAD_CYCLES_BEFORE_EXIT:
                 raise TransportError(
                     f"{dead_cycles} consecutive cycles decoded nothing; exiting "
@@ -638,7 +644,21 @@ def run_auto(
                 timeout=timeout,
                 sleeper=sleeper,
                 clock=clock,
-                stop_when=lambda: stop() or _asleep(transport, timeout),
+                # Deliberately NOT `or _asleep(...)`.  On 2026-09-03 this
+                # truck sat awake and idle for 23 minutes at 13.9 V, which
+                # topped up its 12 V battery; the DC-DC then dropped to float
+                # and the whole 12.6-mile commute was driven at 12.9-13.1 V --
+                # under WAKE_VOLTS.  The recorder called that "asleep", ended
+                # the session, and slept 300 s at a time through the entire
+                # drive.  The odometer moved 20.3 km with nothing recording.
+                #
+                # Lowering the threshold cannot fix it: the measured asleep
+                # band is 12.7-12.9 V, so the two bands genuinely overlap.
+                # Voltage cannot answer "is this vehicle awake".  Whether its
+                # modules are answering can, and that is now what ends a
+                # session -- with voltage kept only as corroboration once the
+                # answers have already stopped.
+                stop_when=stop,
                 row_sink=sink,
             )
         say(f"{session.cycles} cycles -> {path}")

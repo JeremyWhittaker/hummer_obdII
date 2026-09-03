@@ -79,6 +79,35 @@ discount.
 
 ### Fixed
 
+- **A real 12.6-mile commute was recorded as "asleep", and voltage was the
+  reason.** On 2026-09-03 the vehicle idled awake for 23 minutes at 13.9 V,
+  which topped up its 12 V battery. The DC-DC converter then dropped to float,
+  and the entire drive was made at 12.9-13.1 V -- below `WAKE_VOLTS` (13.2).
+  The recorder read the last sample of the session at 12.9 V, declared the
+  vehicle asleep, ended the session, and slept 300 s at a time through the
+  whole drive. The raw transcript shows it exactly: full-rate traffic until
+  15:48 UTC, then precisely two events at 15:53, 15:58 and 16:03 -- one `ATRV`
+  each, five minutes apart -- then full rate again at 16:08. The odometer moved
+  2197.7 to 2218.0 km (20.3 km) and `dist_since_chg_mi` went 0.0 to 12.68 with
+  nothing recording in between.
+
+  Lowering the threshold cannot fix this. The measured asleep band is
+  12.7-12.9 V and the vehicle drove at 12.9-13.1 V, so the two bands overlap:
+  no single voltage separates "asleep" from "driving with a full 12 V
+  battery". Voltage cannot answer the question being asked of it.
+
+  A session now ends when the vehicle stops **answering**, not when the rail
+  reads low. `stop_when` no longer consults voltage at all; the dead-cycle
+  check added above already detects a vehicle that has gone quiet, and voltage
+  is kept only as corroboration *after* the answers have stopped -- which is
+  what separates a sleeping vehicle (clean end) from a broken link (reconnect,
+  then exit for a restart). A vehicle answering enhanced reads is awake
+  whatever its 12 V rail says, and that is now what the code believes.
+
+  The unchanged half is deliberate: `WAKE_VOLTS` still decides when to *start*
+  a session, so a genuinely parked vehicle is still never polled on the CAN
+  bus. Only the decision to stop moved.
+
 - **A hung-up adapter was recorded as data for the rest of the session.** Every
   transport failure inside a cycle was caught per group and the loop continued,
   which is right for one quiet module and wrong for a link that has gone away.
