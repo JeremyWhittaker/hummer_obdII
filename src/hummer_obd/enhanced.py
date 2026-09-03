@@ -360,6 +360,70 @@ PACK_POWER = _module_profile(
     ),
 )
 
+#: The battery manager, asked the five identifiers a BEV3 Bolt answers that
+#: this vehicle has never been asked.  Module CB already answers eight others,
+#: so the addressing is proven and only the identifiers are in question.
+BSM_NEXT = EnhancedProfile(
+    key="bsm-next",
+    description="unproven BEV3 candidates against the battery manager (CB)",
+    provenance=(
+        "meatpiHQ/wican-fw issue #884, a 2027 Bolt on the same Ultium/BEV3 "
+        "extended-addressing scheme this vehicle uses. UNMERGED single-author "
+        "report, BEV3 not BT1 -- allowlisted to be tested, nothing here claims "
+        "it works on this vehicle"
+    ),
+    init=BT1.init,
+    requests=(
+        ("2227BF", "regen_related_candidate", "charge-cycle regen field, scaling unknown"),
+        ("2227BB", "thermal_energy_candidate", "thermal-management energy, scaling unknown"),
+        ("2227B5", "thermal_distance_candidate", "thermal-management distance, scaling unknown"),
+        ("222709", "ac_compressor_temp_candidate", "A/C compressor temperature, scaling unknown"),
+        ("222AF1", "battery_module_temp_candidate", "battery module temperature, scaling unknown"),
+    ),
+    tx_id="0x14DACBF1",
+    rx_id="0x142AF1CB",
+)
+
+#: The body control module.  This vehicle named 40 as BCM-BodyControl in its
+#: own service 09 inventory and has never been asked anything.  The identifiers
+#: come from the same LYRIQ pull request that supplied 2414, which this vehicle
+#: does answer -- that is the whole reason to take its other register families
+#: seriously rather than treating them as guesses.
+BCM_40 = EnhancedProfile(
+    key="bcm-40",
+    description="unproven BEV3 candidates against the body control module (40)",
+    provenance=(
+        "OBDb/Cadillac-LYRIQ PR #14, which ships real-vehicle test vectors and "
+        "is the same source that supplied 2414 (proven on this vehicle). "
+        "UNMERGED, 2025 Lyriq BEV3 not BT1 -- allowlisted to be tested"
+    ),
+    init=(
+        "ATZ", "ATE0", "ATL0", "ATS0", "ATH1", "ATAL",
+        "ATSP7",
+        "ATCP14",
+        "ATSHDA40F1",      # target the BCM, tester F1
+        "ATCRA142AF140",   # that module's reply
+        "ATFCSH14DA40F1",
+        "ATFCSD300000",
+        "ATFCSM1",
+        "ATST96",
+    ),
+    requests=(
+        ("224149", "evse_pilot_current_candidate", "EVSE advertised current, scaling unknown"),
+        ("22416C", "pack_group_voltage_1_candidate", "battery group voltage 1, scaling unknown"),
+        ("22416D", "pack_group_voltage_2_candidate", "battery group voltage 2, scaling unknown"),
+        ("22416E", "pack_group_voltage_3_candidate", "battery group voltage 3, scaling unknown"),
+        ("22434F", "hv_battery_temp_candidate", "HV battery temperature, scaling unknown"),
+        ("224127", "hv_battery_temp_a_candidate", "HV battery temperature A, scaling unknown"),
+        ("224124", "hv_battery_temp_b_candidate", "HV battery temperature B, scaling unknown"),
+        ("2240E5", "coolant_temp_1_candidate", "battery coolant temperature 1, scaling unknown"),
+        ("2240E6", "coolant_temp_2_candidate", "battery coolant temperature 2, scaling unknown"),
+    ),
+    tx_id="0x14DA40F1",
+    rx_id="0x142AF140",
+)
+
+
 PROFILES: dict[str, EnhancedProfile] = {
     BT1.key: BT1,
     PACK_POWER.key: PACK_POWER,
@@ -369,6 +433,8 @@ PROFILES: dict[str, EnhancedProfile] = {
     BSM_CD.key: BSM_CD,
     BEV3_BSM.key: BEV3_BSM,
     BEV3_DMCM.key: BEV3_DMCM,
+    BSM_NEXT.key: BSM_NEXT,
+    BCM_40.key: BCM_40,
 }
 
 

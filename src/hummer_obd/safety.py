@@ -374,6 +374,54 @@ ENHANCED_READ_DIDS: Final[dict[str, str]] = {
         "(0xFE39 -> -22.75 A, 0x0012 -> 0.9 A) which the formula reproduces "
         "exactly. UNMERGED, 2025 Lyriq BEV3, not BT1"
     ),
+    # ------------------------------------------------------------------
+    # Sourced candidates added 2026-09-03, none proven on this vehicle.
+    # Every one is a service 22 read, so the worst outcome of asking is a
+    # negative response.  They are here to be TESTED.  Nothing below claims
+    # they work, and no decoder consumes them until a Hummer answer is
+    # cross-checked against independently observable vehicle state.
+    #
+    # Group 1 -- battery system manager (CB), the module this vehicle already
+    # answers 27C6/27AF/27C7/27C0/0046/5401/2AF5/2B43 from.
+    # Source: meatpiHQ/wican-fw issue #884, a 2027 Bolt on the same Ultium/BEV3
+    # extended-addressing scheme.  UNMERGED single-author report, not BT1.
+    "27BF": ("charge-cycle regeneration-related field candidate -- "
+             "meatpiHQ/wican-fw issue #884, BEV3 Bolt, UNMERGED, not BT1"),
+    "27BB": ("thermal-management energy candidate -- meatpiHQ/wican-fw "
+             "issue #884, BEV3 Bolt, UNMERGED, not BT1"),
+    "27B5": ("thermal-management distance candidate -- meatpiHQ/wican-fw "
+             "issue #884, BEV3 Bolt, UNMERGED, not BT1"),
+    "2709": ("A/C compressor temperature candidate -- meatpiHQ/wican-fw "
+             "issue #884, BEV3 Bolt, UNMERGED, not BT1"),
+    "2AF1": ("battery module temperature candidate -- meatpiHQ/wican-fw "
+             "issue #884, BEV3 Bolt, UNMERGED, not BT1"),
+    #
+    # Group 2 -- body control module (40).  This vehicle named 40 as
+    # BCM-BodyControl in its own service 09 module inventory, and nothing has
+    # ever been asked of it.  Source: OBDb/Cadillac-LYRIQ PR #14, which ships
+    # real-vehicle test vectors; the same PR is where 2414 came from, and 2414
+    # is proven on this vehicle, which is the reason to take the rest of its
+    # register families seriously.  UNMERGED, 2025 Lyriq BEV3, not BT1.
+    "4149": ("EVSE advertised/pilot current candidate -- OBDb/Cadillac-LYRIQ "
+             "PR #14, module 40, UNMERGED, not BT1"),
+    "416C": ("HV battery group voltage 1 candidate -- OBDb/Cadillac-LYRIQ "
+             "PR #14, module 40, UNMERGED, not BT1"),
+    "416D": ("HV battery group voltage 2 candidate -- OBDb/Cadillac-LYRIQ "
+             "PR #14, module 40, UNMERGED, not BT1"),
+    "416E": ("HV battery group voltage 3 candidate -- OBDb/Cadillac-LYRIQ "
+             "PR #14, module 40, UNMERGED, not BT1"),
+    "434F": ("HV battery temperature candidate -- OBDb/Cadillac-LYRIQ PR #14, "
+             "module 40, UNMERGED, not BT1"),
+    "4127": ("HV battery temperature A candidate -- OBDb/Cadillac-LYRIQ PR "
+             "#14, module 40, UNMERGED, not BT1"),
+    "4124": ("HV battery temperature B candidate -- OBDb/Cadillac-LYRIQ PR "
+             "#14, module 40, UNMERGED, not BT1"),
+    "40E5": ("battery coolant temperature 1 candidate -- OBDb/Cadillac-LYRIQ "
+             "PR #14, module 40, UNMERGED, not BT1"),
+    "40E6": ("battery coolant temperature 2 candidate -- OBDb/Cadillac-LYRIQ "
+             "PR #14, module 40, UNMERGED, not BT1"),
+    "2429": ("nominal battery voltage candidate -- OBDb/Cadillac-LYRIQ PR #14, "
+             "module 17, UNMERGED, not BT1"),
     "33E5": (
         "drive motor control module battery voltage -- "
         "OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DA1D "
