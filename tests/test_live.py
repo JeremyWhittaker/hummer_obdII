@@ -217,6 +217,61 @@ class TestGroupedColumnsAreBrokenOut(unittest.TestCase):
         self.assertNotIn("0x2AF5 -- the 4 trailing bytes", text)
 
 
+class TestModuleTemperatureArray(unittest.TestCase):
+    """0x2AF1, proven to answer on 2026-09-03 and captured raw since."""
+
+    #: The exact payload the vehicle returned when first asked.
+    AF1 = "727372727272727272727373737372727272727272727372"
+
+    def test_all_twenty_four_values_are_shown(self):
+        entries = live._expand_flat_array(self.AF1)
+        self.assertEqual(len(entries), 24)
+
+    def test_no_block_structure_is_imposed_on_it(self):
+        # 0x2B43's blocks were measured before they were used.  Nothing has
+        # measured structure here, so none is asserted.
+        for label, _value in live._expand_flat_array(self.AF1):
+            with self.subTest(label=label):
+                self.assertNotIn("block", label)
+
+    def test_a_module_running_hot_is_flagged(self):
+        raw = bytearray(bytes.fromhex(self.AF1))
+        raw[9] = raw[9] + 6
+        entries = live._expand_flat_array(raw.hex().upper())
+        self.assertIn("drifting", entries[9][1])
+        self.assertNotIn("drifting", entries[8][1])
+
+    def test_an_even_array_flags_nothing(self):
+        self.assertFalse(
+            [e for e in live._expand_flat_array("72" * 24) if "drifting" in e[1]]
+        )
+
+    def test_it_is_carried_as_text_not_parsed_as_a_number(self):
+        # The failure that made cell_extra_raw read as never answered.
+        from hummer_obd.analyze import _TEXT_COLUMNS
+        self.assertIn("array_2af1", _TEXT_COLUMNS)
+
+    def test_the_recorder_asks_for_it_and_has_a_column_for_it(self):
+        self.assertIn("array_2af1", drive.COLUMNS)
+        battery = [g for g in drive.GROUPS if g.name == "battery"][0]
+        self.assertIn("2AF1", battery.dids)
+
+    def test_the_view_breaks_it_out(self):
+        rows = _rows([(0, {"array_2af1": self.AF1}), (5, {"array_2af1": self.AF1})])
+        text = render(snapshot(rows), path="drive.csv")
+        self.assertIn("0x2AF1", text)
+        self.assertIn("value 23", text)
+
+    def test_the_scaling_is_not_asserted_anywhere(self):
+        # The source calls these temperatures.  One sample at one temperature
+        # is not enough to name a column after, and nothing here does.
+        source = open(live.__file__, encoding="utf-8").read()
+        source += open(drive.__file__, encoding="utf-8").read()
+        for claim in ('"module_temp', '"temp_c', 'array_2af1_c'):
+            with self.subTest(claim=claim):
+                self.assertNotIn(claim, source)
+
+
 class TestNeverTouchesTheVehicle(unittest.TestCase):
     """Safe to run at any time, including while driving."""
 

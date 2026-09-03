@@ -69,6 +69,7 @@ LABELS: dict[str, tuple[str, str]] = {
     "lateral_g": ("lateral acceleration", "g"),
     "longitudinal_g": ("longitudinal acceleration", "g"),
     "array_2b43": ("per-module array 0x2B43 (raw)", ""),
+    "array_2af1": ("per-module array 0x2AF1 (raw)", ""),
     "cell_extra_raw": ("0x2AF5 trailing bytes (raw)", ""),
 }
 
@@ -132,6 +133,29 @@ def _expand_array(text: str) -> list[tuple[str, str]]:
     return out
 
 
+def _expand_flat_array(text: str) -> list[tuple[str, str]]:
+    """One entry per value, with its drift from the array's median.
+
+    No block structure is imposed here.  ``0x2B43``'s two blocks were measured
+    before they were used; nothing has measured any structure in this array, so
+    it is compared against itself as a whole rather than against groups that
+    have only been assumed.
+    """
+    try:
+        raw = bytes.fromhex(text)
+    except ValueError:
+        return [("(unparseable)", text[:40])]
+    if not raw:
+        return []
+    middle = sorted(raw)[len(raw) // 2]
+    out = []
+    for index, value in enumerate(raw):
+        drift = value - middle
+        mark = "" if abs(drift) <= 1 else ("   <-- drifting" if abs(drift) > 2 else "   <-- watch")
+        out.append((f"value {index:02d}", f"{value}  {drift:+d} from median{mark}"))
+    return out
+
+
 def _expand_bytes(text: str) -> list[tuple[str, str]]:
     """Each byte of a preserved-but-undecoded field, as hex and decimal."""
     try:
@@ -145,6 +169,11 @@ def _expand_bytes(text: str) -> list[tuple[str, str]]:
 #: Nothing here is decoded into units -- these are the raw values the vehicle
 #: sent, made individually visible instead of collapsed into one opaque string.
 EXPANSIONS: dict[str, tuple[str, object]] = {
+    "array_2af1": (
+        "0x2AF1 -- 24 per-module values, broken out (source calls these module "
+        "temperatures; the scaling is NOT proven, so these are raw)",
+        _expand_flat_array,
+    ),
     "array_2b43": (
         "0x2B43 -- 26 per-module values, broken out "
         "(all track charge at +0.995; drift is what matters)",

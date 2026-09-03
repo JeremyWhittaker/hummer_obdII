@@ -35,6 +35,23 @@ discount.
   enumerated identifiers; neither is in the drive recorder, and the unattended
   collector still refuses service 22 entirely.
 
+- **`0x2AF1`'s twenty-four values are now recorded every cycle and broken out
+  individually.** Having proven it answers, capturing it once was not the point
+  — the scaling can only be settled by a temperature *range*, and that needs it
+  in every session. It is stored **raw**, and a test asserts no column or label
+  anywhere claims a unit: the source calls these module temperatures, and one
+  sample at one temperature is not enough to name a column after.
+
+  The live view breaks all twenty-four out with each value's drift from the
+  array's median, so a single module running hot shows up against its
+  twenty-three siblings. Unlike `0x2B43` it is compared against itself as a
+  whole rather than in blocks, because `0x2B43`'s two blocks were *measured*
+  before they were used and nothing has measured any structure in this one.
+
+  `array_2af1` was added to the reader's text-column set in the same change —
+  the mistake that made `cell_extra_raw` read as "never answered" was made once
+  and is now covered by a test.
+
 - **Fifteen sourced candidates tested on the vehicle: five hits, nine
   silences.** Recorded in [Probe, 2026-09-03](docs/PROBE_2026-09-03.md), run
   parked and awake straight after a highway drive, with the drive session pulled

@@ -654,7 +654,7 @@ def _dry_run(profile: EnhancedProfile, say: Callable[[str], None]) -> EnhancedRe
         started_utc=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         confirmed=False,
     )
-    say(f"DRY RUN - nothing is transmitted and no serial device is opened.")
+    say("DRY RUN - nothing is transmitted and no serial device is opened.")
     say(f"profile   : {profile.key} ({profile.description})")
     say(f"provenance: {profile.provenance}")
     say(f"addressing: request {profile.tx_id}  response {profile.rx_id}")

@@ -161,6 +161,16 @@ DECODERS: dict[str, Callable[[bytes], dict]] = {
     "4C30": lambda p: {"longitudinal_g": round(_s16(p, 0) * 0.0015928, 5)} if len(p) >= 2 else {},
     # Not decoded on purpose: 26 bytes where the source describes one.
     "2B43": lambda p: {"array_2b43": p.hex().upper()},
+    # Twenty-four values, proven to answer on this vehicle on 2026-09-03.  The
+    # source calls it battery module temperature, and twenty-four is exactly the
+    # module count three independent structural results agree on.  Kept RAW all
+    # the same: under (x-40)/2 the probe's values landed at 37.0-37.5 C against
+    # a pack temperature of 39.0 C measured in the same minute -- close enough
+    # to be tempting, nowhere near enough to be true.  That was one sample at
+    # one temperature, and a scaling that lands near the right answer at 39 C
+    # says nothing about 5 C or 55 C.  Capturing it every cycle is how the
+    # temperature range needed to settle it gets collected.
+    "2AF1": lambda p: {"array_2af1": p.hex().upper()},
     # Traction pack voltage and current.  Both come from unmerged BEV3 sources,
     # and both were confirmed on this vehicle during an AC charge: 388.60 V and
     # -20.95 A, whose product (8.14 kW) agreed within 6% with the charge power
@@ -194,7 +204,8 @@ GROUPS: tuple[AddressGroup, ...] = (
         ecu="CB",
         address=("ATSHDACBF1", "ATCRA142AF1CB", "ATFCSH14DACBF1",
                  "ATFCSD300000", "ATFCSM1"),
-        dids=("27C6", "27AF", "27C7", "27C0", "0046", "5401", "2AF5", "2B43"),
+        dids=("27C6", "27AF", "27C7", "27C0", "0046", "5401", "2AF5", "2B43",
+              "2AF1"),
     ),
     AddressGroup(
         name="chassis",
@@ -276,6 +287,7 @@ COLUMNS: tuple[str, ...] = (
     "soc_pct", "energy_kwh", "range_mi", "dist_since_chg_mi",
     "temp_f", "charger_5401_raw", "power_kw",
     "cell_avg_v", "cell_min_v", "cell_max_v", "cell_spread_mv", "cell_extra_raw",
+    "array_2af1",
     "pack_v", "pack_a", "hv_power_kw",
     "dmc2_v",
     "wheel_fl_kph", "wheel_fr_kph", "wheel_rl_kph", "wheel_rr_kph",

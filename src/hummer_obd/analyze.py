@@ -58,7 +58,7 @@ KM_PER_MILE: float = 1.609344
 #: reads as a column the vehicle never answered -- which is exactly what
 #: happened to ``cell_extra_raw`` the first time it was recorded live.
 _TEXT_COLUMNS = frozenset({
-    "utc", "array_2b43", "charger_5401_raw", "cell_extra_raw",
+    "utc", "array_2b43", "array_2af1", "charger_5401_raw", "cell_extra_raw",
 })
 
 #: A sample period more than this multiple of the median is treated as a gap
