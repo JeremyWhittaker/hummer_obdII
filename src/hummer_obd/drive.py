@@ -63,7 +63,7 @@ from .safety import (
 from .transport import SerialTransport, Transport, TransportError
 
 __all__ = ["AddressGroup", "GROUPS", "DECODERS", "COLUMNS",
-           "STANDARD_ADDRESS", "record", "main"]
+           "STANDARD_ADDRESS", "POWER_WINDOW_S", "record", "main"]
 
 
 def _u16(p: bytes, i: int) -> int:
@@ -206,6 +206,44 @@ COLUMNS: tuple[str, ...] = (
 )
 
 
+#: Seconds of history the power slope is taken over.  Long enough that the
+#: 0.01 kWh quantum of the energy field is small against it, short enough to
+#: follow a real change in charge rate.
+POWER_WINDOW_S: float = 60.0
+
+
+def _power_over_window(rows: list, row: dict) -> Optional[float]:
+    """Slope of ``energy_kwh`` from the oldest sample still inside the window.
+
+    Returns ``None`` until there is enough history, which is honest: a power
+    figure derived from one point does not exist, and emitting a placeholder
+    zero would read as "not charging".
+    """
+    if "energy_kwh" not in row or "elapsed_s" not in row:
+        return None
+    cutoff = row["elapsed_s"] - POWER_WINDOW_S
+    oldest = None
+    for candidate in rows:
+        if "energy_kwh" not in candidate or "elapsed_s" not in candidate:
+            continue
+        if candidate["elapsed_s"] >= cutoff:
+            oldest = candidate
+            break
+    if oldest is None:
+        # Nothing inside the window yet; fall back to the earliest sample so a
+        # short session still reports something, once it has two points.
+        for candidate in rows:
+            if "energy_kwh" in candidate and "elapsed_s" in candidate:
+                oldest = candidate
+                break
+    if oldest is None:
+        return None
+    hours = (row["elapsed_s"] - oldest["elapsed_s"]) / 3600.0
+    if hours <= 0:
+        return None
+    return round((row["energy_kwh"] - oldest["energy_kwh"]) / hours, 2)
+
+
 @dataclass
 class Session:
     cycles: int = 0
@@ -323,16 +361,19 @@ def record(
         # 0x5401 is published as "charger DC power" but this vehicle answers it
         # with a single byte that is non-zero at idle (0x96) and did not scale
         # to the measured rate during an AC charge (0x93), so it is not used
-        # for this.  The energy field, by contrast, moves smoothly and with
-        # high resolution -- 80 distinct values across ten minutes -- which
-        # makes its slope a sound power measurement.  Positive is charging.
-        if len(session.rows) >= 1 and "energy_kwh" in row:
-            prev = session.rows[-1]
-            if "energy_kwh" in prev and "elapsed_s" in prev:
-                hours = (row["elapsed_s"] - prev["elapsed_s"]) / 3600.0
-                if hours > 0:
-                    delta = row["energy_kwh"] - prev["energy_kwh"]
-                    row["power_kw"] = round(delta / hours, 2)
+        # for this.  The energy field is the better source: it moved through 80
+        # distinct values across ten minutes of charging.
+        #
+        # But it is quantised to 0.01 kWh, and *that* is why the slope is taken
+        # over a window rather than between consecutive samples.  At a ~7 s
+        # cycle a single 0.01 kWh step is about 5 kW, so consecutive-sample
+        # power alternated between 9.5 and 4.8 kW while the true rate was a
+        # steady 7.8.  The reading was not wrong on average and was useless
+        # instant to instant.  Over POWER_WINDOW_S the quantum is small against
+        # the elapsed time and the number stops jittering.
+        row_power = _power_over_window(session.rows, row)
+        if row_power is not None:
+            row["power_kw"] = row_power
 
         session.rows.append(row)
         session.cycles += 1

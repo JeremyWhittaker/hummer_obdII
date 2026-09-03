@@ -288,6 +288,34 @@ class TestCycleShape(unittest.TestCase):
         self.assertIn("power_kw", session.rows[1])
         self.assertGreater(session.rows[1]["power_kw"], 0, "energy rose, so charging")
 
+    def test_power_is_smoothed_over_a_window_not_consecutive_samples(self):
+        # energy_kwh is quantised to 0.01 kWh.  At a ~7 s cycle one quantum is
+        # about 5 kW, so a consecutive-sample slope alternated 9.5/4.8 kW while
+        # the true rate was a steady 7.8.  The window is what fixes that.
+        from hummer_obd.drive import POWER_WINDOW_S, _power_over_window
+
+        rows = []
+        # 0.01 kWh steps arriving every 7 s: a real, steady ~5.1 kW.
+        for i in range(30):
+            rows.append({"elapsed_s": i * 7.0, "energy_kwh": 100.0 + (i // 2) * 0.01})
+        latest = rows[-1]
+        windowed = _power_over_window(rows[:-1], latest)
+        consecutive = (
+            (latest["energy_kwh"] - rows[-2]["energy_kwh"])
+            / ((latest["elapsed_s"] - rows[-2]["elapsed_s"]) / 3600.0)
+        )
+        self.assertIsNotNone(windowed)
+        # The consecutive-sample figure is either ~0 or ~5 kW; the windowed one
+        # sits near the true average and is far less extreme.
+        self.assertLess(abs(windowed - 2.57), 1.5)
+        self.assertGreater(abs(consecutive - windowed), 1.0)
+        self.assertGreater(POWER_WINDOW_S, 30)
+
+    def test_power_is_absent_until_there_is_history(self):
+        from hummer_obd.drive import _power_over_window
+
+        self.assertIsNone(_power_over_window([], {"elapsed_s": 0.0, "energy_kwh": 1.0}))
+
     def test_power_column_is_declared(self):
         self.assertIn("power_kw", COLUMNS)
 

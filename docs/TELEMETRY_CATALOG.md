@@ -57,9 +57,24 @@ power_kw = Δenergy_kwh / Δhours
 ```
 
 That field moves smoothly and with high resolution — 80 distinct values across
-ten minutes of charging — which makes its slope a sound measurement. Validated
-against a real AC charging session: **7.81 kW derived offline, 7.84 kW computed
-live by the recorder.** Positive is charging.
+ten minutes of charging — which makes its slope a sound measurement. Positive is
+charging.
+
+**The slope is taken over a 60-second window, not between consecutive samples**,
+and the reason is worth recording. `energy_kwh` is quantised to 0.01 kWh. At a
+~7 second cycle a single quantum is about 5 kW, so a consecutive-sample slope
+alternated between 9.53 and 4.76 kW while the true rate was a steady 7.8 — right
+on average, useless instant to instant. Measured live on a charging vehicle
+before and after:
+
+```
+consecutive samples   9.53  4.76                                  (+-60%)
+60-second window      6.99  7.46  7.77  7.34  7.51  8.06  7.96    (~7.6)
+```
+
+Validated against a real AC charging session at 7.81 kW derived offline from the
+CSV. The column is empty rather than zero until there is enough history: a
+placeholder zero would read as "not charging".
 
 ### Why these decodes are trusted
 
