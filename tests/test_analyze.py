@@ -77,6 +77,69 @@ class TestDistanceAndSpeed(unittest.TestCase):
         self.assertEqual(report["motion"]["max_speed_kph"], 60.0)
 
 
+class TestDistanceSourcePreference(unittest.TestCase):
+    """The obvious source is the least reliable one on this vehicle.
+
+    `odometer_km` and `speed_kph` are standard OBD PIDs and answered in only 8
+    of 79 rows on 2026-09-03, while every enhanced read answered in all 79.
+    Keying distance off the odometer alone reported a 12.6-mile drive as 0.06.
+    """
+
+    def test_the_odometer_is_preferred_when_it_actually_moved(self):
+        rows = _rows([
+            (0, {"odometer_km": 100.0, "dist_since_chg_mi": 0.0}),
+            (3600, {"odometer_km": 116.1, "dist_since_chg_mi": 9.0}),
+        ])
+        report = analyze_session(rows)
+        self.assertEqual(report["motion"]["distance_basis"], "odometer_km")
+        self.assertAlmostEqual(report["motion"]["distance_used_mi"], 10.0, places=1)
+
+    def test_distance_since_charge_carries_a_drive_the_odometer_missed(self):
+        # The odometer answered twice and did not change; the enhanced counter
+        # answered every row and moved 12.68 miles.
+        rows = _rows([
+            (0, {"odometer_km": 2197.6, "dist_since_chg_mi": 0.0}),
+            (600, {"dist_since_chg_mi": 6.0}),
+            (1200, {"odometer_km": 2197.6, "dist_since_chg_mi": 12.68}),
+        ])
+        report = analyze_session(rows)
+        self.assertEqual(report["motion"]["distance_basis"], "dist_since_chg_mi")
+        self.assertAlmostEqual(report["motion"]["distance_used_mi"], 12.68, places=2)
+
+    def test_a_charge_resetting_the_counter_is_not_a_reversing_truck(self):
+        rows = _rows([
+            (0, {"dist_since_chg_mi": 40.0}),
+            (600, {"dist_since_chg_mi": 0.0}),
+        ])
+        report = analyze_session(rows)
+        self.assertIsNone(
+            report["motion"]["distance_since_charge_mi"],
+            "a negative delta is the counter resetting on a charge",
+        )
+
+    def test_wheel_speeds_carry_distance_when_the_speed_pid_is_absent(self):
+        rows = _rows([
+            (0, {"wheel_fl_kph": 100.0, "wheel_fr_kph": 100.0,
+                 "wheel_rl_kph": 100.0, "wheel_rr_kph": 100.0}),
+            (3600, {"wheel_fl_kph": 100.0, "wheel_fr_kph": 100.0,
+                    "wheel_rl_kph": 100.0, "wheel_rr_kph": 100.0}),
+        ])
+        report = analyze_session(rows)
+        self.assertAlmostEqual(report["motion"]["distance_from_wheels_km"], 100.0, places=1)
+        self.assertEqual(report["motion"]["distance_basis"], "wheel speeds")
+
+    def test_a_derived_wheel_mean_is_not_reported_as_a_vehicle_column(self):
+        rows = _rows([
+            (0, {"wheel_fl_kph": 10.0, "wheel_fr_kph": 10.0,
+                 "wheel_rl_kph": 10.0, "wheel_rr_kph": 10.0}),
+            (10, {"wheel_fl_kph": 10.0, "wheel_fr_kph": 10.0,
+                  "wheel_rl_kph": 10.0, "wheel_rr_kph": 10.0}),
+        ])
+        report = analyze_session(rows)
+        invented = [k for k in report["completeness"] if "wheel_mean" in k or k.startswith("_")]
+        self.assertEqual(invented, [], "completeness must report only what the vehicle sent")
+
+
 class TestEnergyAndEfficiency(unittest.TestCase):
     def test_energy_used_is_the_fall_in_energy_remaining(self):
         rows = _rows([

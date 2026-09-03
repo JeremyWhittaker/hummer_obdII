@@ -59,6 +59,11 @@ _TEXT_COLUMNS = frozenset({"utc", "array_2b43", "charger_5401_raw"})
 #: rather than as jitter.
 _GAP_FACTOR: float = 3.0
 
+#: The four wheel-speed columns.  These come from the brake controller as an
+#: enhanced read, which on this vehicle answers far more reliably than the
+#: standard ``speed_kph`` PID.
+_WHEEL_COLUMNS = ("wheel_fl_kph", "wheel_fr_kph", "wheel_rl_kph", "wheel_rr_kph")
+
 #: Below this speed a sample is counted as stopped rather than moving.  The
 #: vehicle reports integer km/h, so anything under 1 is a standstill.
 _MOVING_KPH: float = 1.0
@@ -244,14 +249,38 @@ def analyze(rows: list[dict], *, path: str = "", expected_period_s: Optional[flo
     report["sampling"] = _sampling(rows, expected_period_s)
 
     # --- motion ------------------------------------------------------------
+    #
+    # Four routes to distance, because the obvious one is the least reliable
+    # here.  `odometer_km` and `speed_kph` are standard OBD PIDs, and on
+    # 2026-09-03 they answered in only 8 of 79 rows while every enhanced read
+    # answered in all 79.  A report that keys distance off the odometer alone
+    # therefore under-reports a real drive to nearly zero, which is exactly
+    # what happened: 12.6 miles read as 0.06.  So each route is computed, the
+    # densest trustworthy one is used, and the rest are shown beside it.
     odo_start, odo_end = _first_last(rows, "odometer_km")
     distance_km = None
     if odo_start is not None and odo_end is not None:
         distance_km = odo_end - odo_start
-    # An independent route to the same distance.  Odometer resolution is
-    # 0.1 km, so on a short trip the integrated speed is the better figure and
-    # on a long one they should agree; disagreement means one of them is wrong.
     distance_from_speed_km = _integrate(rows, "speed_kph")
+    # The four wheels are an enhanced read and answer when `speed_kph` does
+    # not, so their mean is the speed trace that actually survives a session.
+    # Built into throwaway rows rather than written back: the caller's rows are
+    # also what the completeness section reports on, and a derived column
+    # invented here would be listed there as if the vehicle had sent it.
+    wheel_rows = []
+    for row in rows:
+        corners = [row[c] for c in _WHEEL_COLUMNS if isinstance(row.get(c), (int, float))]
+        if corners and isinstance(row.get("elapsed_s"), (int, float)):
+            wheel_rows.append({"elapsed_s": row["elapsed_s"],
+                               "wheel_mean_kph": sum(corners) / len(corners)})
+    distance_from_wheels_km = _integrate(wheel_rows, "wheel_mean_kph")
+    # `dist_since_chg_mi` is an enhanced read and is already in miles, but it
+    # resets to zero when the vehicle charges.  A negative delta is that reset,
+    # not a reversing truck, so it is discarded rather than reported.
+    chg_start, chg_end = _first_last(rows, "dist_since_chg_mi")
+    distance_since_charge_mi = None
+    if chg_start is not None and chg_end is not None and chg_end >= chg_start:
+        distance_since_charge_mi = chg_end - chg_start
     speeds = _series(rows, "speed_kph")
     moving = [s for s in speeds if s >= _MOVING_KPH]
     report["motion"] = {
@@ -260,6 +289,8 @@ def analyze(rows: list[dict], *, path: str = "", expected_period_s: Optional[flo
         "distance_km": _round(distance_km, 2),
         "distance_mi": _round(distance_km / KM_PER_MILE, 2) if distance_km is not None else None,
         "distance_from_speed_km": _round(distance_from_speed_km, 2),
+        "distance_from_wheels_km": _round(distance_from_wheels_km, 2),
+        "distance_since_charge_mi": _round(distance_since_charge_mi, 2),
         "max_speed_kph": max(speeds) if speeds else None,
         "max_speed_mph": _round(max(speeds) / KM_PER_MILE, 1) if speeds else None,
         "mean_moving_kph": _round(_mean(moving), 1),
@@ -273,13 +304,21 @@ def analyze(rows: list[dict], *, path: str = "", expected_period_s: Optional[flo
         ]) else None,
     }
 
-    # Prefer the odometer for distance, but fall back to integrated speed so a
-    # session that never saw an odometer change still yields an efficiency.
+    # Pick the distance every derived figure will use, in order of how much
+    # this vehicle's data can be trusted to carry it, and record the choice so
+    # a reader is never guessing which number fed the efficiency.
     distance_mi = None
+    distance_basis = None
     if distance_km:
-        distance_mi = distance_km / KM_PER_MILE
+        distance_mi, distance_basis = distance_km / KM_PER_MILE, "odometer_km"
+    elif distance_since_charge_mi:
+        distance_mi, distance_basis = distance_since_charge_mi, "dist_since_chg_mi"
+    elif distance_from_wheels_km:
+        distance_mi, distance_basis = distance_from_wheels_km / KM_PER_MILE, "wheel speeds"
     elif distance_from_speed_km:
-        distance_mi = distance_from_speed_km / KM_PER_MILE
+        distance_mi, distance_basis = distance_from_speed_km / KM_PER_MILE, "speed_kph"
+    report["motion"]["distance_used_mi"] = _round(distance_mi, 2)
+    report["motion"]["distance_basis"] = distance_basis
 
     # --- energy ------------------------------------------------------------
     e_start, e_end = _first_last(rows, "energy_kwh")
@@ -459,7 +498,9 @@ def format_report(report: dict) -> str:
         out.append(_line("seconds lost to gaps", s.get("gap_seconds_total"), " s"))
 
     for title, keys in (
-        ("motion", ("distance_km", "distance_mi", "distance_from_speed_km",
+        ("motion", ("distance_used_mi", "distance_basis",
+                    "distance_km", "distance_mi", "distance_since_charge_mi",
+                    "distance_from_wheels_km", "distance_from_speed_km",
                     "max_speed_kph", "max_speed_mph", "mean_moving_kph",
                     "moving_samples", "stopped_samples", "max_wheel_kph")),
         ("energy", ("energy_start_kwh", "energy_end_kwh", "energy_used_kwh",

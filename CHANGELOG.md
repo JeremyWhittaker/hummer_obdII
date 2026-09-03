@@ -79,6 +79,19 @@ discount.
 
 ### Fixed
 
+- **The session report keyed distance off the least reliable column it had.**
+  `odometer_km` and `speed_kph` are standard OBD PIDs, and on 2026-09-03 they
+  answered in 8 of 79 rows while every enhanced read answered in all 79. The
+  report therefore described a 12.6-mile drive as 0.06 miles. It now computes
+  distance four ways -- the odometer, `dist_since_chg_mi`, the four wheel
+  speeds, and integrated `speed_kph` -- shows all of them, uses the densest
+  trustworthy one, and names which it used in `distance_basis`, so no reader
+  has to guess what fed the efficiency figure. A negative `dist_since_chg_mi`
+  delta is the counter resetting on a charge rather than a reversing truck, and
+  is discarded. The derived wheel-speed mean is built into throwaway rows
+  rather than written back, so a column invented by the report is never listed
+  in completeness as though the vehicle had sent it.
+
 - **A real 12.6-mile commute was recorded as "asleep", and voltage was the
   reason.** On 2026-09-03 the vehicle idled awake for 23 minutes at 13.9 V,
   which topped up its 12 V battery. The DC-DC converter then dropped to float,
