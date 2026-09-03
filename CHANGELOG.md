@@ -79,6 +79,35 @@ discount.
 
 ### Fixed
 
+- **A hung-up adapter was recorded as data for the rest of the session.** Every
+  transport failure inside a cycle was caught per group and the loop continued,
+  which is right for one quiet module and wrong for a link that has gone away.
+  Nothing in `drive.py` ever called `transport.reconnect()`, although
+  `SerialTransport` implements it with capped backoff and `collector.py` calls
+  it on exactly this error. pyserial does not close the port on an I/O error,
+  so the transport never noticed by itself: after an RFCOMM hang-up the
+  recorder wrote rows carrying nothing but a timestamp, once per cycle, until
+  `DRIVE_MAX_SESSION_S` -- two hours by default -- while the service stayed
+  `active (running)` and the journal stayed silent. `run_auto` then polled the
+  same dead file descriptor forever. Reproduced offline: 40 cycles, 280
+  swallowed errors, every one of the 27 data columns empty.
+
+  A cycle that decodes nothing is now recognised as a dead link rather than as
+  a sample, and no row is written for it, because a row of nothing but a
+  timestamp makes a dead link look like data. The first such cycles reopen the
+  link *and re-send the session header* -- reopening the RFCOMM device
+  re-establishes the Bluetooth link, which returns the ELM to power-on
+  defaults, so reconnecting without re-initialising would leave echo on and no
+  protocol selected, which reads as corrupt data rather than as a dead link.
+  After `DEAD_CYCLES_BEFORE_EXIT` consecutive dead cycles the recorder raises,
+  `main()` returns 3, and `Restart=always` hands the next process a freshly
+  bound device. Exiting is the recovery path here, not a failure of it; the
+  unit comment already said as much, and this handler was what prevented it.
+
+  Found by an adversarial audit of the capture path, which raised 58 findings
+  and refuted 53 of its own. One quiet module still costs only its own columns,
+  which is the distinction the whole check rests on and is tested directly.
+
 - **One dropped Bluetooth read ended a session as if the vehicle had gone to
   sleep.** The recorder decided a session was over with
   `(_volts(transport, timeout) or 0) < WAKE_VOLTS`. `_volts` returns `None` when
@@ -98,6 +127,13 @@ discount.
   sends nothing but `ATRV`, so the property that makes the unit safe to enable
   at boot against a parked vehicle is unchanged, and the test asserting that a
   dead adapter transmits only `ATRV` still passes.
+- **Two documented inventories had drifted from the code.** The README
+  advertised a "26-column CSV" against a `drive.COLUMNS` of 29, and
+  `config/hummer-drive.default` described "14 enhanced identifiers across three
+  modules" against a `GROUPS` of 16 across four (CB, 28, 17 and 1D). Both now
+  match, and both point at the code as the place to read the number rather than
+  restating one that has already drifted once.
+
 - **The drive recorder sampled at half the configured rate, and the config
   explained why in terms that were wrong.** `record()` calls
   `sleeper(interval_s)` *after* a completed cycle, so `DRIVE_INTERVAL_S` is a

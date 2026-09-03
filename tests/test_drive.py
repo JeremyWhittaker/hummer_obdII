@@ -25,7 +25,7 @@ from hummer_obd.safety import (
     validate_enhanced_command,
     validate_supervised_command,
 )
-from hummer_obd.transport import Response, Transport
+from hummer_obd.transport import Response, Transport, TransportError
 
 #: Real frames captured from the vehicle on 2026-09-03.
 REPLIES = {
@@ -460,6 +460,137 @@ class TestSilentAdapterRetriesPromptly(unittest.TestCase):
     def test_prompt_retries_are_shorter_than_the_slow_watch(self):
         self.assertLess(drive.UNANSWERED_INTERVAL_S, 300.0)
         self.assertGreater(drive.UNANSWERED_RETRIES, 0)
+
+
+class _Droppable(_Fake):
+    """A link that can hang up, and that ``reconnect()`` may bring back.
+
+    pyserial does not close the port on an I/O error, so a real hung-up rfcomm
+    tty keeps failing every send with no path back on its own.  That is the
+    behaviour modelled here.
+    """
+
+    def __init__(self, drop_after_sends=0, revives=False, **kwargs):
+        super().__init__(**kwargs)
+        self.sends = 0
+        self.drop_after_sends = drop_after_sends
+        self.revives = revives
+        self.dead = False
+        self.reconnects = 0
+        self.sends_after_reconnect = []
+
+    def send(self, command, timeout=None):
+        self.sends += 1
+        if self.drop_after_sends and self.sends > self.drop_after_sends:
+            self.dead = True
+        if self.dead:
+            self.sent.append(command)
+            raise TransportError("read failed")
+        if self.reconnects:
+            self.sends_after_reconnect.append(command)
+        return super().send(command, timeout)
+
+    def reconnect(self, attempt=0):
+        self.reconnects += 1
+        if self.revives:
+            self.dead = False
+            self.drop_after_sends = 0
+
+
+def _bounded_clock(step=1.0):
+    """A clock that always advances, so a broken loop cannot run forever."""
+    state = {"t": 0.0}
+
+    def tick():
+        state["t"] += step
+        return state["t"]
+
+    return tick
+
+
+class TestADeadLinkEndsTheProcess(unittest.TestCase):
+    """A link that has gone away must not be recorded as data.
+
+    Every transport failure is caught per group so that one quiet module costs
+    only its own columns.  The same handling used to swallow a link that had
+    gone entirely: the loop wrote rows carrying nothing but a timestamp for the
+    rest of the session while the service stayed "active (running)".
+    """
+
+    def test_a_link_that_hangs_up_raises_instead_of_writing_empty_rows(self):
+        fake = _Droppable(drop_after_sends=len(SESSION_INIT))
+        with self.assertRaises(TransportError) as caught:
+            record(fake, interval_s=0, duration_s=100.0, sleeper=lambda s: None,
+                   clock=_bounded_clock())
+        self.assertIn("decoded nothing", str(caught.exception))
+
+    def test_no_row_is_written_for_a_cycle_that_decoded_nothing(self):
+        fake = _Droppable(drop_after_sends=len(SESSION_INIT))
+        written = []
+        with self.assertRaises(TransportError):
+            record(fake, interval_s=0, duration_s=100.0, sleeper=lambda s: None,
+                   clock=_bounded_clock(), row_sink=written.append)
+        self.assertEqual(
+            written, [],
+            "a row of nothing but a timestamp is not a sample and must not be "
+            f"written, got {written}",
+        )
+
+    def test_it_tries_to_reconnect_before_giving_up(self):
+        fake = _Droppable(drop_after_sends=len(SESSION_INIT))
+        with self.assertRaises(TransportError):
+            record(fake, interval_s=0, duration_s=100.0, sleeper=lambda s: None,
+                   clock=_bounded_clock())
+        self.assertEqual(
+            fake.reconnects, drive.DEAD_CYCLES_BEFORE_EXIT - 1,
+            "every dead cycle before the last should attempt a reconnect",
+        )
+
+    def test_a_link_that_comes_back_keeps_recording(self):
+        fake = _Droppable(drop_after_sends=len(SESSION_INIT), revives=True)
+        session = record(fake, interval_s=0, max_cycles=2, sleeper=lambda s: None,
+                         clock=_bounded_clock())
+        self.assertEqual(fake.reconnects, 1)
+        self.assertEqual(session.cycles, 2, "recording should resume after a revive")
+        self.assertTrue(session.rows)
+
+    def test_a_revive_re_initialises_the_adapter(self):
+        # Reopening the device re-establishes the Bluetooth link, which returns
+        # the ELM to power-on defaults; skipping the header would leave echo on
+        # and no protocol selected, which reads as corrupt data.
+        fake = _Droppable(drop_after_sends=len(SESSION_INIT), revives=True)
+        record(fake, interval_s=0, max_cycles=1, sleeper=lambda s: None,
+               clock=_bounded_clock())
+        self.assertEqual(
+            fake.sends_after_reconnect[: len(SESSION_INIT)], list(SESSION_INIT),
+            "the session header must be re-sent after a reconnect, got "
+            f"{fake.sends_after_reconnect[:6]}",
+        )
+
+    def test_a_transport_that_cannot_reconnect_says_so(self):
+        # reconnect() lives on SerialTransport, not the Transport interface.
+        with self.assertRaises(TransportError):
+            drive._revive(_Fake(), timeout=1.0, attempt=0)
+
+    def test_one_quiet_module_does_not_look_like_a_dead_link(self):
+        # The distinction the whole check rests on: a module that answers
+        # nothing costs its own columns, and nothing else.
+        class _OneGroupDown(_Fake):
+            def send(self, command, timeout=None):
+                if command == drive.GROUPS[0].address[0]:
+                    self.sent.append(command)
+                    raise TransportError("that module is quiet")
+                return super().send(command, timeout)
+
+        fake = _OneGroupDown()
+        session = record(fake, interval_s=0, max_cycles=2, sleeper=lambda s: None,
+                         clock=_bounded_clock())
+        self.assertEqual(session.cycles, 2)
+        self.assertTrue(session.rows, "a partial cycle is still a sample")
+        self.assertTrue(
+            any(k not in ("utc", "elapsed_s", "volts") for k in session.rows[0]),
+            f"the surviving groups should still have decoded, got {session.rows[0]}",
+        )
 
 
 class TestWakeThreshold(unittest.TestCase):

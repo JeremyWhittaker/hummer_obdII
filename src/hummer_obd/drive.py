@@ -51,7 +51,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Callable, Optional
+from typing import Callable, Final, Optional
 
 from .decode import parse_reply
 from .rawlog import RawLog
@@ -228,6 +228,41 @@ COLUMNS: tuple[str, ...] = (
 POWER_WINDOW_S: float = 60.0
 
 
+#: Consecutive cycles that decode nothing before the recorder gives up and
+#: exits.  Exiting is the recovery path rather than a failure of it: the unit
+#: is ``Restart=always`` and ``hummer-rfcomm`` binds the device on open, so the
+#: next process gets a freshly established link and a properly initialised
+#: adapter.  Staying alive on a dead file descriptor is what loses a drive.
+DEAD_CYCLES_BEFORE_EXIT: int = 3
+
+#: Columns a row can carry without anything having been heard from the vehicle.
+#: ``utc`` and ``elapsed_s`` are the row's own bookkeeping, and ``volts`` comes
+#: from ``ATRV``, which the adapter answers by itself.  A cycle holding only
+#: these has decoded nothing, however healthy the process looks.
+_NON_VEHICLE_COLUMNS: Final[frozenset[str]] = frozenset({"utc", "elapsed_s", "volts"})
+
+
+def _revive(transport: Transport, *, timeout: float, attempt: int) -> None:
+    """Reopen the link and re-initialise the adapter, or raise.
+
+    Reopening the RFCOMM device re-establishes the Bluetooth link, and that
+    returns the ELM to its power-on defaults.  So the session header has to be
+    sent again: reconnecting without it leaves an adapter that answers with
+    echo on and no protocol selected, which reads as corrupt data rather than
+    as a dead link -- worse than the failure being recovered from.
+
+    ``reconnect`` lives on :class:`SerialTransport` rather than on the
+    :class:`Transport` interface, so a transport that cannot reconnect says so
+    instead of raising ``AttributeError`` from inside a recovery path.
+    """
+    reconnect = getattr(transport, "reconnect", None)
+    if reconnect is None:
+        raise TransportError("this transport cannot reconnect")
+    reconnect(attempt)
+    for command in SESSION_INIT:
+        transport.send(validate_command(command), timeout=timeout)
+
+
 def _power_over_window(rows: list, row: dict) -> Optional[float]:
     """Slope of ``energy_kwh`` from the oldest sample still inside the window.
 
@@ -305,6 +340,7 @@ def record(
         transport.send(validate_command(command), timeout=timeout)
 
     started = clock()
+    dead_cycles = 0
     while True:
         if max_cycles and session.cycles >= max_cycles:
             break
@@ -371,6 +407,41 @@ def record(
             transport.send(validate_command(ENHANCED_PRIORITY), timeout=timeout)
         except TransportError as exc:
             session.errors.append(f"restore priority: {exc}")
+
+        # Did anything at all answer?
+        #
+        # Every transport failure above is caught per group, so one quiet
+        # module costs its own columns and nothing else -- which is right.  But
+        # the same handling meant a link that had gone away entirely was also
+        # swallowed, every cycle, for the rest of the session: the loop kept
+        # writing rows carrying nothing but a timestamp, the service stayed
+        # "active (running)", and the journal stayed quiet.  A drive recorded
+        # after that point was lost while everything looked healthy.
+        #
+        # pyserial does not close the port on an I/O error, so the transport
+        # never notices by itself and no amount of waiting brings it back.
+        if any(key not in _NON_VEHICLE_COLUMNS for key in row):
+            dead_cycles = 0
+        else:
+            dead_cycles += 1
+            session.errors.append(f"cycle decoded nothing ({dead_cycles} consecutive)")
+            say(f"  [{row['elapsed_s']:>8.1f}s] decoded nothing "
+                f"({dead_cycles}/{DEAD_CYCLES_BEFORE_EXIT})")
+            if dead_cycles >= DEAD_CYCLES_BEFORE_EXIT:
+                raise TransportError(
+                    f"{dead_cycles} consecutive cycles decoded nothing; exiting "
+                    f"so the link is re-established"
+                )
+            try:
+                _revive(transport, timeout=timeout, attempt=dead_cycles - 1)
+                say("  link reopened and adapter re-initialised")
+            except TransportError as exc:
+                session.errors.append(f"reconnect: {exc}")
+                say(f"  reconnect failed: {exc}")
+            # No row is written.  A row of nothing but a timestamp is not a
+            # sample, and writing one makes a dead link look like data.
+            sleeper(interval_s)
+            continue
 
         # Charge/discharge power, derived rather than read.
         #

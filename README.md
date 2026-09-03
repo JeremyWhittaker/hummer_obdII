@@ -74,7 +74,7 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | **Traction pack voltage, current and HV power** | **proven**: `0x2885` and `0x2414` from `DMCM-DriveMotorCtrl`. Measured while charging: 388.60 V, −20.95 A, −8.14 kW. Volts × amps agrees within 6 % with the charge power derived independently from the energy field's slope |
 | **Drive-motor module voltage** | `0x33E5` from all three drive motor controllers, 13.2 / 13.1 / 13.1 V — the 12 V domain, not the pack |
 | **Chassis dynamics** | wheel speed at all four corners, brake pressure, steering angle, and lateral/longitudinal acceleration, from `BSCM-BrakeSystem`. Scalings were derived from captured test vectors and reproduce every one exactly |
-| **Automatic session recording** | `hummer-drive.service` records a decoded 26-column CSV whenever the vehicle is awake and sends **only `ATRV`** while it sleeps. Rows are flushed and `fsync`ed as they are taken, so a session survives the vehicle cutting power |
+| **Automatic session recording** | `hummer-drive.service` records a decoded 29-column CSV (the schema is `drive.COLUMNS`, which is the one place to read it) whenever the vehicle is awake and sends **only `ATRV`** while it sleeps. Rows are flushed and `fsync`ed as they are taken, so a session survives the vehicle cutting power |
 | **Charge / discharge power** | derived from the energy field's slope, because the published "charger DC power" identifier is non-zero at idle on this vehicle and does not scale to a measured rate. Validated against a real AC charge: 7.81 kW computed offline, 7.84 kW live |
 
 ### Deliberately not available
