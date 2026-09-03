@@ -375,6 +375,34 @@ ENHANCED_READ_DIDS: Final[dict[str, str]] = {
         "exactly. UNMERGED, 2025 Lyriq BEV3, not BT1"
     ),
     # ------------------------------------------------------------------
+    # ISO 14229-1 standardised DataIdentifiers.  These are not vendor
+    # identifiers and not guesses: the standard assigns these exact values in
+    # the "identification" range, and any ECU implementing service 22 is
+    # expected to answer at least some of them.
+    #
+    # They exist here for one purpose -- answering "is this module reachable at
+    # all", which is a different question from "does this module have that
+    # vendor identifier".  Module 40 returned NO DATA to nine sourced vendor
+    # identifiers on 2026-09-03.  NO DATA means nothing replied, so the vendor
+    # identifiers were never really the thing under test; the route was.  A
+    # standard identifier separates those two questions: an answer proves the
+    # module is reachable and speaks service 22, and 7F 22 31 proves the same
+    # while saying it lacks that particular one.  Only continued silence means
+    # the request is not arriving.
+    #
+    # F190 (VIN) is deliberately NOT included.  It would answer the same
+    # question while pulling vehicle identity into an evidence file, and the
+    # part and version numbers below establish reachability without it.
+    "F187": ("ISO 14229-1 vehicleManufacturerSparePartNumber -- standard "
+             "identification DID, used here to test reachability, not content"),
+    "F188": ("ISO 14229-1 vehicleManufacturerECUSoftwareNumber -- standard "
+             "identification DID, used here to test reachability"),
+    "F189": ("ISO 14229-1 vehicleManufacturerECUSoftwareVersionNumber -- "
+             "standard identification DID, used here to test reachability"),
+    "F191": ("ISO 14229-1 vehicleManufacturerECUHardwareNumber -- standard "
+             "identification DID, used here to test reachability"),
+
+    # ------------------------------------------------------------------
     # Sourced candidates added 2026-09-03, none proven on this vehicle.
     # Every one is a service 22 read, so the worst outcome of asking is a
     # negative response.  They are here to be TESTED.  Nothing below claims

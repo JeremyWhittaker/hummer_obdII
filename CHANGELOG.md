@@ -35,6 +35,34 @@ discount.
   enumerated identifiers; neither is in the drive recorder, and the unattended
   collector still refuses service 22 entirely.
 
+- **The identifier registry is generated from the gate that enforces it.**
+  `docs/GM_ENHANCED_CANDIDATES.md` is the provenance record for everything this
+  project may transmit, and it had fallen **thirty-six commits behind the
+  code** — missing the traction-pack identifiers that closed the project's
+  largest gap, and every candidate added since. That is the third hand-kept
+  inventory here to drift, after the README's column count and the drive unit's
+  identifier list, so the fix is structural rather than another correction:
+  `hummer_obd.registry` renders the table from
+  `safety.ENHANCED_READ_DIDS`, and `tests/test_registry.py` fails when the
+  document and the gate disagree. Only the table is generated; the reasoning
+  around it stays hand-written, because that is the part worth writing by hand.
+
+- **Reachability probes that separate "unreachable" from "no such identifier".**
+  Nine sourced identifiers at module `40` returned `NO DATA` — nothing replied,
+  so the identifiers were never really what was under test; the route was. Four
+  **ISO 14229-1 standardised** identification DataIdentifiers (`F187`, `F188`,
+  `F189`, `F191`) are now allowlisted for exactly that question: an answer
+  proves a module is reachable and speaks service 22, `7F 22 31` proves the same
+  while denying that identifier, and only continued silence means the request is
+  not arriving. `F190` (VIN) is deliberately excluded — it would answer the same
+  question while pulling vehicle identity into an evidence file.
+
+- **The second battery manager gets the eight identifiers it was never asked.**
+  The earlier `CD` probe put only four of `CB`'s working identifiers to it and
+  drew `7F 22 31` on all four. `27C7`, `27C0`, `0046` and `5401` were proven at
+  `CB` before that probe and simply left out, and five more were discovered
+  after it. `bsm-cd-next` now asks all nine.
+
 - **`0x2AF1`'s twenty-four values are now recorded every cycle and broken out
   individually.** Having proven it answers, capturing it once was not the point
   — the scaling can only be settled by a temperature *range*, and that needs it

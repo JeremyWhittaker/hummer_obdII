@@ -424,6 +424,65 @@ BCM_40 = EnhancedProfile(
 )
 
 
+#: ISO 14229-1 identification identifiers, used to ask a module whether it is
+#: reachable at all rather than whether it holds a particular vendor value.
+_ISO_REACH = (
+    ("22F187", "iso_spare_part_number", "ISO 14229-1 vehicleManufacturerSparePartNumber"),
+    ("22F188", "iso_ecu_software_number", "ISO 14229-1 vehicleManufacturerECUSoftwareNumber"),
+    ("22F189", "iso_ecu_software_version", "ISO 14229-1 vehicleManufacturerECUSoftwareVersionNumber"),
+    ("22F191", "iso_ecu_hardware_number", "ISO 14229-1 vehicleManufacturerECUHardwareNumber"),
+)
+
+_REACH_PROVENANCE = (
+    "ISO 14229-1 standardised identification DataIdentifiers, not vendor "
+    "identifiers and not guesses. Used to separate 'is this module reachable' "
+    "from 'does this module have that identifier' -- the two questions nine "
+    "NO DATA replies from module 40 could not tell apart on 2026-09-03"
+)
+
+#: Module 40 at the priority every working module on this vehicle uses.
+BCM_40_REACH = _module_profile(
+    "bcm-40-reach", "40", "is the body control module reachable at all",
+    _REACH_PROVENANCE, _ISO_REACH,
+)
+
+#: The same four identifiers at module CD, which is a different case entirely.
+#: CD answered 7F 22 31 to CB's identifiers, so it is known to be reachable and
+#: to speak service 22 -- what is unknown is its own namespace.  A standard
+#: identifier is the one request that should succeed regardless of namespace,
+#: so a positive answer here would give the first real content from CD, and a
+#: 7F 22 31 would say something quite odd about it.
+BSM_CD_REACH = _module_profile(
+    "bsm-cd-reach", "CD", "standard identification from the second battery manager",
+    _REACH_PROVENANCE, _ISO_REACH,
+)
+
+#: The five identifiers proven at CB on 2026-09-03, aimed at its sibling.
+#: Earlier CD probing used the older CB identifiers and drew 7F 22 31; these
+#: five had not been discovered yet, so they have never been asked of CD.
+BSM_CD_NEXT = _module_profile(
+    "bsm-cd-next", "CD", "every CB-proven identifier CD has never been asked",
+    "identifiers proven at module CB on this vehicle. The earlier CD probe put "
+    "only four of them to it -- 27C6, 27AF, 2AF5, 2B43 -- and drew 7F 22 31 on "
+    "all four. The nine below have never been asked of CD at all: four were "
+    "proven at CB before that probe and simply were not included, and five were "
+    "only discovered on 2026-09-03",
+    (
+        # Proven at CB well before the CD probe, and left out of it.
+        ("2227C7", "range_cd", "[B4:B6]/103 miles at CB"),
+        ("2227C0", "dist_since_charge_cd", "[B4:B6]/16.09344 miles at CB"),
+        ("220046", "temperature_cd", "(B-40)*1.8+32 F at CB"),
+        ("225401", "charger_field_cd", "raw; not power, see PACK_ARCHITECTURE"),
+        # Discovered at CB on 2026-09-03.
+        ("2227BF", "regen_candidate_cd", "unknown scaling"),
+        ("2227BB", "thermal_energy_candidate_cd", "unknown scaling"),
+        ("2227B5", "thermal_distance_candidate_cd", "unknown scaling"),
+        ("222709", "compressor_temp_candidate_cd", "unknown scaling"),
+        ("222AF1", "module_temp_array_candidate_cd", "24 values at CB; unknown here"),
+    ),
+)
+
+
 PROFILES: dict[str, EnhancedProfile] = {
     BT1.key: BT1,
     PACK_POWER.key: PACK_POWER,
@@ -435,6 +494,9 @@ PROFILES: dict[str, EnhancedProfile] = {
     BEV3_DMCM.key: BEV3_DMCM,
     BSM_NEXT.key: BSM_NEXT,
     BCM_40.key: BCM_40,
+    BCM_40_REACH.key: BCM_40_REACH,
+    BSM_CD_REACH.key: BSM_CD_REACH,
+    BSM_CD_NEXT.key: BSM_CD_NEXT,
 }
 
 
