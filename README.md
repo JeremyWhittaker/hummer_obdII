@@ -213,6 +213,8 @@ src/hummer_obd/
   analyze.py         offline analysis of a recorded session; never opens the port
   live.py            text view of every sensor and whether it is still
                      answering; never opens the port either
+  registry.py        renders the identifier registry into the docs from the
+                     safety gate itself, so the two cannot drift
   probe.py           supervised one-shot probe and offline replay
   btdiscover.py      recovery/binding for an already bonded adapter
   display/status.py  hardware-free renderer and Waveshare panel writer
