@@ -35,6 +35,31 @@ discount.
   enumerated identifiers; neither is in the drive recorder, and the unattended
   collector still refuses service 22 entirely.
 
+- **Six documents were asserting things the code had already disproved.** An
+  audit of every file against the current source found claims that had outlived
+  the facts, in some cases by a day, in one case inside the same file:
+
+  * `README.md` said pack voltage "was not obtained" thirteen lines below a row
+    saying it was **proven**. Both were written on 2026-09-02, four hours apart,
+    and the older one was never revisited.
+  * `docs/GM_MODULE_MAP.md` listed module `40` as "none tried", module `45` the
+    same, pack voltage as "the highest-value gap in the project" — the gap a
+    commit message says was closed — and stated "pack voltage remains
+    unobtained" outright.
+  * `docs/TELEMETRY_CATALOG.md`, which calls itself the authoritative list, said
+    the gate held "currently 14" identifiers against 35, described a
+    "26-column" CSV against 40, and listed module `40` as never asked in a
+    summary table sitting above its own section documenting nine identifiers
+    answering there.
+  * `docs/CAPABILITIES.md` and `docs/PASSIVE_CAN_VALIDATION.md` both still said
+    pack voltage was unavailable.
+  * `docs/ARCHITECTURE.md`'s service table omitted `hummer-drive` entirely.
+
+  All corrected, and the counts that keep drifting are gone rather than
+  updated: column count and identifier count are now named by their source in
+  code. Where a claim outlived the fact, the correction says so instead of
+  quietly replacing it.
+
 - **[CAN priority](docs/CAN_PRIORITY.md), the day's architectural finding,
   written down.** The full matrix of which module answers service 22 at which
   priority, measured at both, with the three failure shapes distinguished:

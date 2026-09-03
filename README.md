@@ -85,7 +85,7 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | DTC clearing, actuator tests, any UDS write/control/security service | Permanently forbidden by the safety gate. Not a configuration option |
 | Mode 22 in unattended collection | Service `22` is still refused by the gate the collector uses. Enhanced reads exist only behind a separate, narrower gate that accepts an exact enumerated identifier and must be run deliberately — see [GM enhanced candidates](docs/GM_ENHANCED_CANDIDATES.md) |
 | Identifier sweeping / guessing | An identifier is added only when a fetchable source names it exactly. The gate refuses `0x27C5` and `0x27C7` — one step either side of the one that works |
-| Pack voltage, per-cell temperature | Not exposed over standard OBD-II, and no sourced identifier for them has been proven here. Cell *voltages* were obtained; pack voltage and cell temperatures were not |
+| Per-cell temperature, individually | The pack reports a temperature, and module `CB` answers a 24-value array whose scaling is not established. Nothing read here resolves an individual cell's temperature. (Pack **voltage** was listed here until 2026-09-03 and is now proven — see the row above. The claim outlived the fact by a day) |
 | Remote commands (lock, unlock, precondition, start) | Out of scope. This node has no vehicle write authority of any kind |
 | GPS / location | No receiver, and location is not an OBD-II service |
 | OnStar / GM cloud data | A different system. Belongs in a separate broker with isolated credentials |
@@ -249,7 +249,8 @@ src/hummer_obd/
   display/status.py  hardware-free renderer and Waveshare panel writer
 config/              safe example configuration
 scripts/             deployment, pairing, SD-card, Wi-Fi, trial, and smoke tooling
-systemd/             display, RFCOMM, recovery, collector, trial, and battery units
+systemd/             display, RFCOMM, recovery, collector, trial, battery and
+                     drive-recorder units
 tests/               unit and PTY-backed integration tests
 docs/                architecture, build, operations, safety, and handoff notes
 ```

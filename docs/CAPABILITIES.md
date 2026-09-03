@@ -329,7 +329,7 @@ Each of these is a deliberate boundary, not an oversight.
 |---|---|
 | **Mode 22 during unattended collection** | Service `22` is refused by `validate_command`, the gate the collector uses, and that has not changed. Enhanced reads live behind `validate_enhanced_command`, a separate and narrower gate that no unattended path calls |
 | **Enhanced identifiers other than `0x27C6`** | Not guessed. An identifier is added only when a fetchable public source names it exactly; the gate refuses the identifiers immediately adjacent to the one that works |
-| **Pack voltage, per-cell temperature** | No standard-OBD path, and no sourced identifier proven here. Cell *voltages* (avg/min/max) were obtained via `0x2AF5`; pack voltage and cell temperatures were not |
+| **Per-cell temperature, individually** | No standard-OBD path. Cell *voltages* (avg/min/max) come from `0x2AF5`, and module `CB` answers a 24-value array whose scaling is not established, but nothing read here resolves one cell's temperature. Pack **voltage** was in this row until 2026-09-03 and is now proven at `0x2885` |
 | **State of charge, energy remaining, range, distance since charge, temperature, charger power** | ~~Not available~~ — **all six obtained 2026-09-02** via enhanced identifiers `0x27C6`, `0x27AF`, `0x27C7`, `0x27C0`, `0x0046`, `0x5401`. Kept in this table only as a pointer: see [GM enhanced candidates](GM_ENHANCED_CANDIDATES.md) |
 | **GPS / location** | No GPS receiver on the Pi, and location is not available over OBD |
 | **OnStar / GM cloud data** | Different system entirely. Belongs in a separate broker with isolated credentials and a command allowlist, never in this read-only OBD node |

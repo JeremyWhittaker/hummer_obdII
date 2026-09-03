@@ -19,8 +19,8 @@ reasonable, was drawn from real observed behaviour, and was wrong.
 | `1D` | `DMC2-DriveMotorCtrl2` | `0x33E5` → 13.1 V |
 | `1E` | `DMC3-DriveMotorCtrl3` | `0x33E5` → 13.1 V |
 | `28` | `BSCM-BrakeSystem` | `0x4A7A` `0x4A7C` `0x4C2D` `0x4C2F` `0x4C30` |
-| `40` | `BCM-BodyControl` | **none tried** — no sourced identifier yet |
-| `45` | `Gateway Module - GWM` | **none tried** — no sourced identifier yet |
+| `40` | `BCM-BodyControl` | **nine proven**, but only at CAN priority `0x18`: `0x4149`, `0x416C`, `0x416D`, `0x416E`, `0x434F`, `0x4127`, `0x4124`, `0x40E5`, `0x40E6`. At `0x14` it returns nothing at all — see [CAN priority](CAN_PRIORITY.md) |
+| `45` | `Gateway Module - GWM` | asked four ISO 14229-1 identification identifiers at `0x18`; `7F 22 31` to all four. Reachable, holds none of them |
 | `CB` | `BSM-BatterySysMngr` | `0x27C6` `0x27AF` `0x27C7` `0x27C0` `0x0046` `0x5401` `0x2AF5` `0x2B43` |
 | `CD` | `BSM-BatterySysMngr` | **refuses CB's identifiers** — see below |
 
@@ -55,7 +55,11 @@ like, which is evidence that each controller is answering for itself.
 
 This is a **12 V domain** reading, not traction-pack voltage. The source labels
 it "DMCM battery voltage" and 13.1 V is nowhere near a pack measurement, so it
-must not be presented as one. Pack voltage remains unobtained.
+must not be presented as one.
+
+Pack voltage **was** obtained later the same day: `0x2885` at module `17`, and
+(asked at priority `0x18`) at `1D` and `1E` as well. This paragraph said it
+remained unobtained for a day after it stopped being true.
 
 ## What module CD showed, and why it is the most interesting result
 
@@ -110,11 +114,11 @@ Module identity is not permission to guess identifiers. It only says where a
 
 | Module | What would live there | Status |
 |---|---|---|
-| `CB` / `CD` | pack voltage, pack current, charge/discharge power, module temperatures, coolant, state of health, contactor state | **the highest-value gap in the project** |
-| `17` / `1D` / `1E` | inverter DC voltage and current, motor RPM, torque requested and delivered, motor and inverter temperature, regen power | one identifier proven, and it is a 12 V reading |
+| `CB` / `CD` | state of health, contactor state | `CD` refuses everything at both priorities, including the ISO standard set — closed from this access path |
+| `17` / `1D` / `1E` | motor RPM, torque requested and delivered, motor and inverter temperature, regen power | one identifier proven, and it is a 12 V reading |
 | `28` | already productive — wheel speeds, brake pressure, steering, accelerations | five identifiers proven |
-| `40` | door and lock state, lighting, HVAC state | never asked anything |
-| `45` | gateway — routing and network state | never asked anything |
+| `40` | door and lock state, lighting, HVAC state | nine identifiers proven at priority `0x18`, none of them a body signal |
+| `45` | gateway — routing and network state | reachable at `0x18`; holds none of the four ISO identification identifiers, the only things ever asked of it |
 
 ## The rule that does not bend
 

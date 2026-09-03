@@ -250,7 +250,7 @@ has already been wrong once in that direction.
 | Motor RPM, torque, phase current, motor/inverter temperature | absent |
 | Per-module battery temperature, coolant, state of health, contactor state | absent |
 | Suspension height, rear-wheel steering, CrabWalk state | absent |
-| Door, lock, lighting, HVAC state (module `40`, never asked) | absent |
+| Door, lock, lighting, HVAC state | **absent** — module `40` answers nine identifiers now, but none of them is a body signal, and no sourced identifier for one exists here |
 | Gateway/network state (module `45`, never asked) | absent |
 | GPS / location | **not an OBD service.** Needs a USB GNSS receiver or the OnStar path. |
 | Raw internal CAN-FD | **hardware ceiling.** The MX+ implements Classical CAN only. |
@@ -262,7 +262,7 @@ has already been wrong once in that direction.
 
 | Mode | Command | Behaviour |
 |---|---|---|
-| **Service** | `hummer-drive.service` | Records a 26-column decoded CSV whenever the vehicle is awake; sends **only `ATRV`** while it sleeps. Rows are flushed and `fsync`ed as taken, so a session survives the vehicle cutting power. Enabled at boot. |
+| **Service** | `hummer-drive.service` | Records a decoded CSV whenever the vehicle is awake — the column list is `drive.COLUMNS`, deliberately not restated here because a written count has gone stale twice; sends **only `ATRV`** while it sleeps. Rows are flushed and `fsync`ed as taken, so a session survives the vehicle cutting power. Enabled at boot. |
 | One-shot | `hummer-obd-drive --confirm --max-cycles N` | Bounded manual session |
 | Single identifier | `hummer-obd-enhanced --profile <p> --confirm` | Supervised one-shot, dry run by default |
 | Standard only | `hummer-obd-collector` | Unattended collector. **Cannot send service 22.** |
@@ -273,7 +273,9 @@ has already been wrong once in that direction.
 Service `22` is refused by `validate_command`, the gate the unattended
 collector uses, and an **import-time assertion fails the build** if anyone adds
 it. Enhanced reads go through a second, narrower gate accepting an exact
-enumeration of identifiers — currently 14 — and refusing everything else,
+enumeration of identifiers — `safety.ENHANCED_READ_DIDS`, rendered into
+[enhanced candidates](GM_ENHANCED_CANDIDATES.md) from the gate itself so a
+written count cannot drift from it — and refusing everything else,
 including the identifiers immediately either side of ones that work. A test
 walks all 768 identifiers around the allowlist and asserts the accepted set is
 exactly the allowlist.

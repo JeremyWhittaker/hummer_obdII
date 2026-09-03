@@ -35,7 +35,7 @@ remaining life) is not advertised; neither is `46` (ambient air temperature).
 | Signal wanted | Why it matters | Status on this VIN |
 |---|---|---|
 | State of charge | The single number the display exists to show | **Obtained** — enhanced read `0x27C6`, not passively |
-| Pack voltage | Health and charge state of the traction battery | **Still not obtained.** `0x33E5` reads ~13.1 V from each drive motor controller, which is the 12 V domain, not the pack |
+| Pack voltage | Health and charge state of the traction battery | **Obtained on 2026-09-03** via `0x2885` at module `17`, and at `1D`/`1E` too. This row said otherwise for a day. Historical note follows: `0x33E5` reads ~13.1 V from each drive motor controller, which is the 12 V domain, not the pack |
 | Pack current / power | Draw while driving, rate while charging | **Still not obtained** — no sourced identifier found |
 | Pack temperature | Thermal behaviour under load and fast charge | Partly: `0x0046` returns a temperature the vehicle holds, semantics not yet confirmed |
 | Cell balance / delta | The earliest visible sign of a failing module | **Obtained** — `0x2AF5` gives cell average, minimum and maximum; measured spread 4.9–5.3 mV |

@@ -178,6 +178,7 @@ SQLite is the queryable operational view.
 | `hummer-display.service` | Render host/link state to e-paper | enable after one visual test |
 | `hummer-rfcomm.service` | Hold the known adapter/channel binding | enable after SDP confirmation |
 | `hummer-btdiscover.service` | Recover a lost bind for an existing bond | disabled when binding is healthy |
+| `hummer-drive` | Records a session whenever the vehicle is awake; sends only `ATRV` while it sleeps. Produces almost all of this project's data |
 | `hummer-collector.service` | Poll the approved read-only set | disabled pending power/sleep validation |
 
 Unit installation and unit enablement are separate operations. The bootstrap
