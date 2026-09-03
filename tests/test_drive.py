@@ -681,6 +681,197 @@ class TestDrivingBelowTheWakeBand(unittest.TestCase):
         self.assertLess(session.cycles, 3, "it should stop promptly, not grind on")
 
 
+class TestTheWatchCanGetADeadLinkBack(unittest.TestCase):
+    """A link that dies while the vehicle is parked must not strand the watch.
+
+    `record` revives a link that dies mid-session.  Nothing revived one that
+    died while parked, so the watch sat on a dead file descriptor forever.
+    Observed on 2026-09-03: the vehicle slept, the OBD port lost power, the
+    adapter dropped Bluetooth, and the recorder reported "adapter still silent"
+    every five minutes against an rfcomm channel showing `closed`.
+    """
+
+    def test_a_persistently_silent_adapter_triggers_a_reopen(self):
+        fake = _Silent()
+        fake.reconnects = 0
+
+        def reconnect(attempt=0):
+            fake.reconnects += 1
+
+        fake.reconnect = reconnect
+        calls = {"n": 0}
+
+        def stop():
+            calls["n"] += 1
+            return calls["n"] > drive.UNANSWERED_RETRIES + 2
+
+        run_auto(fake, output_dir="/tmp", sleeper=lambda s: None, stop=stop,
+                 asleep_interval_s=300.0)
+        self.assertGreater(
+            fake.reconnects, 0,
+            "the watch must try to reopen a link that has stopped answering",
+        )
+
+    def test_prompt_retries_come_before_any_reopen(self):
+        # A single dropped read is a glitch, not a dead link; reopening on the
+        # first silence would tear down a working link over one timeout.
+        fake = _Silent()
+        order = []
+        fake.reconnect = lambda attempt=0: order.append("reconnect")
+        calls = {"n": 0}
+
+        def stop():
+            calls["n"] += 1
+            return calls["n"] > drive.UNANSWERED_RETRIES + 2
+
+        def sleeper(seconds):
+            order.append(f"sleep{seconds}")
+
+        run_auto(fake, output_dir="/tmp", sleeper=sleeper, stop=stop,
+                 asleep_interval_s=300.0)
+        first_reconnect = order.index("reconnect")
+        # Prompt retries recur legitimately after a successful reopen, because
+        # the counter resets -- so what matters is how many came BEFORE the
+        # first one, not where the last one landed.
+        before = [o for o in order[:first_reconnect]
+                  if o == f"sleep{drive.UNANSWERED_INTERVAL_S}"]
+        self.assertGreaterEqual(
+            len(before), drive.UNANSWERED_RETRIES,
+            f"a link should not be torn down before {drive.UNANSWERED_RETRIES} "
+            f"prompt retries, got {order[:first_reconnect + 1]}",
+        )
+
+    def test_it_still_sends_only_atrv_while_doing_so(self):
+        # The property that makes this safe to leave enabled against a parked
+        # vehicle: reopening must not put anything new on the CAN bus.
+        fake = _Silent()
+        fake.reconnect = lambda attempt=0: None
+        calls = {"n": 0}
+
+        def stop():
+            calls["n"] += 1
+            return calls["n"] > drive.UNANSWERED_RETRIES + 2
+
+        run_auto(fake, output_dir="/tmp", sleeper=lambda s: None, stop=stop)
+        # Reopening re-sends the session header, which is adapter configuration
+        # -- ATZ, ATE0, ATSP7 and the rest.  None of it reaches the CAN bus.
+        # The property is not "only ATRV is ever sent" but "nothing that
+        # reaches the vehicle is", so the assertion is that every command is an
+        # adapter command and no OBD service request appears.
+        non_adapter = [c for c in fake.sent if not c.startswith("AT")]
+        self.assertEqual(
+            non_adapter, [],
+            f"a parked vehicle must see no service request, saw {non_adapter}",
+        )
+        self.assertIn("ATRV", fake.sent)
+
+    def test_a_reopen_that_fails_is_survived(self):
+        fake = _Silent()
+
+        def failing(attempt=0):
+            raise TransportError("adapter has no power")
+
+        fake.reconnect = failing
+        calls = {"n": 0}
+
+        def stop():
+            calls["n"] += 1
+            return calls["n"] > drive.UNANSWERED_RETRIES + 3
+
+        run_auto(fake, output_dir="/tmp", sleeper=lambda s: None, stop=stop)
+        non_adapter = [c for c in fake.sent if not c.startswith("AT")]
+        self.assertEqual(non_adapter, [])
+
+
+class TestPerGroupPriority(unittest.TestCase):
+    """There is no universal CAN priority, and assuming one hid a module.
+
+    Established by asking every module at both: 17, 1D, 1E and CB answer at
+    0x14 and 0x18; module 28 answers at 0x14 and returns 7F 22 11
+    (serviceNotSupported) at 0x18; module 40 answers only at 0x18 and returns
+    nothing at all at 0x14.  28 and 40 cannot share one global priority, which
+    is why module 40 sat unreachable while the recorder sent 0x14 to everything.
+    """
+
+    def test_each_group_carries_its_own_priority(self):
+        for group in drive.GROUPS:
+            with self.subTest(group=group.name):
+                self.assertIn(group.priority, ("ATCP14", "ATCP18"))
+
+    def test_the_body_module_uses_the_priority_it_answers_at(self):
+        body = [g for g in drive.GROUPS if g.ecu == "40"][0]
+        self.assertEqual(body.priority, "ATCP18")
+
+    def test_the_brake_controller_keeps_the_one_it_answers_at(self):
+        # 28 returns serviceNotSupported at 0x18; moving it would lose wheel
+        # speeds, brake pressure, steering and both acceleration axes.
+        chassis = [g for g in drive.GROUPS if g.ecu == "28"][0]
+        self.assertEqual(chassis.priority, "ATCP14")
+
+    def test_each_group_priority_is_sent_before_its_header(self):
+        fake = _Fake()
+        record(fake, max_cycles=1, sleeper=lambda s: None)
+        for group in drive.GROUPS:
+            with self.subTest(group=group.name):
+                header = group.address[0]
+                self.assertIn(group.priority, fake.sent)
+                # The priority must precede the header it applies to.
+                self.assertLess(
+                    fake.sent.index(group.priority), fake.sent.index(header),
+                    f"{group.name}'s priority must be sent before its header",
+                )
+
+    def test_both_priorities_actually_go_out_in_one_cycle(self):
+        fake = _Fake()
+        record(fake, max_cycles=1, sleeper=lambda s: None)
+        self.assertIn("ATCP14", fake.sent)
+        self.assertIn("ATCP18", fake.sent)
+
+    def test_every_group_command_passes_the_gate(self):
+        from hummer_obd.safety import validate_command, validate_enhanced_command
+        for group in drive.GROUPS:
+            with self.subTest(group=group.name):
+                validate_command(group.priority)
+                for command in group.address:
+                    validate_command(command)
+                for did in group.dids:
+                    validate_enhanced_command("22" + did)
+
+
+class TestBodyModuleColumns(unittest.TestCase):
+    """Module 40's nine identifiers, captured raw."""
+
+    def test_all_nine_have_columns(self):
+        for column in ("evse_current_raw", "group_v1_raw", "group_v2_raw",
+                       "group_v3_raw", "hv_temp_raw", "batt_temp_a_raw",
+                       "batt_temp_b_raw", "coolant_1_raw", "coolant_2_raw"):
+            with self.subTest(column=column):
+                self.assertIn(column, drive.COLUMNS)
+
+    def test_they_are_carried_as_text_not_parsed_as_numbers(self):
+        # The mistake that made cell_extra_raw read as never answered, twice.
+        from hummer_obd.analyze import _TEXT_COLUMNS
+        for column in ("evse_current_raw", "group_v1_raw", "hv_temp_raw",
+                       "coolant_1_raw", "coolant_2_raw"):
+            with self.subTest(column=column):
+                self.assertIn(column, _TEXT_COLUMNS)
+
+    def test_no_scaling_is_claimed_for_any_of_them(self):
+        # 416C read 2589 then 2593 a minute apart, 416D and 416E returned
+        # identical values, and the vehicle was parked and unplugged.
+        source = open(drive.__file__, encoding="utf-8").read()
+        for claim in ('"evse_current_a"', '"group_v1_v"', '"hv_temp_c"',
+                      '"coolant_1_c"'):
+            with self.subTest(claim=claim):
+                self.assertNotIn(claim, source)
+
+    def test_a_real_reply_decodes_to_its_raw_payload(self):
+        self.assertEqual(drive.DECODERS["434F"](bytes.fromhex("64")),
+                         {"hv_temp_raw": "64"})
+        self.assertEqual(drive.DECODERS["416C"](bytes.fromhex("0A21")),
+                         {"group_v1_raw": "0A21"})
+
+
 class TestWakeThreshold(unittest.TestCase):
     def test_threshold_sits_between_the_measured_bands(self):
         # Asleep measured 12.7-12.9 V, running 13.7-13.9 V.

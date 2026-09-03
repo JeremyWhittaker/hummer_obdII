@@ -35,6 +35,41 @@ discount.
   enumerated identifiers; neither is in the drive recorder, and the unattended
   collector still refuses service 22 entirely.
 
+- **A link that died while parked could never be recovered.** `record()` revives
+  a link that dies mid-session — that was fixed this morning — but nothing
+  revived one that died while the vehicle was asleep, so the watch loop sat on
+  a dead file descriptor indefinitely. Observed live: the vehicle slept, the OBD
+  port lost power, the adapter dropped Bluetooth, and the recorder reported
+  "adapter still silent" every five minutes against an rfcomm channel showing
+  `closed`. It would never have recorded again without a restart. Past the
+  prompt retries the watch now reopens the link, which works because
+  `hummer-rfcomm` binds the device connect-on-open. It still sends nothing that
+  reaches the CAN bus, and a test asserts that rather than asserting the
+  narrower "only ATRV", since reopening legitimately re-sends the adapter's own
+  session header.
+
+- **Each address group carries its own CAN priority, and module 40 joins the
+  recorder.** There is no universal priority, established by asking every module
+  at both: 17, 1D, 1E and CB answer at `0x14` **and** `0x18`; module 28 answers
+  at `0x14` and returns `7F 22 11` (`serviceNotSupported`) at `0x18`; module 40
+  answers only at `0x18` and returns nothing at all at `0x14`. So 28 and 40 are
+  mutually exclusive under one global priority — which is exactly why module 40
+  could not be added until `AddressGroup` grew a `priority` field.
+
+  All nine of its identifiers now record every cycle as **raw** columns, and a
+  test asserts no column name claims a unit. Verified live: 31 of 31 rows
+  carrying `evse_current_raw`, three group voltages, three battery temperatures
+  and two coolant temperatures, alongside everything that already worked.
+
+- **Pack voltage answers at all three drive motor controllers.** `0x2885` was
+  proven only at module 17; asked at `0x18` it answers at 1D (382.39 V) and 1E
+  (382.37 V) too, against a live `pack_v` of 382.65. Module 1E had exactly one
+  identifier ever put to it before this, and that one a 12 V reading.
+
+- **Module 45, the gateway, is reachable and holds none of the ISO set.** Its
+  first-ever service 22 requests returned `7F 22 31` to all four standard
+  identification identifiers — reachable, conversing, and empty of those.
+
 - **Module 40 was never unreachable, and the fault was ours.** Thirteen
   identifiers had drawn `NO DATA` and the published conclusion was "the request
   is not arriving" and "testing more identifiers at this address is wasted

@@ -584,6 +584,96 @@ BSM_CD_P18 = _p18_profile(
 )
 
 
+#: The gateway, which has never been asked a service 22 identifier at all.
+#: The census had it answer services 01 and 09 at priority 0x18, so it is
+#: reachable; whether it holds anything readable is unknown.  The ISO
+#: identifiers ask that without assuming a vendor namespace.
+GWM_45_P18 = _p18_profile(
+    "gwm-45-p18", "45", "the gateway module, never asked anything",
+    "ISO 14229-1 standard identification identifiers. This vehicle names 45 as "
+    "'Gateway Module - GWM' in its own service 09 census and answered services "
+    "01 and 09 there at priority 0x18; no service 22 identifier has ever been "
+    "sent to it",
+    (
+        ("22F187", "iso_spare_part_number", "ISO 14229-1 standard"),
+        ("22F188", "iso_ecu_software_number", "ISO 14229-1 standard"),
+        ("22F189", "iso_ecu_software_version", "ISO 14229-1 standard"),
+        ("22F191", "iso_ecu_hardware_number", "ISO 14229-1 standard"),
+    ),
+)
+
+#: The third drive motor controller, which has had exactly one identifier put
+#: to it, and that one a 12 V reading.  Asked at 0x18 because 0x14 is the only
+#: priority it has ever seen and module 40 has just shown what that can hide.
+DMC_1E_P18 = _p18_profile(
+    "dmc-1e-p18", "1E", "third drive motor controller at priority 0x18",
+    "ISO 14229-1 standard identification identifiers plus 0x33E5, the one "
+    "identifier ever proven at this module. Module 40 answered at 0x18 after "
+    "being silent at 0x14, so 1E's unexplored state is retested rather than "
+    "assumed",
+    (
+        ("22F187", "iso_spare_part_number", "ISO 14229-1 standard"),
+        ("22F191", "iso_ecu_hardware_number", "ISO 14229-1 standard"),
+        ("2233E5", "dmc3_voltage", "proven at this module at priority 0x14"),
+        ("222885", "pack_voltage_at_1e", "proven at module 17"),
+    ),
+)
+
+#: The battery manager at 0x18.  It answers everything at 0x14, so this asks
+#: whether the priority changes what it will say rather than whether it speaks.
+BSM_CB_P18 = _p18_profile(
+    "bsm-cb-p18", "CB", "battery manager at the other priority",
+    "CB answers at 0x14. Module 40 answers only at 0x18. This asks whether "
+    "priority changes what a module exposes, using identifiers already proven "
+    "at CB plus the ISO standard set",
+    (
+        ("22F187", "iso_spare_part_number", "ISO 14229-1 standard"),
+        ("2227C6", "soc_at_p18", "proven at CB at priority 0x14"),
+        ("224149", "evse_current_at_cb", "answered at module 40; asked here"),
+        ("22434F", "hv_temp_at_cb", "answered at module 40; asked here"),
+    ),
+)
+
+
+#: The decisive question.  CB answers at both 0x14 and 0x18; module 40 answers
+#: only at 0x18.  If every module the drive recorder depends on also answers at
+#: 0x18, then 0x18 is the universal priority, 0x14 is the special case this
+#: project happened to find first, and the recorder could reach module 40's
+#: nine identifiers without giving anything up.  These are the identifiers each
+#: module is already proven to answer at 0x14, asked again at 0x18.
+DMCM_17_P18 = _p18_profile(
+    "dmc-17-p18", "17", "drive motor controller at 0x18",
+    "identifiers proven at module 17 at priority 0x14, asked at 0x18 to test "
+    "whether that priority is universal",
+    (
+        ("222885", "pack_voltage", "proven at 0x14: [B4:B5]/100 volts"),
+        ("222414", "pack_current", "proven at 0x14: signed/20 amps"),
+        ("2233E5", "dmcm_voltage", "proven at 0x14: byte/10 volts"),
+    ),
+)
+
+CHASSIS_28_P18 = _p18_profile(
+    "chassis-28-p18", "28", "brake system controller at 0x18",
+    "identifiers proven at module 28 at priority 0x14, asked at 0x18 to test "
+    "whether that priority is universal",
+    (
+        ("224A7A", "wheel_speeds", "proven at 0x14: one byte per wheel"),
+        ("224C2D", "steering_angle", "proven at 0x14: signed*0.022 degrees"),
+        ("224C2F", "lateral_g", "proven at 0x14: signed*0.0015928 g"),
+    ),
+)
+
+DMC_1D_P18 = _p18_profile(
+    "dmc-1d-p18", "1D", "second drive motor controller at 0x18",
+    "the one identifier proven at module 1D at priority 0x14, plus the pack "
+    "voltage identifier that just answered at its sibling 1E",
+    (
+        ("2233E5", "dmc2_voltage", "proven at 0x14: byte/10 volts"),
+        ("222885", "pack_voltage_at_1d", "answered at 1E; asked here"),
+    ),
+)
+
+
 PROFILES: dict[str, EnhancedProfile] = {
     BT1.key: BT1,
     PACK_POWER.key: PACK_POWER,
@@ -601,6 +691,12 @@ PROFILES: dict[str, EnhancedProfile] = {
     BCM_40_P18.key: BCM_40_P18,
     BCM_40_FULL.key: BCM_40_FULL,
     BSM_CD_P18.key: BSM_CD_P18,
+    GWM_45_P18.key: GWM_45_P18,
+    DMC_1E_P18.key: DMC_1E_P18,
+    BSM_CB_P18.key: BSM_CB_P18,
+    DMCM_17_P18.key: DMCM_17_P18,
+    CHASSIS_28_P18.key: CHASSIS_28_P18,
+    DMC_1D_P18.key: DMC_1D_P18,
 }
 
 

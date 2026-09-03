@@ -171,6 +171,22 @@ DECODERS: dict[str, Callable[[bytes], dict]] = {
     # says nothing about 5 C or 55 C.  Capturing it every cycle is how the
     # temperature range needed to settle it gets collected.
     "2AF1": lambda p: {"array_2af1": p.hex().upper()},
+    # Module 40, reachable only at priority 0x18 and unreachable for a day
+    # because this recorder sent one priority to every module.  All nine LYRIQ
+    # candidates answer there.  Every one is kept RAW: 416C read 2589 then 2593
+    # a minute apart, 416D and 416E returned identical values, and the vehicle
+    # was parked and unplugged, which is the state that says least about an
+    # EVSE current.  Nine payloads and nine open questions -- capturing them
+    # across charging, driving and a cold morning is what will settle them.
+    "4149": lambda p: {"evse_current_raw": p.hex().upper()} if p else {},
+    "416C": lambda p: {"group_v1_raw": p.hex().upper()} if p else {},
+    "416D": lambda p: {"group_v2_raw": p.hex().upper()} if p else {},
+    "416E": lambda p: {"group_v3_raw": p.hex().upper()} if p else {},
+    "434F": lambda p: {"hv_temp_raw": p.hex().upper()} if p else {},
+    "4127": lambda p: {"batt_temp_a_raw": p.hex().upper()} if p else {},
+    "4124": lambda p: {"batt_temp_b_raw": p.hex().upper()} if p else {},
+    "40E5": lambda p: {"coolant_1_raw": p.hex().upper()} if p else {},
+    "40E6": lambda p: {"coolant_2_raw": p.hex().upper()} if p else {},
     # Traction pack voltage and current.  Both come from unmerged BEV3 sources,
     # and both were confirmed on this vehicle during an AC charge: 388.60 V and
     # -20.95 A, whose product (8.14 kW) agreed within 6% with the charge power
@@ -196,6 +212,20 @@ class AddressGroup:
     #: frame on the first live run of this recorder.
     address: tuple[str, ...]
     dids: tuple[str, ...]
+    #: The CAN priority this module answers service 22 at.  There is no
+    #: universal one, which was established by asking every module at both:
+    #:
+    #:   17, 1D, 1E, CB   answer at 0x14 and 0x18
+    #:   28 BSCM          answers at 0x14; at 0x18 it returns 7F 22 11,
+    #:                    serviceNotSupported -- not "no such identifier" but
+    #:                    "not this service at this priority"
+    #:   40 BCM           answers at 0x18 only; at 0x14 it returns nothing at
+    #:                    all, which is what made it look unreachable for a day
+    #:
+    #: So 28 and 40 are mutually exclusive under a single global priority, and
+    #: the recorder used one for every group.  That is why module 40 could not
+    #: be added until this field existed.
+    priority: str = "ATCP14"
 
 
 GROUPS: tuple[AddressGroup, ...] = (
@@ -227,6 +257,15 @@ GROUPS: tuple[AddressGroup, ...] = (
         address=("ATSHDA1DF1", "ATCRA142AF11D", "ATFCSH14DA1DF1",
                  "ATFCSD300000", "ATFCSM1"),
         dids=("33E5",),
+    ),
+    AddressGroup(
+        name="body",
+        ecu="40",
+        address=("ATSHDA40F1", "ATCRA18DAF140", "ATFCSH18DA40F1",
+                 "ATFCSD300000", "ATFCSM1"),
+        dids=("4149", "416C", "416D", "416E", "434F", "4127", "4124",
+              "40E5", "40E6"),
+        priority="ATCP18",
     ),
 )
 
@@ -288,6 +327,9 @@ COLUMNS: tuple[str, ...] = (
     "temp_f", "charger_5401_raw", "power_kw",
     "cell_avg_v", "cell_min_v", "cell_max_v", "cell_spread_mv", "cell_extra_raw",
     "array_2af1",
+    "evse_current_raw", "group_v1_raw", "group_v2_raw", "group_v3_raw",
+    "hv_temp_raw", "batt_temp_a_raw", "batt_temp_b_raw",
+    "coolant_1_raw", "coolant_2_raw",
     "pack_v", "pack_a", "hv_power_kw",
     "dmc2_v",
     "wheel_fl_kph", "wheel_fr_kph", "wheel_rl_kph", "wheel_rr_kph",
@@ -434,6 +476,7 @@ def record(
 
         for group in GROUPS:
             try:
+                transport.send(validate_command(group.priority), timeout=timeout)
                 for command in group.address:
                     transport.send(validate_command(command), timeout=timeout)
                 for did in group.dids:
@@ -703,7 +746,29 @@ def run_auto(
                 say(f"adapter did not answer ATRV ({unanswered}); retrying")
                 sleeper(UNANSWERED_INTERVAL_S)
             else:
-                say("adapter still silent; waiting")
+                # Past the prompt retries the link is not glitching, it is
+                # gone -- and this loop could not previously get it back.
+                # `record` revives a link that dies mid-session, but nothing
+                # revived one that died while the vehicle was parked, so the
+                # watch sat on a dead file descriptor indefinitely.  Observed
+                # on 2026-09-03: the vehicle slept, the OBD port lost power,
+                # the adapter dropped its Bluetooth link, and the recorder
+                # then reported "adapter still silent" every five minutes
+                # against an rfcomm channel showing `closed`.  It would never
+                # have recorded again without a restart.
+                #
+                # Reopening is what fixes it: hummer-rfcomm binds the device
+                # connect-on-open, so closing and reopening re-establishes the
+                # Bluetooth link once the adapter has power again.  This costs
+                # one reconnect per slow cycle and still sends only ATRV, so a
+                # genuinely sleeping vehicle sees no extra traffic.
+                say("adapter still silent; reopening the link")
+                try:
+                    _revive(transport, timeout=timeout, attempt=unanswered)
+                    say("link reopened")
+                    unanswered = 0
+                except TransportError as exc:
+                    say(f"reopen failed: {exc}")
                 sleeper(asleep_interval_s)
             continue
         unanswered = 0

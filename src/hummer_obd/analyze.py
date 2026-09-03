@@ -59,6 +59,9 @@ KM_PER_MILE: float = 1.609344
 #: happened to ``cell_extra_raw`` the first time it was recorded live.
 _TEXT_COLUMNS = frozenset({
     "utc", "array_2b43", "array_2af1", "charger_5401_raw", "cell_extra_raw",
+    "evse_current_raw", "group_v1_raw", "group_v2_raw", "group_v3_raw",
+    "hv_temp_raw", "batt_temp_a_raw", "batt_temp_b_raw",
+    "coolant_1_raw", "coolant_2_raw",
 })
 
 #: A sample period more than this multiple of the median is treated as a gap
