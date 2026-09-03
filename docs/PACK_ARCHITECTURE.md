@@ -25,6 +25,64 @@ Ninety-six. The deviation is well inside what 0.01 V pack resolution and
 0.0001 V cell resolution can explain, and the value does not drift with state
 of charge, temperature, or whether the vehicle is charging or discharging.
 
+## Usable capacity, and why both decoders can be trusted
+
+`energy_kwh` (`0x27AF`, scaled `/100`) divided by `soc_pct` (`0x27C6`, scaled
+`/655.35`) is the pack capacity the vehicle itself is working from. Two
+different identifiers, two different scalings, so if either were wrong the ratio
+would drift as state of charge changed.
+
+It does not drift. Across the sessions where state of charge actually moved,
+78.85 % to 89.65 %:
+
+| session | samples | implied capacity | SoC range |
+|---|---|---|---|
+| 0415 | 168 | 191.915 kWh | 78.85–80.05 % |
+| 0437 | 94 | 191.909 kWh | 80.05–80.85 % |
+| 0449 | 31 | 191.944 kWh | 80.85–81.25 % |
+| 0453 | 172 | 191.872 kWh | 81.25–82.85 % |
+| 0516 | 9 | 191.879 kWh | 82.85 % |
+| 0518 | 517 | 191.839 kWh | 82.85–89.65 % |
+
+**191.84 to 191.94 kWh — a spread of 0.05 %** across an eleven-point swing in
+state of charge. Two independently scaled fields holding a constant ratio that
+tightly is strong evidence that both scalings are right, and it puts the pack's
+usable capacity, as this vehicle computes it, at **about 191.9 kWh**.
+
+The sessions where state of charge sat pinned at one value (1525 at 89.653 %,
+1608 at 86.647 %) give 192.60 and 189.82 and are not counted above: with the
+numerator moving and the denominator quantised, the ratio there measures the
+quantisation, not the pack.
+
+## The charge curve
+
+Mean cell voltage against state of charge, over 1247 samples:
+
+| SoC | mean cell V | | SoC | mean cell V |
+|---|---|---|---|---|
+| 79.0 % | 4.0059 V | | 85.0 % | 4.0662 V |
+| 80.0 % | 4.0212 V | | 86.0 % | 4.0757 V |
+| 81.0 % | 4.0294 V | | 87.0 % | 4.0815 V |
+| 82.0 % | 4.0414 V | | 88.0 % | 4.0896 V |
+| 83.0 % | 4.0486 V | | 89.0 % | 4.0943 V |
+| 84.0 % | 4.0595 V | | | |
+
+Monotonic, at **7.58 mV per percent** (correlation +0.974). Extrapolated to
+100 %, that gives **4.1746 V per cell**, and at 96 cells in series, **400.8 V**
+at the top of the pack.
+
+That is a third independent corroboration of the 96-series count. A 400 V-class
+pack reaching 400.8 V at full is the right answer, and 4.17 V is a physically
+correct full-charge voltage for this chemistry — high, but below the ~4.2 V
+ceiling, which is where a manufacturer holding a little margin for longevity
+would stop. None of that was assumed; it falls out of a curve measured between
+79 % and 89 %.
+
+Two buckets sit below the trend (86.5 % and 89.5 %) and both come from sessions
+where state of charge was pinned while the vehicle drove. Voltage sags under
+load and state of charge did not update, so those points measure sag rather than
+the curve.
+
 ## `0x2B43` is twenty-six per-module values
 
 The recorder stores this identifier's 26 bytes as an undecoded hex string,

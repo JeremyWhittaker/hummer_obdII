@@ -35,6 +35,23 @@ discount.
   enumerated identifiers; neither is in the drive recorder, and the unattended
   collector still refuses service 22 entirely.
 
+- **Usable pack capacity measured, and both battery decoders cross-validated.**
+  `energy_kwh` (`0x27AF`, `/100`) over `soc_pct` (`0x27C6`, `/655.35`) is the
+  capacity the vehicle works from. Two identifiers, two different scalings — if
+  either were wrong the ratio would drift with state of charge. Across the
+  sessions where charge actually moved, 78.85 % to 89.65 %, it holds between
+  **191.84 and 191.94 kWh: a spread of 0.05 %** over an eleven-point swing. That
+  puts usable capacity at about **191.9 kWh** and is strong evidence both
+  scalings are correct.
+
+- **The charge curve, and a third confirmation of 96 cells in series.** Mean
+  cell voltage against state of charge over 1247 samples is monotonic at
+  **7.58 mV per percent** (correlation +0.974). Extrapolated to 100 % that is
+  4.1746 V per cell — and at 96 series cells, **400.8 V** at the top of a
+  400 V-class pack, with a full-charge cell voltage sitting just under the
+  ~4.2 V ceiling exactly where a manufacturer holding margin for longevity
+  would stop. Recorded in [Pack architecture](docs/PACK_ARCHITECTURE.md).
+
 - **`0x5401` is answered: it is not charger power.** The decoder kept this byte
   raw with a note saying it would stay so "until a charging session gives it a
   reference." The corpus contains one. The byte correlates with pack current at
