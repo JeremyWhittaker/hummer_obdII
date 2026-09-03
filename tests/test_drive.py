@@ -248,15 +248,47 @@ class TestCycleShape(unittest.TestCase):
                 with self.subTest(did=did):
                     self.assertEqual(fake.sent.count(f"22{did}"), 1)
 
-    def test_standard_pids_are_asked_after_the_broadcast_header_is_restored(self):
-        # Without this the request goes to whichever module the last enhanced
-        # group selected, and the vehicle answers NO DATA.
+    def test_standard_pids_are_addressed_to_the_module_that_answers_them(self):
+        # These used to be broadcast to DB33F1, and a broadcast is answered by
+        # whoever speaks first.  Measured over a whole raw transcript: 010D and
+        # 01A6 were each answered 545 times and *every* answer came from module
+        # 17, while module 28 refused service 01 (7F 01 22) more than 760 times
+        # -- faster than module 17 could answer.  The adapter returned the
+        # refusal, so speed and odometer landed in 8 of 79 rows on 2026-09-03
+        # while every enhanced read landed in all 79.
         fake = _Fake()
         record(fake, max_cycles=1, sleeper=lambda s: None)
-        self.assertIn("ATSHDB33F1", fake.sent)
+        self.assertIn("ATSHDA17F1", fake.sent)
         self.assertIn("ATCP18", fake.sent)
-        self.assertLess(fake.sent.index("ATSHDB33F1"), fake.sent.index("010D"))
-        self.assertLess(fake.sent.index("ATCP18"), fake.sent.index("010D"))
+        self.assertNotIn(
+            "ATSHDB33F1", fake.sent,
+            "the functional broadcast is what let the wrong module answer",
+        )
+        for setup in ("ATCP18", "ATSHDA17F1"):
+            with self.subTest(setup=setup):
+                self.assertLess(fake.sent.index(setup), fake.sent.index("010D"))
+
+    def test_the_receive_filter_is_pinned_to_that_module_reply_address(self):
+        # Module 17 answers from 18DAF117.  Filtering to it means a module that
+        # was never asked cannot be mistaken for one that was.
+        fake = _Fake()
+        record(fake, max_cycles=1, sleeper=lambda s: None)
+        self.assertIn("ATCRA18DAF117", fake.sent)
+        self.assertLess(fake.sent.index("ATCRA18DAF117"), fake.sent.index("010D"))
+        self.assertNotIn(
+            "ATCM00000000", fake.sent,
+            "clearing the mask is what allowed every module to be heard",
+        )
+
+    def test_the_standard_address_is_the_module_already_read_for_pack_power(self):
+        # Not a new address and not a guess: module 17 is the one this node
+        # already reads pack voltage and current from.
+        pack_power = [g for g in drive.GROUPS if g.name == "pack_power"][0]
+        self.assertIn("17", pack_power.address[0])
+        self.assertTrue(
+            any("17" in command for command in drive.STANDARD_ADDRESS),
+            f"standard PIDs should target module 17, got {drive.STANDARD_ADDRESS}",
+        )
 
     def test_priority_is_restored_for_the_next_cycle(self):
         fake = _Fake()

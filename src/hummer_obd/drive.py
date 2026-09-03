@@ -194,15 +194,37 @@ SESSION_INIT: tuple[str, ...] = (
     "ATSP7", "ATCP14", "ATFCSD300000", "ATFCSM1", "ATST96",
 )
 
-#: Standard OBD is a *functional broadcast* at priority 0x18, not a physical
-#: request at 0x14.  Without restoring both, ``010D`` goes out addressed to
-#: whichever module the last enhanced group left selected, and that module
-#: answers NO DATA -- which is how the first live run recorded no speed at
-#: all despite the vehicle being awake.
+#: Standard OBD runs at priority 0x18, not the 0x14 the enhanced groups use.
+#: Without restoring it, ``010D`` goes out addressed to whichever module the
+#: last enhanced group left selected, and that module answers NO DATA -- which
+#: is how the first live run recorded no speed at all despite the vehicle being
+#: awake.
+#:
+#: These are addressed to module 0x17 specifically rather than broadcast to
+#: ``DB33F1``, because on this vehicle the broadcast does not work.  Measured
+#: across a whole raw transcript:
+#:
+#:     010D  545 answered, every one from module 17, plus 765 negative
+#:           responses from module 28 (``7F 01 22``, conditionsNotCorrect)
+#:     01A6  545 answered, every one from module 17, plus 766 the same from
+#:           module 28 and 2 busy replies from module 45
+#:
+#: A functional broadcast is answered by whoever speaks first, and module 28
+#: refuses service 01 faster than module 17 can answer it.  The adapter returns
+#: that refusal and the real answer never arrives, so on 2026-09-03 speed and
+#: odometer were present in 8 of 79 rows while every enhanced read was present
+#: in all 79.  Nothing was wrong with the vehicle and nothing was wrong with
+#: the decode: the question was being shouted at a room where the wrong module
+#: answers first.
+#:
+#: ``ATCRA18DAF117`` then keeps the receive filter on module 17's own reply
+#: address, so a module that was not asked cannot be mistaken for one that was.
+#: Module 17 is already the pack_power group's module, so this address is not a
+#: guess -- it is the one this node already reads pack voltage and current from.
 STANDARD_ADDRESS: tuple[str, ...] = (
     "ATCP18",
-    "ATSHDB33F1",
-    "ATCM00000000",
+    "ATSHDA17F1",
+    "ATCRA18DAF117",
 )
 
 #: Puts the priority byte back for the next cycle's enhanced groups.

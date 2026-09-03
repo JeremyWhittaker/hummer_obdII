@@ -20,6 +20,28 @@ discount.
 
 ### Added
 
+- **A live text view of every sensor, and whether it is still answering.**
+  `hummer_obd.live` (`hummer-obd-live`, `--watch` to refresh) prints one line
+  per column: the value, the identifier carrying it, how long since it last
+  answered, and how many of the recent rows it appeared in -- grouped by the
+  module it comes from, so a whole module going quiet reads as one silent block
+  instead of scattered blanks. A sensor that has stopped answering therefore
+  looks nothing like one reporting zero, which is the distinction that matters
+  when something is wrong and the one the CSV alone cannot show.
+
+  It never opens the serial device. It reads the session the recorder is
+  already writing, because two processes on one RFCOMM device would corrupt
+  both streams, and because the recorder's own output is what the recorder is
+  *actually getting* rather than what a second connection would get. Safe to
+  run at any time, including while driving; a test asserts the module contains
+  no `serial`, `Transport`, `rfcomm` or `.send(`.
+
+  The map of which module supplies which column is derived from `drive.GROUPS`
+  and `drive.DECODERS` by asking each decoder what it returns, rather than
+  written out by hand. Every hand-kept inventory in this project has drifted
+  from the code at least once, and this one would be read while something was
+  already going wrong.
+
 - **The node can restart its own recorder without a password.**
   `scripts/enable_service_control.sh` installs a narrow sudoers rule granting
   start/stop/restart on four named hummer units and nothing else. This exists
@@ -327,6 +349,23 @@ discount.
   must clear before it is allowed on the wire).
 
 ### Changed
+
+- **Standard OBD speed and odometer are asked of one module instead of shouted
+  at all of them.** `010D` and `01A6` were broadcast to `DB33F1`, and a
+  functional broadcast is answered by whichever module speaks first. Measured
+  across a full raw transcript: each was answered 545 times and *every single*
+  answer came from module `0x17`, while module `0x28` refused service 01 with
+  `7F 01 22` (conditionsNotCorrect) more than 760 times -- faster than module
+  17 could answer. The adapter returned the refusal and the real answer never
+  arrived. On 2026-09-03 that left speed and odometer in 8 of 79 rows while
+  every enhanced read was in all 79, and it made a 12.6-mile drive look like
+  0.06 miles until the report learned to prefer denser columns.
+
+  They are now addressed to `DA17F1` with the receive filter pinned to that
+  module's own reply address `18DAF117`, so a module that was not asked cannot
+  be mistaken for one that was. Module `0x17` is not a new address or a guess:
+  it is the `pack_power` module this node already reads pack voltage and
+  current from.
 
 - **The probe asks the vehicle what it supports, instead of a fixed generic
   PID list.** The old list overlapped this truck in three places, so eight

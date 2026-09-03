@@ -118,6 +118,20 @@ discharging**. Keeping both and reporting their disagreement is deliberate --
 two independent routes to one quantity is what caught a mislabelled identifier
 earlier in this project.
 
+See every sensor the node can collect, and which ones are actually answering:
+
+```bash
+hummer-obd-live --watch
+```
+
+One line per column: the value, the identifier that carries it, and how long
+since it last answered, grouped by the module it comes from. A sensor that has
+gone quiet reads completely differently from one reporting zero, which is the
+distinction that matters when something is wrong and the one a CSV cannot show
+you. This also never opens the serial device -- it reads the session the
+recorder is already writing, so it is safe to run while driving and adds no
+traffic to the vehicle.
+
 ## System overview
 
 ```mermaid
@@ -192,6 +206,8 @@ src/hummer_obd/
   drive.py           automatic drive/charge session recorder; ATRV only while
                      the vehicle sleeps
   analyze.py         offline analysis of a recorded session; never opens the port
+  live.py            text view of every sensor and whether it is still
+                     answering; never opens the port either
   probe.py           supervised one-shot probe and offline replay
   btdiscover.py      recovery/binding for an already bonded adapter
   display/status.py  hardware-free renderer and Waveshare panel writer

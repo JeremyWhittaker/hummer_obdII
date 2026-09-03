@@ -28,6 +28,7 @@ hummer-obd-voltage = "hummer_obd.voltage:main"
 hummer-obd-enhanced = "hummer_obd.enhanced:main"
 hummer-obd-drive = "hummer_obd.drive:main"
 hummer-obd-analyze = "hummer_obd.analyze:main"
+hummer-obd-live = "hummer_obd.live:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
