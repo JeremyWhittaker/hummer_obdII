@@ -215,6 +215,8 @@ src/hummer_obd/
                      answering; never opens the port either
   registry.py        renders the identifier registry into the docs from the
                      safety gate itself, so the two cannot drift
+  discover.py        per-module support census using only J1979's own bitmaps;
+                     sends no vendor identifier and guesses nothing
   probe.py           supervised one-shot probe and offline replay
   btdiscover.py      recovery/binding for an already bonded adapter
   display/status.py  hardware-free renderer and Waveshare panel writer

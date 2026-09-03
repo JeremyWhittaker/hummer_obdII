@@ -35,6 +35,41 @@ discount.
   enumerated identifiers; neither is in the drive recorder, and the unattended
   collector still refuses service 22 entirely.
 
+- **Module 40 was never unreachable, and the fault was ours.** Thirteen
+  identifiers had drawn `NO DATA` and the published conclusion was "the request
+  is not arriving" and "testing more identifiers at this address is wasted
+  effort". Both false. `_module_profile` hardcodes `ATCP14` — the CAN priority
+  the battery manager answers at, established when `CB` was opened and inherited
+  silently by every module probed through it. Module 40 answers at `0x18`, the
+  priority the legislated services have been using all along.
+
+  **All nine LYRIQ candidates answer at `18DA40F1`**: EVSE advertised current,
+  three battery group voltages, HV battery temperature, two more battery
+  temperatures and two coolant temperatures. No scaling is claimed for any of
+  them — `416C` read 2589 then 2593 a minute apart, `416D` and `416E` returned
+  identical values, and the vehicle was parked and unplugged, which is the state
+  that says least about an EVSE current.
+
+- **A per-module support census, using only the standard's own discovery
+  calls.** `hummer_obd.discover` (`hummer-obd-discover`) asks each of the eight
+  modules this vehicle named for itself which service 01 PIDs, service 09 items
+  and service 06 monitors it supports. Those bitmaps are what J1979 defines for
+  asking, so nothing here is a guess or a sweep, and a test asserts the tool can
+  only ever send support bitmaps and addressing commands — never a vendor
+  identifier. The bank walk advances only when a bitmap points onward, so a
+  module supporting one bank costs one request rather than seven.
+
+  It immediately paid for itself: module 40 answering `01 42` / `04 06 0A` is
+  what exposed the priority error above. It also shows module 17 alone
+  advertising nine service 01 PIDs against two everywhere else, which both
+  proves the receive filter isolates and explains why the functional broadcast
+  could never have revealed this.
+
+- **Module `CD`'s closure was retested and holds.** The same doubt was applied
+  to `CD`, which had refused seventeen identifiers at `0x14`. At `0x18` it
+  refuses too, answering from its own address both times. That conclusion was
+  right for the reason originally given rather than by luck.
+
 - **Both open module questions answered, both in the negative, both useful.**
   Recorded in [Probe, 2026-09-03](docs/PROBE_2026-09-03.md), run parked and
   awake with the session pulled to a workstation first.

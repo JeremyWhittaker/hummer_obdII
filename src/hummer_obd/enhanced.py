@@ -483,6 +483,107 @@ BSM_CD_NEXT = _module_profile(
 )
 
 
+#: Module 40, asked at priority 0x18 instead of 0x14.
+#:
+#: Thirteen identifiers drew NO DATA from 14DA40F1 and the conclusion recorded
+#: was "the request is not arriving".  A per-module support census then had
+#: module 40 answer service 01 and service 09 at *18*DA40F1, advertising PIDs
+#: 01 and 42 and service 09 items 04, 06 and 0A.  So the request arrives
+#: perfectly well; it was the priority that was wrong, and every earlier
+#: conclusion about this module was drawn from thirteen requests sent to the
+#: wrong place.
+#:
+#: The census also proves the receive filter isolates rather than returning one
+#: loud responder: module 17 advertised nine service 01 PIDs where every other
+#: module advertised two.
+BCM_40_P18 = EnhancedProfile(
+    key="bcm-40-p18",
+    description="body control module, asked at the priority it actually answers",
+    provenance=(
+        "priority established by this project's own per-module support census "
+        "on 2026-09-03: module 40 answers services 01 and 09 at 18DA40F1 after "
+        "being silent to thirteen identifiers at 14DA40F1. Identifiers are the "
+        "ISO 14229-1 standard identification set plus OBDb/Cadillac-LYRIQ PR #14"
+    ),
+    init=(
+        "ATZ", "ATE0", "ATL0", "ATS0", "ATH1", "ATAL",
+        "ATSP7",
+        "ATCP18",          # the priority the census proved it answers at
+        "ATSHDA40F1",
+        "ATCRA18DAF140",   # and the reply address that goes with it
+        "ATFCSH18DA40F1",
+        "ATFCSD300000", "ATFCSM1", "ATST96",
+    ),
+    requests=(
+        ("22F187", "iso_spare_part_number", "ISO 14229-1 standard"),
+        ("22F191", "iso_ecu_hardware_number", "ISO 14229-1 standard"),
+        ("224149", "evse_pilot_current_candidate", "LYRIQ PR #14"),
+        ("22416C", "pack_group_voltage_1_candidate", "LYRIQ PR #14"),
+        ("22434F", "hv_battery_temp_candidate", "LYRIQ PR #14"),
+        ("2240E5", "coolant_temp_1_candidate", "LYRIQ PR #14"),
+    ),
+    tx_id="0x18DA40F1",
+    rx_id="0x18DAF140",
+)
+
+
+def _p18_profile(key, ecu, description, provenance, requests):
+    """A profile at priority 0x18 -- the one the legislated services use.
+
+    ``_module_profile`` hardcodes ``ATCP14`` because that is what the battery
+    manager needs, and every module probed through it inherited that choice.
+    Module 40 was silent to thirteen identifiers as a result, and the silence
+    was recorded as "the request is not arriving".  It was arriving; it was
+    being sent at a priority that module does not answer.
+    """
+    return EnhancedProfile(
+        key=key, description=description, provenance=provenance,
+        init=(
+            "ATZ", "ATE0", "ATL0", "ATS0", "ATH1", "ATAL",
+            "ATSP7", "ATCP18",
+            f"ATSHDA{ecu}F1",
+            f"ATCRA18DAF1{ecu}",
+            f"ATFCSH18DA{ecu}F1",
+            "ATFCSD300000", "ATFCSM1", "ATST96",
+        ),
+        requests=requests,
+        tx_id=f"0x18DA{ecu}F1",
+        rx_id=f"0x18DAF1{ecu}",
+    )
+
+
+#: The rest of the LYRIQ set, at the priority module 40 actually answers.
+BCM_40_FULL = _p18_profile(
+    "bcm-40-full", "40", "every LYRIQ candidate at module 40, priority 0x18",
+    "OBDb/Cadillac-LYRIQ PR #14. Four of these answered at priority 0x18 on "
+    "2026-09-03 after all nine were silent at 0x14; this asks the remainder",
+    (
+        ("22416D", "pack_group_voltage_2_candidate", "LYRIQ PR #14"),
+        ("22416E", "pack_group_voltage_3_candidate", "LYRIQ PR #14"),
+        ("224127", "hv_battery_temp_a_candidate", "LYRIQ PR #14"),
+        ("224124", "hv_battery_temp_b_candidate", "LYRIQ PR #14"),
+        ("2240E6", "coolant_temp_2_candidate", "LYRIQ PR #14"),
+        ("22416C", "pack_group_voltage_1_repeat", "repeat, to pair with 2 and 3"),
+    ),
+)
+
+#: The same question asked of the second battery manager.  CD refused
+#: seventeen identifiers at priority 0x14, and that was written up as "closed
+#: from this access path".  Module 40 has just shown what a wrong priority
+#: looks like, so the conclusion has to be retested rather than trusted.
+BSM_CD_P18 = _p18_profile(
+    "bsm-cd-p18", "CD", "second battery manager at priority 0x18",
+    "module 40 answered at 0x18 after being silent at 0x14, so CD's refusals "
+    "at 0x14 are retested here before the earlier conclusion is trusted",
+    (
+        ("22F187", "iso_spare_part_number", "ISO 14229-1 standard"),
+        ("2227C6", "soc_cd", "proven at CB"),
+        ("222AF5", "cell_stats_cd", "proven at CB"),
+        ("222AF1", "module_temp_array_cd", "proven at CB"),
+    ),
+)
+
+
 PROFILES: dict[str, EnhancedProfile] = {
     BT1.key: BT1,
     PACK_POWER.key: PACK_POWER,
@@ -497,6 +598,9 @@ PROFILES: dict[str, EnhancedProfile] = {
     BCM_40_REACH.key: BCM_40_REACH,
     BSM_CD_REACH.key: BSM_CD_REACH,
     BSM_CD_NEXT.key: BSM_CD_NEXT,
+    BCM_40_P18.key: BCM_40_P18,
+    BCM_40_FULL.key: BCM_40_FULL,
+    BSM_CD_P18.key: BSM_CD_P18,
 }
 
 
