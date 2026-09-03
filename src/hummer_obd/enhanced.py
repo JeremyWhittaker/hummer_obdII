@@ -273,9 +273,76 @@ CHASSIS_BSCM = EnhancedProfile(
     rx_id="0x142AF128",
 )
 
+def _module_profile(key, ecu, description, provenance, requests):
+    """A profile aimed at one module address, reusing BT1's session setup.
+
+    Only the three addressing commands differ between modules, so building
+    these from a template keeps the difference visible instead of burying it in
+    fourteen near-identical lines each.
+    """
+    return EnhancedProfile(
+        key=key,
+        description=description,
+        provenance=provenance,
+        init=(
+            "ATZ", "ATE0", "ATL0", "ATS0", "ATH1", "ATAL",
+            "ATSP7", "ATCP14",
+            f"ATSHDA{ecu}F1",
+            f"ATCRA142AF1{ecu}",
+            f"ATFCSH14DA{ecu}F1",
+            "ATFCSD300000", "ATFCSM1", "ATST96",
+        ),
+        requests=requests,
+        tx_id=f"0x14DA{ecu}F1",
+        rx_id=f"0x142AF1{ecu}",
+    )
+
+
+#: The same drive-motor identifier, aimed at the two sibling controllers.
+#:
+#: This vehicle named three drive motor controllers for itself -- 17 DMCM,
+#: 1D DMC2, 1E DMC3 -- and only 1D has ever been asked anything.  The source
+#: names the identifier for "DMCM battery voltage", which is the family all
+#: three belong to, so pointing it at the other two is directing a *sourced*
+#: identifier at modules the vehicle itself named.  That is not the same as
+#: guessing an identifier, and a 7F 22 31 answers the question harmlessly.
+_DMC_PROVENANCE = (
+    "OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json DID 2233E5, "
+    "'DMCM battery voltage', byte/10 volts. Proven on this vehicle at module "
+    "1D; aimed here at the sibling controllers this vehicle also named"
+)
+DMC_17 = _module_profile(
+    "dmc-17", "17", "drive motor controller 1 (DMCM)", _DMC_PROVENANCE,
+    (("2233E5", "dmc1_voltage", "byte / 10 -> volts"),),
+)
+DMC_1E = _module_profile(
+    "dmc-1e", "1E", "drive motor controller 3 (DMC3)", _DMC_PROVENANCE,
+    (("2233E5", "dmc3_voltage", "byte / 10 -> volts"),),
+)
+
+#: The battery identifiers, aimed at the *second* battery system manager.
+#:
+#: This vehicle named two: CB and CD.  Every enhanced read so far has gone to
+#: CB.  Whether CD mirrors it, holds a different half of the pack, or refuses
+#: outright is unknown and worth one supervised question each.
+BSM_CD = _module_profile(
+    "bsm-cd", "CD", "second battery system manager",
+    "identifiers already proven on this vehicle at module CB; module CD is the "
+    "second BSM this vehicle named for itself and has never been asked anything",
+    (
+        ("2227C6", "soc_cd", "[B4:B5]/655.35 percent"),
+        ("2227AF", "energy_cd", "[B4:B5]/100"),
+        ("222AF5", "cell_stats_cd", "three 16-bit / 10000 volts"),
+        ("222B43", "array_cd", "raw, undecoded"),
+    ),
+)
+
 PROFILES: dict[str, EnhancedProfile] = {
     BT1.key: BT1,
     CHASSIS_BSCM.key: CHASSIS_BSCM,
+    DMC_17.key: DMC_17,
+    DMC_1E.key: DMC_1E,
+    BSM_CD.key: BSM_CD,
     BEV3_BSM.key: BEV3_BSM,
     BEV3_DMCM.key: BEV3_DMCM,
 }

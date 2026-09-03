@@ -392,6 +392,37 @@ The same directory's three `DACB` identifiers are the ones this vehicle had
 already answered, so the fixture set was three-for-three on this truck before
 any of these five were sent.
 
+### Tier 2c — the same identifiers aimed at sibling modules
+
+This vehicle names three drive motor controllers and two battery system
+managers. Until 2026-09-03 only one of each had ever been asked anything.
+Pointing an *already-sourced* identifier at a sibling module of the same type is
+not guessing an identifier — the identifier still comes from a source, and only
+the destination changes to a module the vehicle named for itself.
+
+| Identifier | Module | Result |
+|---|---|---|
+| `0x33E5` | `17` `DMCM-DriveMotorCtrl` | `84` → 13.2 V |
+| `0x33E5` | `1E` `DMC3-DriveMotorCtrl3` | `83` → 13.1 V |
+| `0x27C6` `0x27AF` `0x2AF5` `0x2B43` | `CD` second `BSM-BatterySysMngr` | `7F 22 31` on all four |
+
+**All three drive motor controllers answer, with different values.** A 0.1 V
+spread across `17`, `1D` and `1E` is what independent measurements of the same
+rail look like; three identical bytes would have suggested a shared constant or
+a gateway artefact instead. It remains a 12 V reading and must not be called
+pack voltage.
+
+**Module `CD` refuses every identifier that works on `CB`** — and that is the
+more valuable half. `7F 22 31` is `requestOutOfRange`: a properly formed UDS
+negative response, on `CD`'s own response identifier, rather than silence. So
+`CD` **is** alive and **does** serve service 22; it simply does not hold `CB`'s
+identifiers. A module with no service 22 would have answered `7F 22 11`; an
+asleep or unreachable one would have answered nothing.
+
+The two battery managers are therefore not mirrors of one another, and `CD` is a
+proven service-22 responder whose entire identifier space is undiscovered. Full
+topology in [the module map](GM_MODULE_MAP.md).
+
 ### Tier 3
 
 Nothing is added to `ENHANCED_READ_DIDS` without a fetchable source that names

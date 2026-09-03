@@ -23,24 +23,37 @@ on this VIN advertises fourteen PIDs — `01 0D 1C 1F 20 21 30 31 40 42 60 80 A0
 A6` — and none of them is a high-voltage signal. `5B` (hybrid/EV battery pack
 remaining life) is not advertised; neither is `46` (ambient air temperature).
 
-| Signal wanted | Why it matters | Standard OBD-II on this VIN |
-|---|---|---|
-| State of charge | The single number the display exists to show | **Obtained** — but by enhanced UDS read (`0x27C6`), not passively. See [GM enhanced candidates](GM_ENHANCED_CANDIDATES.md) |
-| Pack voltage | Health and charge state of the traction battery | Not available |
-| Pack current / power | Draw while driving, rate while charging | Not available |
-| Pack temperature | Thermal behaviour under load and fast charge | Not available |
-| Cell balance / delta | The earliest visible sign of a failing module | Not available |
-| DC fast-charge state | Session progress and taper behaviour | Not available |
-| Remaining range | The vehicle's own estimate, logged over time | Not available |
+> **This section has been overtaken by events, and the correction is left
+> visible rather than rewritten away.** When it was written, the premise was
+> that the pack was unreachable and passive monitoring was the only route left.
+> That premise is now false. On 2026-09-02 and 2026-09-03 this vehicle answered
+> fourteen enhanced identifiers across four modules, including state of charge,
+> remaining energy, range and per-cell voltage statistics. The column below is
+> updated; the reasoning that follows it is preserved as written, because a
+> research note whose conclusion moved is more useful with the move shown.
 
-Everything the node can honestly display about energy today is the 12 V
-control-module voltage, which says nothing whatsoever about the high-voltage
-pack. Mode `22` is the obvious route to the missing signals and is deferred for
-reasons that have not changed. Passive monitoring was investigated because it
-would sidestep the objection entirely: listening to frames a vehicle is already
-broadcasting guesses no identifier, addresses no module, and implies no
-diagnostic session. If the data were there to be heard, the hardest safety
-argument in this project would simply not need to be made.
+| Signal wanted | Why it matters | Status on this VIN |
+|---|---|---|
+| State of charge | The single number the display exists to show | **Obtained** — enhanced read `0x27C6`, not passively |
+| Pack voltage | Health and charge state of the traction battery | **Still not obtained.** `0x33E5` reads ~13.1 V from each drive motor controller, which is the 12 V domain, not the pack |
+| Pack current / power | Draw while driving, rate while charging | **Still not obtained** — no sourced identifier found |
+| Pack temperature | Thermal behaviour under load and fast charge | Partly: `0x0046` returns a temperature the vehicle holds, semantics not yet confirmed |
+| Cell balance / delta | The earliest visible sign of a failing module | **Obtained** — `0x2AF5` gives cell average, minimum and maximum; measured spread 4.9–5.3 mV |
+| DC fast-charge state | Session progress and taper behaviour | `0x5401` responds but returns one byte where the source describes two; untested during an actual charge |
+| Remaining range | The vehicle's own estimate, logged over time | **Obtained** — `0x27C7` |
+
+So the honest position has inverted. Passive monitoring was investigated as the
+route *around* a blocked Mode 22; Mode 22 turned out not to be blocked in the
+way assumed, and it delivered most of the list above. What remains genuinely
+missing — pack voltage, pack current, instantaneous power — is missing because
+**no source names an identifier for it**, not because the path is closed.
+
+That changes what a passive capture is *for*. It is no longer a fallback for
+data we cannot otherwise reach. It is now a narrower question: does the
+diagnostic connector carry any unsolicited broadcast traffic at all? A quiet
+result would say the gateway does not forward much to this connector — it would
+not say the vehicle's internal networks are quiet. The experiment is still
+worth running, and it is still not approved, for exactly the reasons below.
 
 ## What was searched for, and what was found
 

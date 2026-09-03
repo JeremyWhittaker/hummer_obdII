@@ -273,6 +273,8 @@ See [Validation](docs/VALIDATION.md) for the test matrix and evidence policy.
 - [Capabilities](docs/CAPABILITIES.md) — what the node, the adapter, and this
   vehicle can actually do, split into proven, available-but-unproven, and
   out of scope.
+- [Module map](docs/GM_MODULE_MAP.md) — the eight modules this vehicle named
+  for itself, what each has answered, and where sourced identifiers go next.
 - [Enhanced PID validation](docs/ENHANCED_PID_VALIDATION.md) — the evidence bar
   Mode 22 identifiers must clear before any of them is allowed on the wire.
 - [Future maintainer handoff](docs/HANDOFF.md) — invariants, current state, and
