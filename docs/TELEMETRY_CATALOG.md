@@ -22,6 +22,18 @@ Each signal carries one, and they mean different things:
 | **measured** | Read from this VIN, decoded, and cross-checked against an independent quantity |
 | **read** | Read from this VIN and decodes to a plausible value, but nothing independent confirms the scaling |
 | **raw** | The module answers, the bytes are stored, the meaning is *not* claimed |
+
+A signal can be `raw` in two very different situations, and conflating them
+cost this project four identifiers. One is *recorded every cycle*, accumulating
+the states a field must be seen across before it can be decoded. The other is
+*answered once in a supervised probe* — seen in exactly one state, and
+undecodable from that no matter how much later analysis is applied.
+
+`0x27BF`, `0x27BB`, `0x27B5` and `0x2709` were proven on 2026-09-03 and then
+left out of the recorder, which put them in the second category while looking
+like the first. All identifiers listed below are now in the first: everything
+this vehicle has been shown to answer is captured every cycle, and a test
+asserts it, so the distinction cannot quietly reappear.
 | **refused** | The module answered `7F`, and the response code is recorded |
 | **absent** | No sourced identifier exists — not "impossible", "not found" |
 
