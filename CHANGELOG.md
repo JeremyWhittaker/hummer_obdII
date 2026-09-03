@@ -35,6 +35,24 @@ discount.
   enumerated identifiers; neither is in the drive recorder, and the unattended
   collector still refuses service 22 entirely.
 
+- **Range, energy and charge cross-validate, and match the EPA figure.**
+  `range_mi / soc_pct` gives 333.1 mi at 100 % (sd 0.0124) and
+  `range_mi / energy_kwh` gives 1.7364 mi/kWh (sd 0.0043), which against
+  191.9 kWh usable is 333 mi — the same answer by an independent route, and
+  1.2 % above the published 329 mi rating. Four fields now agree with each
+  other, which is far stronger than any one being individually plausible.
+
+- **The 12 V rail is measured two independent ways, and they disagree by 6 %.**
+  `ATRV` (adapter, no CAN traffic) and `0x33E5` (drive motor controller `1D`)
+  correlate at +0.955 over 774 paired samples, which validates the `byte / 10`
+  scaling. But the adapter reads consistently higher, and the *ratio* between
+  them is ten times tighter than the *difference* (0.36 % vs 5.8 % relative
+  spread), pointing at a scale difference rather than an offset. Over the
+  observed 12.9–13.9 V span the two models cannot be told apart, and the
+  document says so rather than picking one. Nothing is wrong today —
+  `WAKE_VOLTS` is compared against the same source it was measured from — but a
+  threshold derived from a module reading must not reuse that number.
+
 - **Usable pack capacity measured, and both battery decoders cross-validated.**
   `energy_kwh` (`0x27AF`, `/100`) over `soc_pct` (`0x27C6`, `/655.35`) is the
   capacity the vehicle works from. Two identifiers, two different scalings — if

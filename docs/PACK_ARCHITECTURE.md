@@ -250,6 +250,58 @@ It stays raw. "Tied to charging and shaped like a duty cycle" is not a unit, and
 naming a column after it would be inventing one. But the open question the code
 posed is now answered: whatever `0x5401` is, it is not charger DC power.
 
+## Range, energy and charge agree with each other and with the EPA figure
+
+`range_mi` (`0x27C7`) is a third battery field, and it can be checked against
+the two already trusted:
+
+| ratio | mean | standard deviation | implies |
+|---|---|---|---|
+| `range_mi / soc_pct` | 3.3308 | 0.0124 | **333.1 mi** at 100 % |
+| `range_mi / energy_kwh` | 1.7364 mi/kWh | 0.0043 | the vehicle's own efficiency assumption |
+
+Those two are independent routes to the same number, and they land on the same
+answer: 1.7364 mi/kWh × 191.9 kWh usable = **333 mi**, against 333.1 mi from the
+state-of-charge route. The published EPA rating for this vehicle is 329 mi, so
+the truck's own arithmetic sits **1.2 %** above its sticker.
+
+That is four fields — state of charge, energy, range, and cell voltage — all
+mutually consistent, which is a much stronger statement than any one of them
+being individually plausible.
+
+Worth noting for its own sake: **1.74 mi/kWh** is the efficiency this vehicle
+assumes when it converts remaining energy into remaining miles.
+
+## The 12 V rail, measured two ways
+
+`volts` comes from the adapter's `ATRV`, which never touches the CAN bus.
+`dmc2_v` comes from `0x33E5` at drive motor controller `1D`. They are entirely
+independent measurements of the same rail, and over 774 paired samples they
+correlate at **+0.955** — which on its own validates the `byte / 10` scaling on
+`0x33E5`, since a wrong scale would not track.
+
+They do not agree on the value. The adapter reads consistently higher:
+
+| relationship | mean | standard deviation | relative spread |
+|---|---|---|---|
+| `ATRV − module` | 0.785 V | 0.046 | 5.8 % |
+| `ATRV / module` | 1.0603 | 0.0038 | **0.36 %** |
+
+The ratio is the tighter of the two, which points at a scale difference rather
+than a fixed offset — an `ATRV` reading about 6 % high would explain it, and
+ELM-style adapters are roughly calibrated for this by default. But the honest
+statement is that **over the observed range of 12.9–13.9 V the two models cannot
+be told apart**: a constant offset and a constant ratio predict nearly the same
+values across one volt of span. Distinguishing them needs a session with a much
+wider voltage swing.
+
+This matters for `WAKE_VOLTS`, which is applied to `ATRV` readings. The
+threshold is self-consistent because it is compared against the same source it
+was measured from, so nothing is wrong today. But if the adapter really does
+read ~6 % high, the true rail voltage while this vehicle drives is nearer 12.3 V
+than 13.0 V, and any future threshold derived from a module reading rather than
+from `ATRV` must not reuse the same number.
+
 ## What this node can and cannot see
 
 | granularity | available |
