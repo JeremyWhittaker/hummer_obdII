@@ -20,6 +20,30 @@ discount.
 
 ### Added
 
+- **Fifteen sourced candidate identifiers, and two supervised profiles to test
+  them.** Nothing claims they work here. Every one is a service 22 read, so the
+  worst outcome of asking is a negative response, and they are allowlisted to be
+  *tested* rather than trusted. Group one targets the battery manager `CB` --
+  already answering eight identifiers, so the addressing is proven and only the
+  identifiers are in question -- from meatpiHQ/wican-fw issue #884. Group two
+  targets the body control module `40`, which this vehicle named in its own
+  service 09 inventory and has never been asked anything, from
+  OBDb/Cadillac-LYRIQ PR #14. The reason to treat that PR's register families as
+  candidates rather than guesses is that it is the same source that supplied
+  `2414`, which *is* proven here against the energy field's slope during a real
+  AC charge. Both profiles run under the existing `--confirm` path with exact
+  enumerated identifiers; neither is in the drive recorder, and the unattended
+  collector still refuses service 22 entirely.
+
+- **The `0x2AF5` index hypothesis was tested and refuted.** The suggestion that
+  byte 7 names the weakest cell was checked against 1314 cycles where `0x2AF5`
+  and `0x2B43` were read back to back: byte 7 matched the array's minimum index
+  **0 times**, and byte 9 matched its maximum **0 times**. Not weakly supported
+  -- never true. Recorded in [Pack architecture](docs/PACK_ARCHITECTURE.md)
+  alongside the correlation table showing those four bytes reach at most 0.55
+  against anything already measured, which is what a field carrying information
+  this node does not otherwise have looks like.
+
 - **Columns holding several values are broken out individually.** `0x2B43`'s
   26 per-module readings were captured every sample and stored as one hex
   string; the live view now shows each one on its own line with **its drift

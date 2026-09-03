@@ -96,10 +96,53 @@ which cell is weakest, which is strongest. If that is what they are, this
 vehicle can name the cell and not merely its voltage, which would be a real jump
 in granularity.
 
-That is a hypothesis with a clear test: pair `0x2AF5` and `0x2B43` from the same
-cycle and check whether byte 7 points at the lowest value in the array. It has
-not been run. Until it is, these stay raw and unnamed — a guess is not worth
-writing into a column name, but the bytes are worth keeping.
+### The index hypothesis was tested and is refuted
+
+`0x2AF5` and `0x2B43` are read back to back from module `CB` in the same cycle,
+so adjacency in the transcript pairs them by cycle. Over **1314 paired cycles**:
+
+| test | result |
+|---|---|
+| byte 7 == index of the array's minimum | **0 / 1314** |
+| byte 7 == index of the array's maximum | 41 / 1314 (3.1 %, chance) |
+| byte 9 == index of the array's maximum | **0 / 1314** |
+| byte 9 == index of the array's minimum | **0 / 1314** |
+
+Not weakly supported — *never true*. Byte 7 is not an index into this array.
+The array's minimum sits at position 0 in almost every sample, while byte 7 is
+15 in 966 of them; those two facts simply do not meet.
+
+That does not rule out the bytes being indices into something else. Ninety-six
+cells means valid indices 0–95, and both 13–24 and a constant 23 fit inside that
+range comfortably. It rules out one specific, testable version of the idea,
+which is what a hypothesis is for.
+
+### What the four bytes do correlate with: not much
+
+Against every quantity this node already measures, over 1315 samples:
+
+| field | vs cell avg | vs cell min | vs cell max | vs cell spread |
+|---|---|---|---|---|
+| byte 6 | +0.34 | +0.34 | +0.34 | −0.45 |
+| byte 7 | +0.34 | +0.34 | +0.34 | −0.46 |
+| byte 8 | −0.46 | −0.47 | −0.46 | **+0.55** |
+| u16(8,9) | −0.46 | −0.47 | −0.46 | **+0.55** |
+
+Nothing reaches 0.6. Read as `/10000` volts like the three fields beside them,
+`u16(6,7)` spans 2.48–4.87 V and `u16(8,9)` spans 4.53–4.71 V, against a real
+cell range of 4.00–4.10 V — so they are not more cell voltages on that scale.
+
+Weak correlation with everything already measured is itself informative: it is
+what a field carrying information this node does **not** otherwise have looks
+like. Byte 8's +0.55 against cell spread is the strongest thread, and it has a
+physical story — a hotter pack spreads further — with `(byte8 − 40) / 2` landing
+at 68.5–72 °C across the corpus, which is a plausible coolant or module
+temperature. That is a story, not a result, and the corpus covers one warm day
+with no charging session in it.
+
+The bytes are preserved. The next useful evidence is state variation the corpus
+does not yet contain: an AC charge, a cold start, a hard drive with a hot pack.
+Until then they stay raw and unnamed.
 
 ## What this node can and cannot see
 
