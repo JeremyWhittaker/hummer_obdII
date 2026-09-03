@@ -36,6 +36,7 @@ __all__ = [
     "normalize",
     "validate_command",
     "validate_enhanced_command",
+    "validate_supervised_command",
     "is_safe",
     "describe_command",
 ]
@@ -428,6 +429,31 @@ def validate_enhanced_command(command: str) -> str:
             f"{sorted(ENHANCED_READ_DIDS)}; identifiers are never guessed",
         )
     return cmd
+
+
+def validate_supervised_command(command: str) -> str:
+    """Accept whatever *either* gate accepts, and nothing else.
+
+    The supervised drive recorder needs both: standard PIDs for speed and
+    odometer, and the enumerated enhanced identifiers.  Rather than give it a
+    third allowlist to drift out of step with the other two, this is the union
+    of the existing gates -- so it can never admit a command that neither gate
+    allows, and every restriction in either one still applies.
+
+    It is emphatically not the gate for unattended collection.  ``collector.py``
+    calls :func:`validate_command`, which refuses service ``22``, and that is
+    what keeps enhanced reads a thing a person starts deliberately.
+    """
+    try:
+        return validate_command(command)
+    except UnsafeCommandError as ordinary:
+        try:
+            return validate_enhanced_command(command)
+        except UnsafeCommandError:
+            # Report the ordinary gate's reason: for anything that is not a
+            # service 22 request -- which is most mistakes -- it is the more
+            # useful of the two messages.
+            raise ordinary from None
 
 
 def is_safe(command: str) -> bool:

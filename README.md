@@ -73,6 +73,7 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | **HV cell voltage, average / minimum / maximum** | **proven**: `0x2AF5` returns 4.0185 / 4.0171 / 4.0220 V — a **4.9 mV** cell spread. The published `min < avg < max` ordering holds exactly, which a wrong byte offset would almost always break, and 4.02 V is where a cell sits at the 80.85 % this truck independently reported |
 | **Drive-motor module voltage** | `0x33E5` from `DMC2-DriveMotorCtrl2`, 13.1 V |
 | **Chassis dynamics** | wheel speed at all four corners, brake pressure, steering angle, and lateral/longitudinal acceleration, from `BSCM-BrakeSystem`. Scalings were derived from captured test vectors and reproduce every one exactly |
+| **Automatic session recording** | `hummer-drive.service` records a decoded 25-column CSV whenever the vehicle is awake and sends **only `ATRV`** while it sleeps. Rows are flushed and `fsync`ed as they are taken, so a session survives the vehicle cutting power |
 
 ### Deliberately not available
 

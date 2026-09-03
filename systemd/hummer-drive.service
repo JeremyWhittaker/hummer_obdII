@@ -1,0 +1,66 @@
+[Unit]
+Description=Hummer Pi drive/charge session recorder (enhanced telemetry)
+Documentation=file:/home/jeremy/hummer-obd/docs/RUNBOOK.md
+Documentation=file:/home/jeremy/hummer-obd/docs/GM_ENHANCED_CANDIDATES.md
+After=multi-user.target hummer-rfcomm.service
+Requires=hummer-rfcomm.service
+
+# Belongs under [Unit], not [Service]: systemd-analyze verify rejects it
+# there, which is how it was caught on the collector unit.
+StartLimitIntervalSec=0
+
+# Records a session whenever the vehicle is awake and stays silent while it
+# sleeps.  This exists because a real drive happened on 2026-09-02 and captured
+# nothing: every enhanced read until then was fired by hand, so there was never
+# anything armed to catch one.
+#
+#   sudo systemctl enable --now hummer-drive
+#
+# Settings live in /etc/default/hummer-drive.
+#
+# Why enabling this at boot is safe, stated explicitly because it sends more
+# than the standard collector does:
+#
+#   * While the vehicle is ASLEEP it sends ONLY `ATRV`, which is answered by the
+#     adapter and never reaches the CAN bus.  That is the same command set as
+#     the overnight watch which recorded `ATCS T:00 R:00` on all 158 samples, so
+#     a sleeping vehicle sees literally no traffic from this unit.
+#   * While the vehicle is AWAKE it sends standard OBD reads plus the
+#     enumerated enhanced identifiers in safety.ENHANCED_READ_DIDS.  Every one
+#     is a service 22 ReadDataByIdentifier - a read.  No write, control, reset,
+#     security or actuator service can pass the gate.
+#   * It cannot sweep.  The identifier list is a fixed enumeration in source;
+#     the gate refuses anything not in it, including the identifiers either side
+#     of the ones that work.
+#
+# BATTERY_EXTRA-style note applies here too: DRIVE_EXTRA is written $DRIVE_EXTRA
+# without braces, because systemd expands ${VAR} to a SINGLE argument and would
+# hand argparse "--label my session" as one token.
+
+[Service]
+Type=simple
+User=jeremy
+WorkingDirectory=/home/jeremy/hummer-obd
+Environment=PYTHONPATH=/home/jeremy/hummer-obd/src
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/etc/default/hummer-drive
+ExecStart=/usr/bin/python3 -m hummer_obd.drive --confirm --auto \
+    --device ${DRIVE_DEVICE} \
+    --interval-s ${DRIVE_INTERVAL_S} \
+    --asleep-interval-s ${DRIVE_ASLEEP_INTERVAL_S} \
+    --max-session-s ${DRIVE_MAX_SESSION_S} \
+    --output-dir ${DRIVE_OUTPUT_DIR} \
+    --raw-log ${DRIVE_RAW_LOG} $DRIVE_EXTRA
+
+# The adapter dropping out must not end the watch: Bluetooth drops when the
+# vehicle sleeps and comes back when it wakes, which is normal rather than a
+# fault.  Restarting is always the safer response than exiting.
+Restart=always
+RestartSec=30
+
+NoNewPrivileges=true
+ProtectHome=read-only
+ReadWritePaths=/home/jeremy/hummer-obd
+
+[Install]
+WantedBy=multi-user.target

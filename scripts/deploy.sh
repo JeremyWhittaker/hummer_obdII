@@ -6,7 +6,16 @@
 # never restarts the collector (that stays a deliberate manual act).
 set -euo pipefail
 
-HOST="${HOST:-jeremy@hummer.local}"
+# hummer.local only resolves on the home LAN.  The node also lives on
+# Tailscale, and a deploy that silently reaches nothing is worse than one that
+# fails: a whole module was "deployed" to a host that could not be resolved,
+# and the failure only surfaced as ModuleNotFoundError on the node.  Resolve
+# the mDNS name first and fall back to the Tailscale address.
+DEFAULT_HOST="jeremy@hummer.local"
+if ! getent hosts hummer.local >/dev/null 2>&1; then
+    DEFAULT_HOST="jeremy@${HUMMER_TAILSCALE_IP:-100.71.118.116}"
+fi
+HOST="${HOST:-$DEFAULT_HOST}"
 DEST="${DEST:-/home/jeremy/hummer-obd}"
 SRC_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RSYNC_EXCLUDES=(--exclude '__pycache__' --exclude '*.pyc' --exclude '*.egg-info')

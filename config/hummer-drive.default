@@ -1,0 +1,22 @@
+# Defaults for hummer-drive.service.  Installed to /etc/default/hummer-drive.
+DRIVE_DEVICE=/dev/rfcomm0
+
+# How often to sample while the vehicle is awake.  A full cycle is 14 enhanced
+# identifiers across three modules plus two standard PIDs and takes roughly
+# five seconds on this adapter, so anything below that is a request for a
+# backlog rather than a faster sample rate.
+DRIVE_INTERVAL_S=5
+
+# How often to check whether the vehicle has woken.  Only ATRV is sent in this
+# state, and it never reaches the CAN bus.
+DRIVE_ASLEEP_INTERVAL_S=300
+
+# Hard cap on one session's length, so a vehicle left awake cannot produce an
+# unbounded file.  Two hours.
+DRIVE_MAX_SESSION_S=7200
+
+DRIVE_OUTPUT_DIR=evidence/sessions
+DRIVE_RAW_LOG=logs/drive-raw.jsonl
+
+# Extra arguments, unbraced in the unit on purpose.
+DRIVE_EXTRA=
