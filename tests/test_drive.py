@@ -41,6 +41,8 @@ REPLIES = {
     "224C2F": "142AF12805624C2F0000\r\r>",
     "224C30": "142AF12805624C30FFFC\r\r>",
     "2233E5": "142AF11D046233E583\r\r>",
+    "222885": "142AF1170562288597CC\r\r>",
+    "222414": "142AF11705622414FE5D\r\r>",
     "010D": "18DAF11D03410D00\r\r>",
     "ATRV": "13.9V\r\r>",
 }
@@ -183,6 +185,28 @@ class TestDecoders(unittest.TestCase):
         )
         self.assertAlmostEqual(row["steering_deg"], -65 * 0.022, places=2)
         self.assertEqual(row["dmc2_v"], 13.1)
+
+    def test_pack_voltage_and_current_decode_from_the_captured_frames(self):
+        fake = _Fake()
+        row = record(fake, max_cycles=1, sleeper=lambda s: None).rows[0]
+        self.assertAlmostEqual(row["pack_v"], 388.60, places=2)
+        self.assertAlmostEqual(row["pack_a"], -20.95, places=2)
+        # Negative current is charging, and the product must follow that sign.
+        self.assertLess(row["hv_power_kw"], 0)
+        self.assertAlmostEqual(abs(row["hv_power_kw"]), 8.14, places=1)
+
+    def test_pack_current_matches_its_sources_own_test_vectors(self):
+        # OBDb/Cadillac-LYRIQ PR #14 ships these pairs; the formula must
+        # reproduce them exactly or the identifier is not understood.
+        self.assertAlmostEqual(
+            DECODERS["2414"](bytes.fromhex("FE39"))["pack_a"], -22.75, places=2)
+        self.assertAlmostEqual(
+            DECODERS["2414"](bytes.fromhex("0012"))["pack_a"], 0.9, places=2)
+
+    def test_hv_power_is_absent_without_both_halves(self):
+        fake = _Fake(replies={"222414": "142AF117037F2231\r\r>"})
+        row = record(fake, max_cycles=1, sleeper=lambda s: None).rows[0]
+        self.assertNotIn("hv_power_kw", row)
 
     def test_signed_fields_decode_negative(self):
         self.assertLess(DECODERS["4C2D"](bytes.fromhex("FFBF"))["steering_deg"], 0)

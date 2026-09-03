@@ -121,6 +121,14 @@ DECODERS: dict[str, Callable[[bytes], dict]] = {
     "4C30": lambda p: {"longitudinal_g": round(_s16(p, 0) * 0.0015928, 5)} if len(p) >= 2 else {},
     # Not decoded on purpose: 26 bytes where the source describes one.
     "2B43": lambda p: {"array_2b43": p.hex().upper()},
+    # Traction pack voltage and current.  Both come from unmerged BEV3 sources,
+    # and both were confirmed on this vehicle during an AC charge: 388.60 V and
+    # -20.95 A, whose product (8.14 kW) agreed within 6% with the charge power
+    # derived independently from the energy field's slope.  Negative current is
+    # charging, which is the sign convention the source states and the vehicle
+    # confirmed while plugged in.
+    "2885": lambda p: {"pack_v": round(_u16(p, 0) / 100, 2)} if len(p) >= 2 else {},
+    "2414": lambda p: {"pack_a": round(_s16(p, 0) / 20, 2)} if len(p) >= 2 else {},
 }
 
 
@@ -154,6 +162,13 @@ GROUPS: tuple[AddressGroup, ...] = (
         address=("ATSHDA28F1", "ATCRA142AF128", "ATFCSH14DA28F1",
                  "ATFCSD300000", "ATFCSM1"),
         dids=("4A7A", "4A7C", "4C2D", "4C2F", "4C30"),
+    ),
+    AddressGroup(
+        name="pack_power",
+        ecu="17",
+        address=("ATSHDA17F1", "ATCRA142AF117", "ATFCSH14DA17F1",
+                 "ATFCSD300000", "ATFCSM1"),
+        dids=("2885", "2414"),
     ),
     AddressGroup(
         name="drive_motor",
@@ -199,6 +214,7 @@ COLUMNS: tuple[str, ...] = (
     "soc_pct", "energy_kwh", "range_mi", "dist_since_chg_mi",
     "temp_f", "charger_5401_raw", "power_kw",
     "cell_avg_v", "cell_min_v", "cell_max_v", "cell_spread_mv",
+    "pack_v", "pack_a", "hv_power_kw",
     "dmc2_v",
     "wheel_fl_kph", "wheel_fr_kph", "wheel_rl_kph", "wheel_rr_kph",
     "brake_kpa", "steering_deg", "lateral_g", "longitudinal_g",
@@ -375,6 +391,15 @@ def record(
         if row_power is not None:
             row["power_kw"] = row_power
 
+        # Instantaneous HV power straight from the pack, which needs no window
+        # because it is a direct product rather than a slope.  Sign follows the
+        # current: negative is charging.  Keeping this alongside the slope-
+        # derived figure is deliberate -- two independent routes to the same
+        # quantity is what caught the 0x5401 mislabel, and disagreement between
+        # them is a signal worth seeing rather than averaging away.
+        if "pack_v" in row and "pack_a" in row:
+            row["hv_power_kw"] = round(row["pack_v"] * row["pack_a"] / 1000.0, 2)
+
         session.rows.append(row)
         session.cycles += 1
         # Persisted before the next sample rather than at the end.  A
@@ -388,7 +413,8 @@ def record(
             f"speed={row.get('speed_kph')} wheels="
             f"{row.get('wheel_fl_kph')}/{row.get('wheel_fr_kph')}/"
             f"{row.get('wheel_rl_kph')}/{row.get('wheel_rr_kph')} "
-            f"steer={row.get('steering_deg')} kW={row.get('power_kw')}"
+            f"packV={row.get('pack_v')} packA={row.get('pack_a')} "
+            f"hvkW={row.get('hv_power_kw')} slopekW={row.get('power_kw')}"
         )
 
         if max_cycles and session.cycles >= max_cycles:

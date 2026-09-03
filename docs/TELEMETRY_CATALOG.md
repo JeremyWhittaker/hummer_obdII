@@ -90,6 +90,37 @@ They were never fitted to one another, yet they agree:
 
 ---
 
+## 1b. Traction pack voltage and current — module `17` `DMCM-DriveMotorCtrl`
+
+| Signal | Identifier | Scaling | Unit | Level |
+|---|---|---|---|---|
+| Traction pack voltage | `0x2885` | `[B0:B1] / 100` | V | **measured** |
+| Traction pack current | `0x2414` | `signed16 / 20`, negative = charging | A | **measured** |
+| Instantaneous HV power | derived | `pack_v * pack_a / 1000` | kW | **measured** |
+
+This was the project's single largest gap and it is now closed. Measured during
+an AC charging session: **388.60 V**, **−20.95 A**, **−8.14 kW**.
+
+Both identifiers come from **unmerged, single-author, BEV3 sources** — weaker
+provenance than anything else in this catalog. They are trusted anyway, because
+the vehicle and the existing measurements corroborated them:
+
+| Check | Result |
+|---|---|
+| Magnitude | 388.6 V is a 400 V-class Ultium pack. The 12 V rail read 13.6 V at the same moment, so this is not the low-voltage domain mislabelled |
+| Sign convention | current was **negative** while plugged in and charging, exactly as the source states |
+| `0x2414` against its own test vectors | `0xFE39 → −22.75 A` and `0x0012 → 0.9 A`, both reproduced exactly |
+| **Against a wholly independent measurement** | volts × amps gave **8.14 kW**; the charge power derived from the *energy field's slope* — a different identifier, a different module, a different method — gave **~7.7 kW**. Agreement within 6 %, and in the correct direction: pack DC power exceeds usable energy gain by the conversion and thermal losses |
+
+That last row is the one that matters. Two unmerged sources for a different
+platform were confirmed by a measurement taken a completely different way.
+
+Both power figures are kept side by side in the recorder rather than averaged.
+Two independent routes to one quantity is what exposed the `0x5401` mislabel;
+disagreement between them is a signal worth seeing.
+
+---
+
 ## 2. Chassis dynamics — module `28` `BSCM-BrakeSystem`
 
 | Signal | Identifier | Scaling | Unit | Level |
@@ -159,8 +190,7 @@ has already been wrong once in that direction.
 
 | Signal | Status |
 |---|---|
-| Traction-pack voltage and current, instantaneous HV power | **absent.** The highest-value gap. Note power *is* derivable from the energy slope. |
-| Motor RPM, torque, inverter current, motor/inverter temperature | absent |
+| Motor RPM, torque, phase current, motor/inverter temperature | absent |
 | Per-module battery temperature, coolant, state of health, contactor state | absent |
 | Suspension height, rear-wheel steering, CrabWalk state | absent |
 | Door, lock, lighting, HVAC state (module `40`, never asked) | absent |

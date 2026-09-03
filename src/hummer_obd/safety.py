@@ -347,6 +347,33 @@ ENHANCED_READ_DIDS: Final[dict[str, str]] = {
         "longitudinal acceleration -- OBDb/Cadillac-LYRIQ test fixture "
         "DA28.224C30, signed 16-bit * 0.0015928, g"
     ),
+    # The two highest-value identifiers in the project: traction pack voltage
+    # and pack current, both at module 17.  Both are WEAKER sources than
+    # anything else on this list and are labelled as such:
+    #
+    #   2885 - meatpiHQ/wican-fw issue #884, an OPEN, UNMERGED, zero-comment
+    #          report about a 2027 Chevrolet Bolt (BEV3).  One person, never
+    #          reviewed, and wican-fw disagrees with itself about the byte
+    #          window for this exact header elsewhere.
+    #   2414 - OBDb/Cadillac-LYRIQ open PR #14, a 2025 Lyriq (BEV3).  Also
+    #          unmerged -- but it ships TEST VECTORS pairing a captured frame
+    #          with its expected value, and the stated formula reproduces both
+    #          exactly, which is a materially stronger claim than 2885's.
+    #
+    # Neither is BT1.  Both are pure service 22 reads, so the worst outcome of
+    # asking is 7F 22 31.  They are allowlisted to be *tested*, and nothing
+    # here asserts they work on this vehicle.
+    "2885": (
+        "HV traction pack voltage candidate -- meatpiHQ/wican-fw issue #884, "
+        "DMCM1_BATTERY_PACK_VOLTAGE, [B4:B5]/100 volts, min 0 max 500. "
+        "UNMERGED single-author report, 2027 Bolt BEV3, not BT1"
+    ),
+    "2414": (
+        "HV pack current candidate -- OBDb/Cadillac-LYRIQ PR #14, LYRIQ_HVBAT_A, "
+        "signed 16-bit / 20 amps, negative = charging. Ships test vectors "
+        "(0xFE39 -> -22.75 A, 0x0012 -> 0.9 A) which the formula reproduces "
+        "exactly. UNMERGED, 2025 Lyriq BEV3, not BT1"
+    ),
     "33E5": (
         "drive motor control module battery voltage -- "
         "OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DA1D "

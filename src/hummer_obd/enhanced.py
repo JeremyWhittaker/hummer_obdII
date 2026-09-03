@@ -337,8 +337,32 @@ BSM_CD = _module_profile(
     ),
 )
 
+#: Traction pack voltage and current, at drive motor controller 17.
+#:
+#: This is the gap the whole project has been pointing at.  Both identifiers
+#: come from unmerged, single-author, BEV3 reports, which is weaker evidence
+#: than anything else here -- but both are pure reads, and 0x2414 arrives with
+#: test vectors its formula reproduces exactly.
+#:
+#: If both answer, they cross-check each other and the rest of the project:
+#: volts * amps should equal the charge power already derived independently
+#: from the energy field's slope, and the current should be NEGATIVE while
+#: charging.  Two unmerged sources agreeing with a measurement taken a
+#: different way would be worth far more than either on its own.
+PACK_POWER = _module_profile(
+    "pack-power", "17", "traction pack voltage and current (DMCM1)",
+    "0x2885 from meatpiHQ/wican-fw issue #884 (2027 Bolt, BEV3, unmerged); "
+    "0x2414 from OBDb/Cadillac-LYRIQ PR #14 (2025 Lyriq, BEV3, unmerged, "
+    "ships test vectors). Neither is BT1; both unproven on this vehicle",
+    (
+        ("222885", "pack_voltage_candidate", "[B0:B1]/100 -> volts (payload-relative)"),
+        ("222414", "pack_current_candidate", "signed16 / 20 -> amps, negative = charging"),
+    ),
+)
+
 PROFILES: dict[str, EnhancedProfile] = {
     BT1.key: BT1,
+    PACK_POWER.key: PACK_POWER,
     CHASSIS_BSCM.key: CHASSIS_BSCM,
     DMC_17.key: DMC_17,
     DMC_1E.key: DMC_1E,
