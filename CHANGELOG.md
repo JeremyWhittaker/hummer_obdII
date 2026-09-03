@@ -35,6 +35,26 @@ discount.
   enumerated identifiers; neither is in the drive recorder, and the unattended
   collector still refuses service 22 entirely.
 
+- **A hex column left out of the reader's text set read as never answered.**
+  `cell_extra_raw` was added to the recorder and not to the reader, so every
+  value went to the number parser, failed, and became `None`. The live view
+  reported "NEVER ANSWERED 0/33" for a column the CSV plainly contained. The
+  failure is silent in the worst way: these values begin with a digit, so the
+  unit-suffix stripper that rescues `"13.8V"` leaves them alone and `float()`
+  rejects the whole string — a field that is recorded but unreadable is
+  indistinguishable from one never recorded. Found by the live view during a
+  real drive, which is what its answering/not-answering distinction exists for.
+
+- **A 97.8 kW drive froze two of `0x2AF5`'s unknown bytes.** Bytes 7 and 9 held
+  at 15 and 23 through a parked pack, a 117 km/h cruise and a full-power pull
+  with the pack sagging 384.88 → 381.73 V under 256 A, while bytes 6 and 8
+  moved. A value that does not move across that range is not measuring it. This
+  partly revives the refuted index idea in a different form: byte 7 does not
+  index the `0x2B43` array, but 15 and 23 indexing *cells or modules* would
+  explain constancy exactly, since the same cells stay weakest and strongest.
+  Recorded as a live hypothesis in
+  [Pack architecture](docs/PACK_ARCHITECTURE.md), not a result.
+
 - **Range, energy and charge cross-validate, and match the EPA figure.**
   `range_mi / soc_pct` gives 333.1 mi at 100 % (sd 0.0124) and
   `range_mi / energy_kwh` gives 1.7364 mi/kWh (sd 0.0043), which against

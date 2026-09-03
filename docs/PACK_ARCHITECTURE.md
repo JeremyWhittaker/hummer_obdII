@@ -198,9 +198,36 @@ at 68.5–72 °C across the corpus, which is a plausible coolant or module
 temperature. That is a story, not a result, and the corpus covers one warm day
 with no charging session in it.
 
-The bytes are preserved. The next useful evidence is state variation the corpus
-does not yet contain: an AC charge, a cold start, a hard drive with a hot pack.
-Until then they stay raw and unnamed.
+### A drive supplied the state variation, and it changed the picture
+
+The paragraph above used to end by saying the missing evidence was state
+variation the corpus did not contain. A highway drive on 2026-09-03 supplied
+some, and it is worth more than the whole parked corpus was:
+
+| state | bytes 6–9 | as decimal |
+|---|---|---|
+| parked, pack near idle | `74 0F B3 17` | 116, **15**, 179, **23** |
+| 117 km/h cruise, 40.9 kW | `76 0F B8 17` | 118, **15**, 184, **23** |
+| hard acceleration, **97.8 kW** | `76 0F B4 17` | 118, **15**, 180, **23** |
+| later in the same drive | `78 0F B3 17` | 120, **15**, 179, **23** |
+
+Bytes 7 and 9 held at **15 and 23** through all of it — a parked pack, a
+highway cruise, and a 97.8 kW pull with the pack sagging from 384.88 V to
+381.73 V under 256 A. A value that does not move across that range is not
+measuring anything about it.
+
+That also partly revives the hypothesis the section above refuted. What was
+disproved is that byte 7 indexes *this array*. If 15 and 23 instead index
+**cells or modules** — "cell 15 is the weakest, cell 23 is the strongest" —
+then holding constant is exactly what they should do, because the same cells
+stay weakest and strongest from one moment to the next. Bytes 6 and 8 would
+then be those cells' associated values, and they *do* move: 116 → 120 and
+179 → 184 across the same states.
+
+That is a live hypothesis, not a result. Testing it needs the two indices to be
+checked against something that resolves individual cells, which nothing read
+here does. It is recorded so the next person does not have to rediscover that
+two of these four bytes are frozen.
 
 ## `0x5401` is not charger power
 
