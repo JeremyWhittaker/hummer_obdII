@@ -67,6 +67,20 @@ was put to it once:
 2227AF  ->  142AF1CD 03 7F 22 31
 222AF5  ->  142AF1CD 03 7F 22 31
 222B43  ->  142AF1CD 03 7F 22 31
+
+On 2026-09-03 it was asked thirteen more: the four CB-proven identifiers left
+out above (27C7, 27C0, 0046, 5401), the five discovered at CB that day (27BF,
+27BB, 27B5, 2709, 2AF1), and four ISO 14229-1 standard identification DIDs
+(F187, F188, F189, F191).  Seventeen identifiers now, one answer:
+
+  everything  ->  142AF1CD 03 7F 22 31
+
+A module that refuses the standard identification identifiers as readily as
+vendor ones is not hiding a namespace behind identifiers nobody has guessed.
+It is exposing nothing in the session it answers in, and the way to ask for a
+different session is service 0x10, which this project permanently forbids.
+CD is reachable, alive, and closed from this access path.  See
+docs/PROBE_2026-09-03.md.
 ```
 
 `7F 22 31` is `requestOutOfRange`. Read carefully, that is not a failure — it is

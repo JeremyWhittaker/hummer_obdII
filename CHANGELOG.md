@@ -35,6 +35,34 @@ discount.
   enumerated identifiers; neither is in the drive recorder, and the unattended
   collector still refuses service 22 entirely.
 
+- **Both open module questions answered, both in the negative, both useful.**
+  Recorded in [Probe, 2026-09-03](docs/PROBE_2026-09-03.md), run parked and
+  awake with the session pulled to a workstation first.
+
+  **Module `40` does not answer at `14DA40F1`.** Four ISO 14229-1 standard
+  identification identifiers returned `NO DATA`, joining nine vendor ones. A
+  module that answers nothing — including the identifiers the standard defines
+  for exactly this purpose — is not a module missing those identifiers; the
+  request is not arriving. Thirteen for thirteen closes the question the first
+  probe could not: testing more identifiers at this address is wasted effort,
+  and what remains open is the *route*.
+
+  **Module `CD` refuses everything, including the standard.** Seventeen
+  identifiers now — four ISO standard, four proven at `CB` before the first CD
+  probe, five discovered at `CB` since — every one answered
+  `142AF1CD 03 7F 22 31`. `CD` is genuinely reachable and speaks service 22, but
+  an ECU declining `F187` through `F191` is not hiding a namespace behind
+  identifiers nobody has guessed; it exposes nothing in the session it answers
+  in. The way to ask for a different session is service `0x10`, which this
+  project permanently forbids. So `CD` is closed **from this access path** — not
+  because the identifiers are wrong.
+
+  Neither module gave up data and both experiments succeeded. Before them the
+  plan pointed at `CD` as the most promising target on the vehicle and at `40`
+  as a problem of finding better identifiers. Both directions would have
+  absorbed a session each; they are now marked, with the evidence for the
+  marking.
+
 - **The identifier registry is generated from the gate that enforces it.**
   `docs/GM_ENHANCED_CANDIDATES.md` is the provenance record for everything this
   project may transmit, and it had fallen **thirty-six commits behind the
