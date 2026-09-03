@@ -152,7 +152,12 @@ def _mean(values: list[float]) -> Optional[float]:
 
 
 def _round(value: Optional[float], digits: int = 2) -> Optional[float]:
-    return None if value is None else round(value, digits)
+    if value is None:
+        return None
+    rounded = round(value, digits)
+    # Trapezoidal integration of a clamped series can land on -0.0, which
+    # reads as a negative quantity in a report about energy direction.
+    return 0.0 if rounded == 0 else rounded
 
 
 def _integrate(rows: list[dict], key: str, *, only_negative=False, only_positive=False) -> float:
@@ -444,7 +449,12 @@ def format_report(report: dict) -> str:
         s = report["sampling"]
         out.append(_line("median sample period", s.get("median_period_s"), " s"))
         out.append(_line("expected sample period", s.get("expected_period_s"), " s"))
-        out.append(_line("shortest / longest period", f"{s.get('min_period_s')} / {s.get('max_period_s')}", " s"))
+        shortest, longest = s.get("min_period_s"), s.get("max_period_s")
+        out.append(_line(
+            "shortest / longest period",
+            None if shortest is None and longest is None else f"{shortest} / {longest}",
+            " s",
+        ))
         out.append(_line("gaps", s.get("gap_count")))
         out.append(_line("seconds lost to gaps", s.get("gap_seconds_total"), " s"))
 

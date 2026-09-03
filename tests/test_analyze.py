@@ -239,6 +239,33 @@ class TestSessionFileHandling(unittest.TestCase):
         self.assertIn("session", format_report(report))
 
 
+class TestDegenerateSessions(unittest.TestCase):
+    """A capture cut short must still produce a readable report."""
+
+    def test_a_single_row_session_reports_rather_than_raising(self):
+        rows = _rows([(0, {"pack_v": 392.0, "speed_kph": 0.0, "energy_kwh": 172.52,
+                           "soc_pct": 89.653, "hv_power_kw": 0.0})])
+        report = analyze_session(rows)
+        self.assertEqual(report["session"]["rows"], 1)
+        # There is no period to measure from one sample, and saying so is
+        # better than inventing one.
+        self.assertIsNone(report["sampling"]["median_period_s"])
+        self.assertIsNone(report["sampling"]["min_period_s"])
+        text = format_report(report)
+        self.assertNotIn("None", text, f"a one-row report should render '--', got:\n{text}")
+
+    def test_a_clamped_integral_does_not_report_negative_zero(self):
+        # Integrating a clamped series can land on -0.0, which in a report
+        # about which way energy flowed reads as a direction.
+        rows = _rows([(0, {"hv_power_kw": 0.0}), (10, {"hv_power_kw": 0.0})])
+        report = analyze_session(rows)
+        for key in ("regen_kwh_from_pack_current", "drawn_kwh_from_pack_current",
+                    "net_kwh_from_pack_current"):
+            with self.subTest(key=key):
+                self.assertEqual(report["energy"][key], 0.0)
+                self.assertNotIn("-0.0", str(report["energy"][key]))
+
+
 class TestCompleteness(unittest.TestCase):
     def test_an_empty_column_is_reported_rather_than_read_as_zero(self):
         rows = _rows([
