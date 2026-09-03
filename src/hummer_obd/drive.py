@@ -82,6 +82,39 @@ def _u24(p: bytes, i: int) -> int:
 #: ``did -> payload -> {column: value}``.  A decoder returns ``{}`` rather than
 #: raising when the payload is shorter than it expects: a truncated reply is a
 #: missing sample, not a reason to end a session that is recording a drive.
+def _cell_summary(p: bytes) -> dict:
+    """Cell voltage summary from ``0x2AF5``, keeping the bytes it does not decode.
+
+    This identifier answers with **ten** bytes on this vehicle, measured over
+    1315 replies, and only the first six were ever read.  The other four were
+    dropped on the floor every sample: they never reached the CSV, so no later
+    analysis could recover them and nobody could tell they existed.
+
+    They are kept raw rather than decoded, because what they are is not yet
+    known.  What is known, from those 1315 replies, is that they do not look
+    like measurements: byte 9 is *constant* at 23, and byte 7 takes only seven
+    values, all between 13 and 24.  Small bounded integers next to a
+    minimum and a maximum look like indices -- which cell is weakest, which is
+    strongest -- and if that is what they are, this vehicle can name the cell
+    rather than only its voltage.  That would be a real jump in granularity, so
+    the bytes are preserved until something can confirm or refute it.  A guess
+    is not worth writing into a column name; the bytes are worth keeping.
+    """
+    if len(p) < 6:
+        return {}
+    row = {
+        "cell_avg_v": round(_u16(p, 0) / 10000, 4),
+        "cell_min_v": round(_u16(p, 2) / 10000, 4),
+        "cell_max_v": round(_u16(p, 4) / 10000, 4),
+        # Spread in millivolts, computed from the raw counts so it does not
+        # inherit rounding from the three volt columns above.
+        "cell_spread_mv": round((_u16(p, 4) - _u16(p, 2)) / 10, 2),
+    }
+    if len(p) > 6:
+        row["cell_extra_raw"] = p[6:].hex().upper()
+    return row
+
+
 DECODERS: dict[str, Callable[[bytes], dict]] = {
     "27C6": lambda p: {"soc_pct": round(_u16(p, 0) / 655.35, 3)} if len(p) >= 2 else {},
     "27AF": lambda p: {"energy_kwh": round(_u16(p, 0) / 100, 2)} if len(p) >= 2 else {},
@@ -92,18 +125,7 @@ DECODERS: dict[str, Callable[[bytes], dict]] = {
     # published two-byte "/4350 kW" equation cannot apply and is not used.
     # The byte is kept raw until a charging session gives it a reference.
     "5401": lambda p: {"charger_5401_raw": p.hex().upper()} if p else {},
-    "2AF5": lambda p: (
-        {
-            "cell_avg_v": round(_u16(p, 0) / 10000, 4),
-            "cell_min_v": round(_u16(p, 2) / 10000, 4),
-            "cell_max_v": round(_u16(p, 4) / 10000, 4),
-            # Spread in millivolts, computed from the raw counts so it does not
-            # inherit rounding from the three volt columns above.
-            "cell_spread_mv": round((_u16(p, 4) - _u16(p, 2)) / 10, 2),
-        }
-        if len(p) >= 6
-        else {}
-    ),
+    "2AF5": _cell_summary,
     "33E5": lambda p: {"dmc2_v": round(p[0] / 10, 1)} if p else {},
     "4A7A": lambda p: (
         {
@@ -235,7 +257,7 @@ COLUMNS: tuple[str, ...] = (
     "speed_kph", "odometer_km",
     "soc_pct", "energy_kwh", "range_mi", "dist_since_chg_mi",
     "temp_f", "charger_5401_raw", "power_kw",
-    "cell_avg_v", "cell_min_v", "cell_max_v", "cell_spread_mv",
+    "cell_avg_v", "cell_min_v", "cell_max_v", "cell_spread_mv", "cell_extra_raw",
     "pack_v", "pack_a", "hv_power_kw",
     "dmc2_v",
     "wheel_fl_kph", "wheel_fr_kph", "wheel_rl_kph", "wheel_rr_kph",

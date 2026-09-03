@@ -68,7 +68,8 @@ LABELS: dict[str, tuple[str, str]] = {
     "steering_deg": ("steering angle", "deg"),
     "lateral_g": ("lateral acceleration", "g"),
     "longitudinal_g": ("longitudinal acceleration", "g"),
-    "array_2b43": ("per-cell array 0x2B43 (raw)", ""),
+    "array_2b43": ("per-module array 0x2B43 (raw)", ""),
+    "cell_extra_raw": ("0x2AF5 trailing bytes (raw)", ""),
 }
 
 #: Friendly names for the modules the recorder addresses.
@@ -87,6 +88,77 @@ DERIVED: dict[str, str] = {
 
 #: Columns that belong to the row itself rather than to the vehicle.
 BOOKKEEPING = ("utc", "elapsed_s")
+
+#: Structure measured in ``0x2B43``'s 26 values over 1288 samples.  Every
+#: position tracks state of charge at +0.995 or better, so they are 26 parallel
+#: measurements of the same quantity rather than a mixed record.  Two blocks
+#: separate cleanly: the spread *across* positions 2-25 is 2.1x the spread
+#: *within* either block, which is not what one undifferentiated set looks
+#: like.  Positions 0-1 sit ~1.5 units below the rest in every sample.
+#:
+#: Twelve modules in series at eight cells each is 96 cells, and 96.0 is
+#: exactly what ``pack_v / cell_avg_v`` measures (mean 95.991, sd 0.041 over
+#: 297 samples).  Two blocks of twelve is also how a 400 V/800 V switchable
+#: pack is wired.  That is the reading; the labels below stay deliberately
+#: non-committal about it, because a plausible story is not a measurement.
+_ARRAY_BLOCKS = ((0, 2, "?"), (2, 14, "A"), (14, 26, "B"))
+
+
+def _expand_array(text: str) -> list[tuple[str, str]]:
+    """One entry per value, each with its drift from its own block's median.
+
+    The drift column is the point.  Absolute values move together as the pack
+    charges and discharges, so they say little; a single value pulling away
+    from its neighbours is the earliest visible sign of one module going bad,
+    and it shows up here long before it moves the pack-wide min/max envelope.
+    """
+    try:
+        raw = bytes.fromhex(text)
+    except ValueError:
+        return [("(unparseable)", text[:40])]
+    out: list[tuple[str, str]] = []
+    for start, stop, block in _ARRAY_BLOCKS:
+        chunk = raw[start:stop]
+        if not chunk:
+            continue
+        middle = sorted(chunk)[len(chunk) // 2]
+        for offset, value in enumerate(chunk):
+            drift = value - middle
+            mark = "" if abs(drift) <= 1 else ("   <-- drifting" if abs(drift) > 2 else "   <-- watch")
+            out.append(
+                (f"value {start + offset:02d} (block {block})",
+                 f"{value}  {drift:+d} from block median{mark}")
+            )
+    return out
+
+
+def _expand_bytes(text: str) -> list[tuple[str, str]]:
+    """Each byte of a preserved-but-undecoded field, as hex and decimal."""
+    try:
+        raw = bytes.fromhex(text)
+    except ValueError:
+        return [("(unparseable)", text[:40])]
+    return [(f"byte {i}", f"0x{v:02X}  = {v}") for i, v in enumerate(raw)]
+
+
+#: Columns holding several values in one cell, and how to break them out.
+#: Nothing here is decoded into units -- these are the raw values the vehicle
+#: sent, made individually visible instead of collapsed into one opaque string.
+EXPANSIONS: dict[str, tuple[str, object]] = {
+    "array_2b43": (
+        "0x2B43 -- 26 per-module values, broken out "
+        "(all track charge at +0.995; drift is what matters)",
+        _expand_array,
+    ),
+    "cell_extra_raw": (
+        "0x2AF5 -- the 4 trailing bytes, undecoded but no longer discarded",
+        _expand_bytes,
+    ),
+    "charger_5401_raw": (
+        "0x5401 -- raw, kept unscaled until a charge session calibrates it",
+        _expand_bytes,
+    ),
+}
 
 
 def _decoder_columns(did: str) -> tuple[str, ...]:
@@ -223,7 +295,7 @@ def _format_age(age: Optional[float], period: Optional[float]) -> str:
 
 
 def render(snap: dict, *, path: str = "", sources: Optional[dict] = None,
-           stale_after: float = 30.0) -> str:
+           stale_after: float = 30.0, expand: bool = True) -> str:
     """The whole node's sensor state as one page of text."""
     sources = sources if sources is not None else column_sources()
     out: list[str] = []
@@ -272,6 +344,20 @@ def render(snap: dict, *, path: str = "", sources: Optional[dict] = None,
             )
         out.append("")
 
+    # Break out the columns that hold many values in one cell.  Grouping them
+    # kept the CSV narrow, which is the right trade for storage and the wrong
+    # one for looking at: 26 per-module values collapsed to one hex string are
+    # captured but not visible, and something you cannot see you will not check.
+    if expand:
+        for column, (title, expander) in EXPANSIONS.items():
+            info = snap["columns"].get(column)
+            if not info or info["value"] is None:
+                continue
+            out.append(f"-- {title} " + "-" * max(0, 75 - len(title)))
+            for label, value in expander(str(info["value"])):
+                out.append(f"  {label:<28} {value}")
+            out.append("")
+
     out.append("=" * 78)
     if quiet:
         out.append(f"NOT ANSWERING ({len(quiet)}): {', '.join(quiet)}")
@@ -311,6 +397,11 @@ def main(argv: Optional[list[str]] = None) -> int:
              "(default: 200)",
     )
     parser.add_argument(
+        "--compact", action="store_true",
+        help="do not break multi-value columns out into their individual "
+             "values (0x2B43's 26 per-module readings and the raw byte fields)",
+    )
+    parser.add_argument(
         "--stale-after", type=float, default=30.0,
         help="flag a column STALE once its last value is this old (default: 30)",
     )
@@ -326,7 +417,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         except OSError as exc:
             print(f"cannot read {path}: {exc}", file=sys.stderr)
             return 2
-        print(render(snapshot(rows[-args.window:]), path=path))
+        print(render(snapshot(rows[-args.window:]), path=path,
+                     stale_after=args.stale_after, expand=not args.compact))
         return 0
 
     if not args.watch:

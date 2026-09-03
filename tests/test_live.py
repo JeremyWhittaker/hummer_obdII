@@ -150,6 +150,73 @@ class TestRenderFlagsWhatIsWrong(unittest.TestCase):
         self.assertIn("0x2885", text)
 
 
+class TestGroupedColumnsAreBrokenOut(unittest.TestCase):
+    """A value that is captured but not visible will not get checked."""
+
+    #: A real 0x2B43 reply from the vehicle.
+    ARRAY = "C3C3C4C4C4C4C4C4C4C4C4C4C4C4C4C4C4C4C4C4C4C4C4C4C5C4"
+
+    def test_all_twenty_six_values_are_shown_individually(self):
+        entries = live._expand_array(self.ARRAY)
+        self.assertEqual(len(entries), 26)
+        for index, (label, _value) in enumerate(entries):
+            with self.subTest(index=index):
+                self.assertIn(f"{index:02d}", label)
+
+    def test_each_value_is_shown_against_its_own_block(self):
+        # Blocks matter: the two halves sit at slightly different levels, so a
+        # drift measured against the whole array would flag every member of the
+        # lower block and hide a real outlier inside it.
+        blocks = [label.split("block ")[1].rstrip(")") for label, _ in
+                  live._expand_array(self.ARRAY)]
+        self.assertEqual(blocks[:2], ["?", "?"])
+        self.assertEqual(set(blocks[2:14]), {"A"})
+        self.assertEqual(set(blocks[14:]), {"B"})
+
+    def test_a_module_pulling_away_from_its_neighbours_is_flagged(self):
+        # One value dragged well below its block; the rest identical.
+        raw = bytearray(bytes.fromhex(self.ARRAY))
+        raw[7] = raw[7] - 6
+        entries = live._expand_array(raw.hex().upper())
+        self.assertIn("drifting", entries[7][1])
+        # And its neighbours are not flagged with it.
+        self.assertNotIn("drifting", entries[6][1])
+        self.assertNotIn("drifting", entries[8][1])
+
+    def test_a_flat_array_flags_nothing(self):
+        entries = live._expand_array("C4" * 26)
+        self.assertFalse([e for e in entries if "drifting" in e[1]])
+
+    def test_undecoded_bytes_are_shown_as_hex_and_decimal(self):
+        entries = live._expand_bytes("740FB317")
+        self.assertEqual(len(entries), 4)
+        self.assertIn("0x74", entries[0][1])
+        self.assertIn("116", entries[0][1])
+        self.assertIn("23", entries[3][1])
+
+    def test_an_unparseable_value_does_not_raise(self):
+        for expander in (live._expand_array, live._expand_bytes):
+            with self.subTest(expander=expander.__name__):
+                self.assertTrue(expander("not hex at all"))
+
+    def test_the_view_breaks_the_array_out_by_default(self):
+        rows = _rows([(0, {"array_2b43": self.ARRAY}), (5, {"array_2b43": self.ARRAY})])
+        text = render(snapshot(rows), path="drive.csv")
+        self.assertIn("value 00", text)
+        self.assertIn("value 25", text)
+
+    def test_compact_mode_leaves_it_collapsed(self):
+        rows = _rows([(0, {"array_2b43": self.ARRAY}), (5, {"array_2b43": self.ARRAY})])
+        text = render(snapshot(rows), path="drive.csv", expand=False)
+        self.assertNotIn("value 00", text)
+
+    def test_a_column_absent_from_an_older_session_is_skipped(self):
+        # cell_extra_raw did not exist when the early sessions were recorded.
+        rows = _rows([(0, {"pack_v": 390.0}), (5, {"pack_v": 391.0})])
+        text = render(snapshot(rows), path="drive.csv")
+        self.assertNotIn("0x2AF5 -- the 4 trailing bytes", text)
+
+
 class TestNeverTouchesTheVehicle(unittest.TestCase):
     """Safe to run at any time, including while driving."""
 

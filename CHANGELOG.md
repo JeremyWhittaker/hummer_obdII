@@ -20,6 +20,38 @@ discount.
 
 ### Added
 
+- **Columns holding several values are broken out individually.** `0x2B43`'s
+  26 per-module readings were captured every sample and stored as one hex
+  string; the live view now shows each one on its own line with **its drift
+  from its own block's median**. Drift is the useful figure: absolute values
+  move together as the pack charges, so a single value pulling away from its
+  neighbours is the earliest visible sign of one module going bad, and it shows
+  long before it moves the pack-wide min/max envelope. The two blocks are
+  measured, not assumed, and drift is computed within a block because the two
+  halves sit at different levels -- a whole-array comparison would flag every
+  member of the lower block and hide a real outlier inside it. `--compact`
+  restores the collapsed view.
+
+- **`0x2AF5`'s four discarded bytes are kept.** Measured over 1315 reassembled
+  replies, that identifier always answers with ten bytes and the decoder read
+  six. Four per sample were dropped before reaching the CSV, so nothing later
+  could recover them and nothing revealed they existed. They are preserved raw
+  in a new `cell_extra_raw` column, deliberately undecoded: byte 9 is constant
+  at 23 across all 1315 samples and byte 7 takes only seven values between 13
+  and 24, which is what indices look like rather than measurements. Naming a
+  column after a guess is worse than keeping bytes under a plain name.
+
+- **[Pack architecture](docs/PACK_ARCHITECTURE.md), derived from the vehicle's
+  own recordings.** 96 cells in series, measured as `pack_v / cell_avg_v` over
+  297 samples -- mean 95.991, standard deviation 0.041 -- from two identifiers
+  on two different modules, so the ratio is not one decoder's artefact. All 26
+  values of `0x2B43` track state of charge at +0.995 or better, and split into
+  two statistically distinct blocks of twelve: spread across the 24 is 2.1x the
+  spread within either block. Twelve modules of eight cells is 96, which is
+  what the voltage ratio independently measures. The document separates what is
+  measured from what is inferred, and says plainly which parts are arithmetic
+  on figures this node never measured.
+
 - **A live text view of every sensor, and whether it is still answering.**
   `hummer_obd.live` (`hummer-obd-live`, `--watch` to refresh) prints one line
   per column: the value, the identifier carrying it, how long since it last
