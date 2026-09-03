@@ -68,6 +68,11 @@ was put to it once:
 222AF5  ->  142AF1CD 03 7F 22 31
 222B43  ->  142AF1CD 03 7F 22 31
 
+**Superseded in part on 2026-09-03**: `CD` was retested at CAN priority `0x18`
+as well and refuses there too, so the conclusion below holds — but module `40`,
+recorded elsewhere in this file as silent, turned out to be answering at `0x18`
+all along. See [CAN priority](CAN_PRIORITY.md) for the full matrix.
+
 On 2026-09-03 it was asked thirteen more: the four CB-proven identifiers left
 out above (27C7, 27C0, 0046, 5401), the five discovered at CB that day (27BF,
 27BB, 27B5, 2709, 2AF1), and four ISO 14229-1 standard identification DIDs

@@ -320,6 +320,10 @@ See [Validation](docs/VALIDATION.md) for the test matrix and evidence policy.
   data handling.
 - [Validation](docs/VALIDATION.md) — automated and hardware-backed acceptance
   results.
+- [CAN priority](docs/CAN_PRIORITY.md) — the priority each module answers
+  service 22 at, measured at both. There is no universal one: module `28`
+  answers only at `0x14` and module `40` only at `0x18`, which is why an
+  address group carries its own.
 - [Pack architecture](docs/PACK_ARCHITECTURE.md) — what the vehicle's own data
   says about its battery: 96 cells in series measured from two independent
   identifiers, and `0x2B43` resolved into 26 per-module values.

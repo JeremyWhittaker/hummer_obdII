@@ -42,6 +42,24 @@ Each signal carries one, and they mean different things:
 | Cell spread | derived | `(max - min)` | mV | **measured** |
 | 26-element array | `0x2B43` | none applied | — | **raw** |
 | Charger field | `0x5401` | none applied | — | **raw** |
+| 24-element array | `0x2AF1` | none applied | — | **raw** |
+| `0x2AF5` trailing bytes | `0x2AF5` | `[B6:B9]`, none applied | — | **raw** |
+| Regeneration field | `0x27BF` | none applied | — | **raw** |
+| Thermal-management energy | `0x27BB` | none applied | — | **raw** |
+| Thermal-management distance | `0x27B5` | none applied | — | **raw** |
+| A/C compressor temperature | `0x2709` | none applied | — | **raw** |
+
+`0x2AF5` answers with **ten** bytes, not six. The decoder read the first six and
+discarded the rest for as long as it existed; they are preserved now. Two of
+them do not move: byte 9 held at 23 and byte 7 at 15 through a parked pack, a
+117 km/h cruise and a 97.8 kW pull that sagged the pack from 384.88 to
+381.73 V. A value that does not move across that range is not measuring it.
+
+`0x2AF1` returns **twenty-four** values, which is the module count three
+independent structural results agree on — see [pack
+architecture](PACK_ARCHITECTURE.md). The source calls them module temperatures
+and under `(x - 40) / 2` they land within 2 °C of the pack figure, which is one
+sample at one temperature and therefore not a scaling.
 
 ### Charge/discharge power is derived, not read
 
@@ -144,9 +162,45 @@ arithmetic.
 | Signal | Identifier | Scaling | Unit | Level |
 |---|---|---|---|---|
 | Module supply voltage ×3 | `0x33E5` | `B0 / 10` | V | **read** |
+| Pack voltage, at all three | `0x2885` | `[B0:B1] / 100` | V | **measured** |
 
-All three answer independently: 13.2 / 13.1 / 13.1 V. This is the **12 V
-domain**, not traction-pack voltage, and must never be presented as one.
+All three answer `0x33E5` independently: 13.2 / 13.1 / 13.1 V. This is the
+**12 V domain**, not traction-pack voltage, and must never be presented as one.
+
+`0x2885` was proven only at module `17` until 2026-09-03, when asking at
+priority `0x18` had `1D` and `1E` answer it too — 382.39 V and 382.37 V against
+a `pack_v` of 382.65 V read from `17` in the same minute. Three independent
+sources for pack voltage is a cross-check the project did not previously have.
+Module `1E` had exactly one identifier ever put to it before that, and that one
+a 12 V reading.
+
+---
+
+## 3b. Body control — module `40` `BCM-BodyControl`
+
+**Reachable only at CAN priority `0x18`.** At `0x14` it returns nothing at all,
+which is why it was documented as unreachable for a day. See [CAN
+priority](CAN_PRIORITY.md).
+
+| Signal | Identifier | Scaling | Unit | Level |
+|---|---|---|---|---|
+| EVSE advertised current | `0x4149` | none applied | — | **raw** |
+| Battery group voltage 1 | `0x416C` | none applied | — | **raw** |
+| Battery group voltage 2 | `0x416D` | none applied | — | **raw** |
+| Battery group voltage 3 | `0x416E` | none applied | — | **raw** |
+| HV battery temperature | `0x434F` | none applied | — | **raw** |
+| Battery temperature A | `0x4127` | none applied | — | **raw** |
+| Battery temperature B | `0x4124` | none applied | — | **raw** |
+| Battery coolant temperature 1 | `0x40E5` | none applied | — | **raw** |
+| Battery coolant temperature 2 | `0x40E6` | none applied | — | **raw** |
+
+Every one is **raw**, and the reasons are specific rather than cautious:
+`0x416D` and `0x416E` returned identical values, `0x416C` read 2589 and then
+2593 a minute apart, and the vehicle was parked and unplugged — the one state
+that says least about an EVSE current. Nine payloads and nine open questions.
+
+Names in the first column are the *source's* labels, from OBDb/Cadillac-LYRIQ
+PR #14. This vehicle has confirmed only that it answers them.
 
 ---
 
@@ -179,7 +233,10 @@ link state, e-paper status panel.
 
 | Target | Result | What it means |
 |---|---|---|
-| `0x27C6` `0x27AF` `0x2AF5` `0x2B43` at module `CD` | `7F 22 31` requestOutOfRange | `CD` **is** alive and **does** serve service 22 — it returned a formed UDS refusal, not silence. It simply does not hold `CB`'s identifiers. The two battery managers are not mirrors, and `CD`'s identifier space is entirely undiscovered. |
+| Seventeen identifiers at module `CD`, at **both** priorities | `7F 22 31` requestOutOfRange | `CD` **is** alive and **does** serve service 22 — it returns a formed UDS refusal, not silence. But it refuses the ISO 14229-1 standard identification identifiers as readily as vendor ones, at `0x14` and `0x18` alike. A module declining `F187` through `F191` is not hiding a namespace behind identifiers nobody has guessed; it exposes nothing in the session it answers in. Asking for a different session is service `0x10`, which this project permanently forbids. `CD` is closed **from this access path**. |
+| `F187` `F188` `F189` `F191` at module `45` | `7F 22 31` requestOutOfRange | The gateway's first-ever service 22 requests. Reachable, conversing, and holding none of the four. Nothing else has ever been asked of it, and no sourced identifier for a GM gateway exists in this project. |
+| Nine identifiers at module `40`, at priority `0x14` | `NO DATA` | **This was misread.** Nothing replied, and the conclusion drawn was that the module was unreachable. It answers all nine at `0x18`. See [CAN priority](CAN_PRIORITY.md) — the failure was a hardcoded priority in this repository, not the vehicle. |
+| `0x4A7A` `0x4C2D` `0x4C2F` at module `28`, at priority `0x18` | `7F 22 11` serviceNotSupported | A response code new to this project. Not "no such identifier" but "not this service, at this priority" — module `28` answers these normally at `0x14`. It is the clearest statement available that priority is part of the addressing. |
 
 ---
 

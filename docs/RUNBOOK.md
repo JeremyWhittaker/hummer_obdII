@@ -229,6 +229,77 @@ Stop and disable it immediately if sleep behavior or 12 V draw is uncertain:
 sudo systemctl disable --now hummer-collector.service
 ```
 
+## Drive recorder
+
+`hummer-drive.service` is the service that produces almost all of this
+project's data, and until 2026-09-03 this runbook did not mention it.
+
+```bash
+systemctl status hummer-drive --no-pager
+journalctl -u hummer-drive -n 40 --no-pager
+```
+
+It records a session whenever the vehicle is awake and sends **only `ATRV`**
+while it sleeps. Settings live in `/etc/default/hummer-drive`; sessions land in
+`evidence/sessions/drive-<timestamp>.csv`, one file per wake period.
+
+### Restarting it
+
+Restarts need no password — `scripts/enable_service_control.sh` installs a
+sudoers rule scoped to exactly these units:
+
+```bash
+sudo systemctl restart hummer-drive
+```
+
+That rule exists because the recorder's code can be updated with no privilege
+at all while the *running process* only picks up new code on a restart. A fix
+could otherwise sit inert on disk while the vehicle drove away, which is exactly
+what happened once.
+
+### Reading what it collected
+
+Three commands, none of which opens the serial device. All are safe to run at
+any time, including while driving, and add no traffic to the vehicle:
+
+```bash
+# Every sensor, and how long since each last answered.
+hummer-obd-live --watch
+
+# What a completed session shows: distance, energy, efficiency, capture quality.
+hummer-obd-analyze --dir evidence/sessions
+
+# What each module says it supports, using J1979's own bitmaps.
+hummer-obd-discover --confirm
+```
+
+`hummer-obd-live` reads the session the recorder is already writing rather than
+competing for `/dev/rfcomm0`. **Never run a second diagnostic process against
+that device while `hummer-drive` owns it** — two writers on one serial link
+corrupt both streams. Anything that transmits (`hummer-obd-discover`,
+`hummer-obd-enhanced`) needs the recorder stopped first:
+
+```bash
+sudo systemctl stop hummer-drive
+# ... probe ...
+sudo systemctl start hummer-drive
+```
+
+Pull the sessions to a workstation **before** stopping it. Data first.
+
+### When it looks stuck
+
+| Symptom | Cause | What to do |
+|---|---|---|
+| `adapter did not answer ATRV (n); retrying` | A dropped read. Normal on a moving vehicle. | Nothing. Three prompt retries precede any action. |
+| `adapter still silent; reopening the link` | The link is gone, usually because the vehicle slept and the OBD port lost power. | Nothing. It reopens on its own; `rfcomm` binds connect-on-open. |
+| `decoded nothing (n/3)` | Reads are reaching nothing. | Nothing yet — after three it exits and systemd restarts it with a fresh device. |
+| Service `active` but no new rows for hours | Check `rfcomm -a`. `closed` with the vehicle awake is a genuine fault. | `sudo systemctl restart hummer-drive` |
+
+A session that ends is not a fault: one file per wake period is the design.
+
+---
+
 ## Display
 
 Check the service and its last updates:

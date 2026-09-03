@@ -35,6 +35,29 @@ discount.
   enumerated identifiers; neither is in the drive recorder, and the unattended
   collector still refuses service 22 entirely.
 
+- **[CAN priority](docs/CAN_PRIORITY.md), the day's architectural finding,
+  written down.** The full matrix of which module answers service 22 at which
+  priority, measured at both, with the three failure shapes distinguished:
+  `NO DATA` (nothing replied — says nothing about the identifier), `7F 22 31`
+  (present, no such identifier), and `7F 22 11` (present, not this service at
+  this priority — new to this project). It states what it does *not* establish
+  as carefully as what it does: no other priorities were tried, and why the
+  split falls on the chassis and body controllers is unmeasured.
+
+- **The telemetry catalog covers today's haul.** It is the single authoritative
+  list and was missing all of it: module `40`'s nine raw identifiers in a new
+  section, `CB`'s five new ones and `0x2AF5`'s recovered trailing bytes, pack
+  voltage answering at all three drive motor controllers, and four new entries
+  in the refusals table — including the one recording that module `40`'s
+  silence was **misread** rather than quietly correcting it.
+
+- **The runbook covers the drive recorder.** It produces almost all of this
+  project's data and the operator documentation did not mention it: how to
+  restart it without a password, the three read-back commands that never open
+  the serial device, the rule that anything which transmits needs the recorder
+  stopped first (and the sessions pulled before that), and a table separating
+  its normal noisy log lines from a genuine fault.
+
 - **A link that died while parked could never be recovered.** `record()` revives
   a link that dies mid-session — that was fixed this morning — but nothing
   revived one that died while the vehicle was asleep, so the watch loop sat on
