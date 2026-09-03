@@ -51,6 +51,37 @@ discount.
 
 ### Fixed
 
+- **One dropped Bluetooth read ended a session as if the vehicle had gone to
+  sleep.** The recorder decided a session was over with
+  `(_volts(transport, timeout) or 0) < WAKE_VOLTS`. `_volts` returns `None` when
+  the adapter does not answer, and `or 0` turned that silence into 0 V -- below
+  every threshold, including the 13.2 V wake band. A moving vehicle glitches the
+  RFCOMM link, so a single transient timeout was enough to stop recording a
+  drive that was still happening. Silence is now explicitly not evidence of
+  sleep: an `_asleep()` helper ends a session only on a *measured* voltage below
+  the band, and a link that is genuinely gone is left to the read errors inside
+  `record()`. Found while arming the node for a real commute, before that
+  commute rather than after it.
+- **An unanswered `ATRV` cost five minutes of a live drive.** The watch loop
+  fell straight to `asleep_interval_s` (300 s) whenever the adapter did not
+  answer, so one dropped read stopped sampling for the length of a short
+  commute. The first `UNANSWERED_RETRIES` (3) silences now retry after
+  `UNANSWERED_INTERVAL_S` (5 s) before the slow watch resumes. This path still
+  sends nothing but `ATRV`, so the property that makes the unit safe to enable
+  at boot against a parked vehicle is unchanged, and the test asserting that a
+  dead adapter transmits only `ATRV` still passes.
+- **The drive recorder sampled at half the configured rate, and the config
+  explained why in terms that were wrong.** `record()` calls
+  `sleeper(interval_s)` *after* a completed cycle, so `DRIVE_INTERVAL_S` is a
+  trailing gap and the sample period is `cycle_time + DRIVE_INTERVAL_S`. With a
+  ~4.5 s cycle and the shipped `DRIVE_INTERVAL_S=5`, the measured period was
+  9.5 s: more than half of every drive went unsampled. The comment in
+  `config/hummer-drive.default` asserted that a value below the cycle time "is a
+  request for a backlog rather than a faster sample rate", which cannot happen
+  when the sleep is trailing -- nothing queues behind it. The default is now
+  `1`, which keeps a courtesy pause for the adapter and nearly doubles
+  resolution, and the comment states the actual relationship.
+
 - **A GM enhanced reply was parsed as an incomplete multi-frame message and
   discarded.** `split_can_header` recognised only the legislated `18 DA`/`18 DB`
   29-bit form. This vehicle answers an enhanced read as `14 2A F1 CB ...`, so

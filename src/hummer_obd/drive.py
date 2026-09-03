@@ -466,6 +466,31 @@ def _volts(transport: Transport, timeout: float) -> Optional[float]:
     return None
 
 
+#: How many times an unanswered ``ATRV`` is retried promptly before the watch
+#: drops back to the slow asleep cadence.  A moving vehicle glitches the RFCOMM
+#: link; treating the first silence as a sleeping vehicle costs a whole
+#: ``asleep_interval_s`` of a drive that is still happening.
+UNANSWERED_RETRIES: int = 3
+
+#: Gap between those prompt retries.
+UNANSWERED_INTERVAL_S: float = 5.0
+
+
+def _asleep(transport: Transport, timeout: float) -> bool:
+    """True only when the adapter *answered* and the answer is below the band.
+
+    An unanswered ``ATRV`` is **not** evidence of sleep.  Reading it as zero --
+    which is what ``(_volts(...) or 0) < WAKE_VOLTS`` did -- meant a single
+    transient Bluetooth timeout ended a session that was recording a drive,
+    because zero is below every threshold.  A vehicle shutting down reports a
+    real voltage; a link that is genuinely gone is what the read errors inside
+    :func:`record` are for.  So silence keeps the session, and only a measured
+    voltage can end it.
+    """
+    volts = _volts(transport, timeout)
+    return volts is not None and volts < WAKE_VOLTS
+
+
 def run_auto(
     transport: Transport,
     *,
@@ -491,12 +516,22 @@ def run_auto(
     produces its own file rather than one unbounded CSV.
     """
     awake = False
+    unanswered = 0
     while not stop():
         volts = _volts(transport, timeout)
         if volts is None:
-            say("adapter did not answer ATRV; waiting")
-            sleeper(asleep_interval_s)
+            # Only ATRV is ever sent on this path, so retrying promptly puts
+            # nothing extra on the CAN bus -- it just avoids spending five
+            # minutes asleep because one Bluetooth read timed out mid-drive.
+            unanswered += 1
+            if unanswered <= UNANSWERED_RETRIES:
+                say(f"adapter did not answer ATRV ({unanswered}); retrying")
+                sleeper(UNANSWERED_INTERVAL_S)
+            else:
+                say("adapter still silent; waiting")
+                sleeper(asleep_interval_s)
             continue
+        unanswered = 0
 
         if volts < WAKE_VOLTS:
             if awake:
@@ -532,7 +567,7 @@ def run_auto(
                 timeout=timeout,
                 sleeper=sleeper,
                 clock=clock,
-                stop_when=lambda: stop() or (_volts(transport, timeout) or 0) < WAKE_VOLTS,
+                stop_when=lambda: stop() or _asleep(transport, timeout),
                 row_sink=sink,
             )
         say(f"{session.cycles} cycles -> {path}")

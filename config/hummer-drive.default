@@ -1,11 +1,17 @@
 # Defaults for hummer-drive.service.  Installed to /etc/default/hummer-drive.
 DRIVE_DEVICE=/dev/rfcomm0
 
-# How often to sample while the vehicle is awake.  A full cycle is 14 enhanced
-# identifiers across three modules plus two standard PIDs and takes roughly
-# five seconds on this adapter, so anything below that is a request for a
-# backlog rather than a faster sample rate.
-DRIVE_INTERVAL_S=5
+# Gap left *after* each completed cycle while the vehicle is awake -- not the
+# sample period.  drive.record() sleeps this long once a cycle has finished, so
+# the period is cycle_time + DRIVE_INTERVAL_S and nothing can ever queue up
+# behind it.  An earlier note here claimed a value below the ~4.5 s cycle time
+# "is a request for a backlog"; that was wrong, and it cost real resolution:
+# with DRIVE_INTERVAL_S=5 the measured period was 9.5 s, so more than half of
+# every drive went unsampled.  A full cycle is 14 enhanced identifiers across
+# three modules plus two standard PIDs and takes roughly 4.5 s on this adapter,
+# so 1 s keeps a courtesy pause for the adapter while very nearly doubling the
+# sample rate.
+DRIVE_INTERVAL_S=1
 
 # How often to check whether the vehicle has woken.  Only ATRV is sent in this
 # state, and it never reaches the CAN bus.

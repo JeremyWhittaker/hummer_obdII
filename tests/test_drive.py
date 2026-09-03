@@ -389,6 +389,79 @@ class TestAutoMode(unittest.TestCase):
         self.assertEqual(set(fake.sent), {"ATRV"})
 
 
+class _Silent(_Fake):
+    """An adapter that is reachable but answers nothing.
+
+    This is what a transient RFCOMM glitch looks like from inside the recorder:
+    the write succeeds and the read comes back empty.
+    """
+
+    def send(self, command, timeout=None):
+        self.sent.append(command)
+        return Response(command=command, data=b"", elapsed_s=0.0)
+
+
+class TestSilenceIsNotSleep(unittest.TestCase):
+    """Only a measured voltage may end a session.
+
+    ``stop_when`` used to read ``(_volts(...) or 0) < WAKE_VOLTS``, so an
+    unanswered ``ATRV`` became 0 V -- below every threshold -- and one Bluetooth
+    timeout ended a session that was recording a drive.
+    """
+
+    def test_a_silent_adapter_is_not_reported_asleep(self):
+        self.assertFalse(drive._asleep(_Silent(), 1.0))
+
+    def test_a_measured_low_voltage_is_reported_asleep(self):
+        self.assertTrue(drive._asleep(_Fake(volts_sequence=[12.8]), 1.0))
+
+    def test_a_measured_running_voltage_is_not_reported_asleep(self):
+        self.assertFalse(drive._asleep(_Fake(volts_sequence=[13.9]), 1.0))
+
+    def test_the_threshold_is_the_only_thing_that_decides(self):
+        for volts, asleep in ((13.19, True), (13.2, False), (13.21, False)):
+            with self.subTest(volts=volts):
+                self.assertEqual(
+                    drive._asleep(_Fake(volts_sequence=[volts]), 1.0), asleep
+                )
+
+
+class TestSilentAdapterRetriesPromptly(unittest.TestCase):
+    """A dropped read must not cost a whole asleep interval of a live drive."""
+
+    def test_first_silences_retry_fast_then_fall_back_to_the_slow_watch(self):
+        fake = _Silent()
+        slept = []
+        calls = {"n": 0}
+
+        def stop():
+            calls["n"] += 1
+            return calls["n"] > drive.UNANSWERED_RETRIES + 1
+
+        run_auto(
+            fake, output_dir="/tmp", sleeper=slept.append, stop=stop,
+            asleep_interval_s=300.0,
+        )
+        # Still the property that makes this safe to run against a parked
+        # vehicle: retrying sooner must not mean sending anything more.
+        self.assertEqual(set(fake.sent), {"ATRV"})
+        self.assertEqual(
+            slept[: drive.UNANSWERED_RETRIES],
+            [drive.UNANSWERED_INTERVAL_S] * drive.UNANSWERED_RETRIES,
+            f"the first {drive.UNANSWERED_RETRIES} silences should retry "
+            f"promptly, slept {slept}",
+        )
+        self.assertEqual(
+            slept[drive.UNANSWERED_RETRIES], 300.0,
+            f"a persistently silent adapter should fall back to the slow "
+            f"watch, slept {slept}",
+        )
+
+    def test_prompt_retries_are_shorter_than_the_slow_watch(self):
+        self.assertLess(drive.UNANSWERED_INTERVAL_S, 300.0)
+        self.assertGreater(drive.UNANSWERED_RETRIES, 0)
+
+
 class TestWakeThreshold(unittest.TestCase):
     def test_threshold_sits_between_the_measured_bands(self):
         # Asleep measured 12.7-12.9 V, running 13.7-13.9 V.
