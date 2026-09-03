@@ -58,6 +58,18 @@ class TestColumnSourcesAreDerivedNotWrittenDown(unittest.TestCase):
             with self.subTest(column=column):
                 self.assertIn("computed", sources[column][0])
 
+    def test_the_standard_pid_label_follows_the_addressing_it_describes(self):
+        # These were a functional broadcast until they were pointed at one
+        # module.  A label reading "broadcast" would have survived that change
+        # and quietly lied, which is the drift this whole map exists to avoid.
+        where, _did = column_sources()["speed_kph"]
+        header = next(c for c in drive.STANDARD_ADDRESS if c.startswith("ATSH"))
+        if header.startswith("ATSHDA"):
+            self.assertIn(header[6:8], where)
+            self.assertNotIn("broadcast", where)
+        else:
+            self.assertIn("broadcast", where)
+
     def test_the_adapter_only_reading_is_marked_as_touching_no_bus(self):
         # This is the claim that makes the recorder safe to leave enabled.
         self.assertIn("CAN", column_sources()["volts"][0])

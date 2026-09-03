@@ -122,8 +122,21 @@ def column_sources() -> dict[str, tuple[str, str]]:
     for name in BOOKKEEPING:
         sources[name] = ("recorder bookkeeping", "")
     sources["volts"] = ("adapter -- ATRV, never reaches the CAN bus", "ATRV")
+    # Read the addressing out of STANDARD_ADDRESS rather than describing it:
+    # these PIDs were a functional broadcast until they were pointed at one
+    # module, and a label saying "broadcast" would have survived that change
+    # and quietly lied about it.
+    standard_header = next(
+        (c for c in drive.STANDARD_ADDRESS if c.startswith("ATSH")), ""
+    )
+    if standard_header.startswith("ATSHDA"):
+        standard_where = f"standard OBD, asked of module {standard_header[6:8]}"
+    elif standard_header:
+        standard_where = "standard OBD, broadcast to every module"
+    else:
+        standard_where = "standard OBD"
     for request, column in drive.STANDARD_PIDS:
-        sources[column] = ("standard OBD, broadcast to every module", request)
+        sources[column] = (standard_where, request)
     for group in drive.GROUPS:
         # 'ATSHDACBF1' -> the module byte is characters 6:8 ("CB").
         module = group.address[0][6:8]
