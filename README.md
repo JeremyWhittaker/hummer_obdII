@@ -73,7 +73,8 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | **HV cell voltage, average / minimum / maximum** | **proven**: `0x2AF5` returns 4.0185 / 4.0171 / 4.0220 V — a **4.9 mV** cell spread. The published `min < avg < max` ordering holds exactly, which a wrong byte offset would almost always break, and 4.02 V is where a cell sits at the 80.85 % this truck independently reported |
 | **Drive-motor module voltage** | `0x33E5` from `DMC2-DriveMotorCtrl2`, 13.1 V |
 | **Chassis dynamics** | wheel speed at all four corners, brake pressure, steering angle, and lateral/longitudinal acceleration, from `BSCM-BrakeSystem`. Scalings were derived from captured test vectors and reproduce every one exactly |
-| **Automatic session recording** | `hummer-drive.service` records a decoded 25-column CSV whenever the vehicle is awake and sends **only `ATRV`** while it sleeps. Rows are flushed and `fsync`ed as they are taken, so a session survives the vehicle cutting power |
+| **Automatic session recording** | `hummer-drive.service` records a decoded 26-column CSV whenever the vehicle is awake and sends **only `ATRV`** while it sleeps. Rows are flushed and `fsync`ed as they are taken, so a session survives the vehicle cutting power |
+| **Charge / discharge power** | derived from the energy field's slope, because the published "charger DC power" identifier is non-zero at idle on this vehicle and does not scale to a measured rate. Validated against a real AC charge: 7.81 kW computed offline, 7.84 kW live |
 
 ### Deliberately not available
 
@@ -273,6 +274,9 @@ See [Validation](docs/VALIDATION.md) for the test matrix and evidence policy.
 - [Capabilities](docs/CAPABILITIES.md) — what the node, the adapter, and this
   vehicle can actually do, split into proven, available-but-unproven, and
   out of scope.
+- **[Telemetry catalog](docs/TELEMETRY_CATALOG.md) — the single authoritative
+  list of every signal this node can read, with its identifier, scaling, unit
+  and evidence level. Start here.**
 - [Module map](docs/GM_MODULE_MAP.md) — the eight modules this vehicle named
   for itself, what each has answered, and where sourced identifiers go next.
 - [Enhanced PID validation](docs/ENHANCED_PID_VALIDATION.md) — the evidence bar

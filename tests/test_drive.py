@@ -261,6 +261,36 @@ class TestCycleShape(unittest.TestCase):
         self.assertEqual(len(seen), 3)
         self.assertEqual(seen, session.rows)
 
+    def test_power_is_derived_from_the_energy_slope(self):
+        # 0x5401 is published as charger power but is non-zero at idle on this
+        # vehicle and did not scale to a measured AC charge, so power comes
+        # from the energy field's slope instead.
+        fake = _Fake()
+        rising = ["142AF1CB056227AF3B0C\r\r>", "142AF1CB056227AF3B70\r\r>"]
+
+        class _Rising(_Fake):
+            def send(self, command, timeout=None):
+                if command == "2227AF" and rising:
+                    self.sent.append(command)
+                    data = rising.pop(0)
+                    return Response(command=command, data=data.encode(), elapsed_s=0.01)
+                return super().send(command, timeout)
+
+        fake = _Rising()
+        clock = {"t": 0.0}
+
+        def tick():
+            clock["t"] += 60.0
+            return clock["t"]
+
+        session = record(fake, max_cycles=2, sleeper=lambda s: None, clock=tick)
+        self.assertIsNone(session.rows[0].get("power_kw"), "no slope from one point")
+        self.assertIn("power_kw", session.rows[1])
+        self.assertGreater(session.rows[1]["power_kw"], 0, "energy rose, so charging")
+
+    def test_power_column_is_declared(self):
+        self.assertIn("power_kw", COLUMNS)
+
     def test_bounds_are_honoured(self):
         fake = _Fake()
         self.assertEqual(record(fake, max_cycles=3, sleeper=lambda s: None).cycles, 3)

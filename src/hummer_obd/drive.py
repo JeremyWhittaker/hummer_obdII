@@ -197,7 +197,7 @@ COLUMNS: tuple[str, ...] = (
     "utc", "elapsed_s", "volts",
     "speed_kph", "odometer_km",
     "soc_pct", "energy_kwh", "range_mi", "dist_since_chg_mi",
-    "temp_f", "charger_5401_raw",
+    "temp_f", "charger_5401_raw", "power_kw",
     "cell_avg_v", "cell_min_v", "cell_max_v", "cell_spread_mv",
     "dmc2_v",
     "wheel_fl_kph", "wheel_fr_kph", "wheel_rl_kph", "wheel_rr_kph",
@@ -318,6 +318,22 @@ def record(
         except TransportError as exc:
             session.errors.append(f"restore priority: {exc}")
 
+        # Charge/discharge power, derived rather than read.
+        #
+        # 0x5401 is published as "charger DC power" but this vehicle answers it
+        # with a single byte that is non-zero at idle (0x96) and did not scale
+        # to the measured rate during an AC charge (0x93), so it is not used
+        # for this.  The energy field, by contrast, moves smoothly and with
+        # high resolution -- 80 distinct values across ten minutes -- which
+        # makes its slope a sound power measurement.  Positive is charging.
+        if len(session.rows) >= 1 and "energy_kwh" in row:
+            prev = session.rows[-1]
+            if "energy_kwh" in prev and "elapsed_s" in prev:
+                hours = (row["elapsed_s"] - prev["elapsed_s"]) / 3600.0
+                if hours > 0:
+                    delta = row["energy_kwh"] - prev["energy_kwh"]
+                    row["power_kw"] = round(delta / hours, 2)
+
         session.rows.append(row)
         session.cycles += 1
         # Persisted before the next sample rather than at the end.  A
@@ -331,7 +347,7 @@ def record(
             f"speed={row.get('speed_kph')} wheels="
             f"{row.get('wheel_fl_kph')}/{row.get('wheel_fr_kph')}/"
             f"{row.get('wheel_rl_kph')}/{row.get('wheel_rr_kph')} "
-            f"steer={row.get('steering_deg')} latg={row.get('lateral_g')}"
+            f"steer={row.get('steering_deg')} kW={row.get('power_kw')}"
         )
 
         if max_cycles and session.cycles >= max_cycles:
