@@ -53,7 +53,13 @@ KM_PER_MILE: float = 1.609344
 #: Columns whose values are physical quantities.  Anything not listed is
 #: carried through as text (``utc``) or left alone (``array_2b43``, which is an
 #: opaque per-cell array rather than a scalar).
-_TEXT_COLUMNS = frozenset({"utc", "array_2b43", "charger_5401_raw"})
+#: Columns that carry text rather than a quantity.  Getting this list wrong is
+#: silent: a hex field left out of it is fed to ``_number``, fails to parse, and
+#: reads as a column the vehicle never answered -- which is exactly what
+#: happened to ``cell_extra_raw`` the first time it was recorded live.
+_TEXT_COLUMNS = frozenset({
+    "utc", "array_2b43", "charger_5401_raw", "cell_extra_raw",
+})
 
 #: A sample period more than this multiple of the median is treated as a gap
 #: rather than as jitter.

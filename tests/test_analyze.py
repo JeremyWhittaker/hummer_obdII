@@ -77,6 +77,47 @@ class TestDistanceAndSpeed(unittest.TestCase):
         self.assertEqual(report["motion"]["max_speed_kph"], 60.0)
 
 
+class TestHexColumnsAreNotParsedAsNumbers(unittest.TestCase):
+    """A hex field missing from the text-column set fails silently.
+
+    It gets fed to the number parser, fails, and reads as a column the vehicle
+    never answered.  That is what happened to `cell_extra_raw` on its first
+    live drive: the recorder captured it correctly and the reader threw it away.
+    """
+
+    def test_every_hex_column_survives_a_round_trip(self):
+        # Values taken from a real drive: these all begin with a digit, so a
+        # naive float() parse fails rather than truncating, which is why the
+        # failure was invisible until a column read 0/33.
+        samples = {
+            "cell_extra_raw": "760FB817",
+            "charger_5401_raw": "00",
+            "array_2b43": "CCCCCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCECD",
+        }
+        header = list(COLUMNS)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "drive-20260903T194958Z.csv")
+            with open(path, "w", encoding="utf-8", newline="") as handle:
+                handle.write(",".join(header) + "\n")
+                for elapsed in ("4.412", "7.16"):
+                    row = dict(samples, utc="2026-09-03T19:50:04.013285Z",
+                               elapsed_s=elapsed, pack_v="384.88")
+                    handle.write(",".join(str(row.get(k, "")) for k in header) + "\n")
+            rows, _warnings, _header = read_session(path)
+        for column, expected in samples.items():
+            with self.subTest(column=column):
+                self.assertEqual(
+                    rows[0][column], expected,
+                    f"{column} must survive as text, not become None",
+                )
+
+    def test_a_hex_value_beginning_with_a_digit_is_not_silently_dropped(self):
+        # "760FB817" starts with a digit, so the unit-suffix stripper leaves it
+        # alone and float() then rejects the whole string.
+        self.assertIsNone(analyze._number("760FB817"))
+        self.assertIn("cell_extra_raw", analyze._TEXT_COLUMNS)
+
+
 class TestDistanceSourcePreference(unittest.TestCase):
     """The obvious source is the least reliable one on this vehicle.
 
