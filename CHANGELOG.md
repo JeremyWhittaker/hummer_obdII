@@ -20,6 +20,27 @@ discount.
 
 ### Added
 
+- **The node can restart its own recorder without a password.**
+  `scripts/enable_service_control.sh` installs a narrow sudoers rule granting
+  start/stop/restart on four named hummer units and nothing else. This exists
+  because the recorder's code lives in the operator's home directory and can be
+  updated with no privilege at all, while the running process only picks up new
+  code on a restart -- so a fix could be deployed and then sit inert on disk
+  while the vehicle drove away. That is not hypothetical: on 2026-09-03 the
+  wake-detection fix reached the node before the drive home and was not
+  running, because nobody was there to type a password.
+
+  Each rule is an exact command string, so no arguments can be appended, and
+  there is deliberately no wildcard: `systemctl` can run arbitrary code as root
+  through transient units, so `systemctl *` would be a root escalation wearing
+  a service-manager costume. The units already run as the operator's own user,
+  so restarting them grants nothing that user could not already do. The file is
+  checked with `visudo -c` and installed only if it parses, because an invalid
+  file in `/etc/sudoers.d` breaks sudo for every user and recovering it needs
+  physical access to a machine that lives in a vehicle. The script finishes by
+  restarting once more *as the operator* rather than as root, since a rule that
+  installs cleanly but does not work would be discovered at the worst moment.
+
 - **A recorded session can now be read back.** `hummer_obd.analyze`
   (`hummer-obd-analyze`) turns a `drive-*.csv` into a report, entirely offline
   and without opening the serial port -- the same constraint the capabilities
