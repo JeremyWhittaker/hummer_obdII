@@ -138,6 +138,32 @@ you. This also never opens the serial device -- it reads the session the
 recorder is already writing, so it is safe to run while driving and adds no
 traffic to the vehicle.
 
+### Every command
+
+Twelve are installed; the list is `[project.scripts]` in `pyproject.toml`.
+The right-hand column is the one that matters operationally.
+
+| Command | What it does | Touches the vehicle? |
+|---|---|---|
+| `hummer-obd-capabilities` | Sanitized report of a node's live state | **no** |
+| `hummer-obd-analyze` | Reads a recorded session back | **no** |
+| `hummer-obd-live` | Every sensor and how long since it answered | **no** |
+| `hummer-obd-export` | Local export of stored telemetry | **no** |
+| `hummer-obd-drive` | The automatic session recorder (a service) | yes — `ATRV` only while asleep |
+| `hummer-obd-collector` | Reconnect-aware poller, disabled by default | yes — standard OBD only |
+| `hummer-obd-probe` | Supervised one-shot probe, and offline replay | yes |
+| `hummer-obd-discover` | Per-module support census, J1979 bitmaps only | yes — no vendor identifier |
+| `hummer-obd-enhanced` | Supervised enhanced reads, one exact profile | yes — enumerated identifiers |
+| `hummer-obd-voltage` | 12 V watch that provably transmits nothing | yes — `ATRV` only |
+| `hummer-obd-display` | Renders the e-paper status page | no |
+| `hummer-obd-recover` | Re-binds an already bonded adapter | no |
+
+Only one process may own `/dev/rfcomm0` at a time. Everything in the "no"
+column reads files the recorder already wrote, so it is safe alongside it —
+including while driving. Everything else needs `hummer-drive` stopped first,
+and the sessions pulled to a workstation before that. See the
+[runbook](docs/RUNBOOK.md#drive-recorder).
+
 ## System overview
 
 ```mermaid
