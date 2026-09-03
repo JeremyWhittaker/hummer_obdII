@@ -540,10 +540,34 @@ def write_csv(session: Session, path: str) -> None:
             writer.writerow(row)
 
 
-#: Connector volts at or above which the vehicle is treated as awake.  The
-#: measured bands on this vehicle are 12.7-12.9 V asleep and 13.7-13.9 V
-#: running, so this sits in the gap with room either side.
-WAKE_VOLTS: float = 13.2
+#: Connector volts at or above which the vehicle is treated as awake.
+#:
+#: This was 13.2, chosen against measured bands of 12.7-12.9 V asleep and
+#: 13.7-13.9 V running.  Both figures were taken from a *parked* vehicle, and
+#: driving turns out to sit between them.  The ATRV probes across the drive
+#: that was lost on 2026-09-03, one every 300 s:
+#:
+#:     15:48:30  13.2 V   shutting down
+#:     15:48:35  12.9 V   still falling
+#:     15:48:39  12.7 V   off
+#:     15:53:39  13.1 V   driving
+#:     15:58:39  13.1 V   driving
+#:     16:03:39  13.0 V   driving
+#:     16:08:40  13.2 V   arrived, DC-DC boosting again
+#:
+#: A vehicle that has been awake a while charges its 12 V battery full, and the
+#: DC-DC then holds a float around 13.0-13.1 V -- *below* the old threshold.
+#: 12.9 V was never a steady state; it was one sample on the way down.  So the
+#: bands do not overlap after all: asleep tops out at 12.9 and driving bottoms
+#: out at 13.0, and 12.95 is the only value that separates them at the 0.1 V
+#: resolution ATRV reports.
+#:
+#: A false wake is now cheap, which is what makes this margin acceptable: a
+#: sleeping vehicle answers nothing, so the dead-cycle check ends the session
+#: within about three cycles having sent a handful of requests that no module
+#: replies to.  Before that check existed, a threshold this close to the
+#: sleeping band would have been reckless.
+WAKE_VOLTS: float = 12.95
 
 
 def _volts(transport: Transport, timeout: float) -> Optional[float]:

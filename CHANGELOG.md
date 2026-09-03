@@ -135,6 +135,29 @@ discount.
   rather than written back, so a column invented by the report is never listed
   in completeness as though the vehicle had sent it.
 
+- **The wake threshold sat above the voltage this vehicle drives at.**
+  `WAKE_VOLTS` was 13.2, chosen against bands measured on a *parked* vehicle:
+  12.7-12.9 V asleep, 13.7-13.9 V running. Driving turns out to sit between
+  them. The ATRV probes taken across the drive lost on 2026-09-03 read 13.1,
+  13.1 and 13.0 V -- every one below the threshold. A vehicle awake for a while
+  charges its 12 V battery full, and the DC-DC then holds a float near 13.0 V.
+
+  This corrects an earlier reading of the same evidence. The 12.9 V sample that
+  suggested the asleep and driving bands overlapped was a single point on the
+  way down during shutdown, not a steady state; the steady values are 12.7 V
+  asleep and 13.0-13.1 V driving. The bands do not overlap, and 12.95 is the
+  only value that separates them at the 0.1 V resolution `ATRV` reports.
+
+  Without this the earlier fix was not enough on its own: keeping a session
+  alive once started does nothing if the session can never start, and this
+  vehicle drove its whole commute without the rail once reaching 13.2 V.
+
+  The margin is acceptable now only because a false wake became cheap. A
+  sleeping vehicle answers nothing, so the dead-cycle check ends the session
+  within about three cycles having sent a handful of requests no module
+  replies to. Before that check existed, a threshold this close to the sleeping
+  band would have been reckless.
+
 - **A real 12.6-mile commute was recorded as "asleep", and voltage was the
   reason.** On 2026-09-03 the vehicle idled awake for 23 minutes at 13.9 V,
   which topped up its 12 V battery. The DC-DC converter then dropped to float,

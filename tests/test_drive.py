@@ -451,7 +451,10 @@ class TestSilenceIsNotSleep(unittest.TestCase):
         self.assertFalse(drive._asleep(_Fake(volts_sequence=[13.9]), 1.0))
 
     def test_the_threshold_is_the_only_thing_that_decides(self):
-        for volts, asleep in ((13.19, True), (13.2, False), (13.21, False)):
+        # Relative to WAKE_VOLTS rather than a literal: the threshold is
+        # evidence-driven and has moved once already.
+        edge = drive.WAKE_VOLTS
+        for volts, asleep in ((edge - 0.01, True), (edge, False), (edge + 0.01, False)):
             with self.subTest(volts=volts):
                 self.assertEqual(
                     drive._asleep(_Fake(volts_sequence=[volts]), 1.0), asleep
@@ -683,6 +686,25 @@ class TestWakeThreshold(unittest.TestCase):
         # Asleep measured 12.7-12.9 V, running 13.7-13.9 V.
         self.assertGreater(drive.WAKE_VOLTS, 12.9)
         self.assertLess(drive.WAKE_VOLTS, 13.7)
+
+    def test_the_threshold_is_below_every_voltage_measured_while_driving(self):
+        # The ATRV probes taken across the drive lost on 2026-09-03.  A
+        # threshold above any of these cannot detect this vehicle driving,
+        # which is exactly why that drive recorded nothing: the old 13.2 sat
+        # above all three.
+        for driving in (13.1, 13.1, 13.0):
+            with self.subTest(driving=driving):
+                self.assertLess(
+                    drive.WAKE_VOLTS, driving,
+                    "a vehicle measured driving at this voltage must read as awake",
+                )
+
+    def test_the_threshold_is_above_every_voltage_measured_asleep(self):
+        # The other half of the constraint: a parked vehicle must never be
+        # polled on the CAN bus.
+        for asleep in (12.7, 12.9):
+            with self.subTest(asleep=asleep):
+                self.assertGreater(drive.WAKE_VOLTS, asleep)
 
 
 if __name__ == "__main__":  # pragma: no cover
