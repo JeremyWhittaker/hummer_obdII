@@ -98,6 +98,26 @@ Report the live state of a node at any time, without touching the vehicle:
 hummer-obd-capabilities --root .
 ```
 
+Read back what a recorded drive or charge actually shows -- also offline, and
+also without opening the port:
+
+```bash
+hummer-obd-analyze --dir evidence/sessions --expected-period-s 5.5
+```
+
+The report leads with capture quality, because a recorder that is running looks
+exactly like a recorder that is running *well*: it measures the sample period
+the session really achieved, and counts the gaps where samples should have been
+and were not. Only then does it report distance, energy, efficiency, pack
+voltage and current, regenerated energy, cell spread, and chassis extremes.
+
+It also normalizes the two power columns against each other. `hv_power_kw` is
+`pack_v x pack_a` and is **positive while discharging**; `power_kw` is the slope
+of `energy_kwh`, which is energy *remaining*, so it is **negative while
+discharging**. Keeping both and reporting their disagreement is deliberate --
+two independent routes to one quantity is what caught a mislabelled identifier
+earlier in this project.
+
 ## System overview
 
 ```mermaid
@@ -167,6 +187,11 @@ src/hummer_obd/
   voltage.py         12 V watch that provably transmits nothing to the vehicle
   battery.py         PiSugar2 cell watch and low-battery response
   policy.py          adaptive awake/parked/asleep collection policy
+  enhanced.py        supervised enhanced (UDS service 22) reads, one identifier
+                     at a time, from a fixed enumeration
+  drive.py           automatic drive/charge session recorder; ATRV only while
+                     the vehicle sleeps
+  analyze.py         offline analysis of a recorded session; never opens the port
   probe.py           supervised one-shot probe and offline replay
   btdiscover.py      recovery/binding for an already bonded adapter
   display/status.py  hardware-free renderer and Waveshare panel writer

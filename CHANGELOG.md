@@ -20,6 +20,34 @@ discount.
 
 ### Added
 
+- **A recorded session can now be read back.** `hummer_obd.analyze`
+  (`hummer-obd-analyze`) turns a `drive-*.csv` into a report, entirely offline
+  and without opening the serial port -- the same constraint the capabilities
+  report is held to, asserted by a test that greps the module for `serial`,
+  `Transport` and `rfcomm`. Until now the project could record a drive and had
+  nothing that could say what the drive showed.
+
+  The report leads with **capture quality**, because that decides what the rest
+  is worth: it measures the sample period the session actually achieved rather
+  than the one that was configured, and counts gaps longer than three times the
+  median as lost samples. That section is what makes a half-rate capture or a
+  dropped-Bluetooth minute visible at all; both were invisible before.
+
+  It then reports distance (from the odometer *and* from integrated speed, and
+  warns when the two disagree), energy used, efficiency in mi/kWh and
+  kWh/100mi, the pack size the vehicle's own `energy_kwh` and `soc_pct` imply,
+  energy drawn and energy regenerated separated by the sign of pack current,
+  pack voltage sag, cell spread, thermal range, and chassis extremes.
+
+  It normalizes the two power columns, which carry **opposite** sign
+  conventions: `hv_power_kw` is `pack_v * pack_a` and is positive while
+  discharging, while `power_kw` is the slope of energy *remaining* and is
+  negative while discharging. Both are kept and their disagreement is reported
+  rather than averaged away. A `volts` column that arrives as the string
+  `"13.8V"` is parsed rather than discarded, and a torn final row -- what
+  losing power mid-write leaves behind -- is dropped with a warning instead of
+  poisoning the totals.
+
 - **High-voltage battery state of charge, over OBD.** The project previously
   stated that EV battery data could not be obtained through this port. That was
   wrong. A single supervised UDS `ReadDataByIdentifier` request for identifier
