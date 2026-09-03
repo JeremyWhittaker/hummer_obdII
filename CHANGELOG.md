@@ -35,6 +35,30 @@ discount.
   enumerated identifiers; neither is in the drive recorder, and the unattended
   collector still refuses service 22 entirely.
 
+- **Fifteen sourced candidates tested on the vehicle: five hits, nine
+  silences.** Recorded in [Probe, 2026-09-03](docs/PROBE_2026-09-03.md), run
+  parked and awake straight after a highway drive, with the drive session pulled
+  to a workstation first so nothing recorded was at risk.
+
+  All five candidates at the battery manager `CB` answered on the first
+  attempt: `27BF` (33), `27BB` (100), `27B5` (21), `2709` (110), and `2AF1` —
+  which returns **twenty-four values**, the same count as the twenty-four
+  module-like values in `0x2B43`, on a pack whose series count measures 96 and
+  whose array splits into two blocks of twelve. Under `(x − 40) / 2` those
+  twenty-four land at 37.0–37.5 °C against a pack temperature of 39.0 °C
+  measured independently in the same minute. Close, and explicitly **not**
+  claimed as proven: it is one sample at one temperature, and a scaling that
+  lands near the right answer at 39 °C says nothing about whether it holds at
+  5 °C or 55 °C.
+
+  All nine candidates at the body control module `40` returned `NO DATA` — and
+  that is not a negative response. `7F 22 31` would have meant "this module is
+  here and does not have that identifier"; `NO DATA` means nothing answered at
+  all. So this is not evidence the identifiers are wrong, but that nothing
+  responds at `14DA40F1` on this vehicle, even though it names `40` as
+  `BCM-BodyControl` in its own service 09 inventory. Recorded because a silence
+  costs the next person a whole session to rediscover.
+
 - **A hex column left out of the reader's text set read as never answered.**
   `cell_extra_raw` was added to the recorder and not to the reader, so every
   value went to the number parser, failed, and became `None`. The live view

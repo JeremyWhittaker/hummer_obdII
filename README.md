@@ -318,6 +318,9 @@ See [Validation](docs/VALIDATION.md) for the test matrix and evidence policy.
 - [Pack architecture](docs/PACK_ARCHITECTURE.md) — what the vehicle's own data
   says about its battery: 96 cells in series measured from two independent
   identifiers, and `0x2B43` resolved into 26 per-module values.
+- [Probe, 2026-09-03](docs/PROBE_2026-09-03.md) — fifteen sourced candidates
+  tested: five answered at the battery manager including a twenty-four-value
+  array, and all nine at the body control module returned `NO DATA`.
 - [Passive CAN validation](docs/PASSIVE_CAN_VALIDATION.md) — why passive
   monitoring at this vehicle's connector is very likely a dead end, and the
   bounded experiment that would confirm it.
