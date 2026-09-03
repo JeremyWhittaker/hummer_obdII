@@ -66,11 +66,23 @@ runs the status renderer or its tests outside the Pi.
 3. No change is needed on the Pi itself, and none is needed to the vehicle
    safety gates. This does not touch `validate_command` or any OBD path.
 
-## What was deliberately NOT done
+## Stopgap applied on the workstation — the code fix is still wanted
 
-No system policy was weakened on the dev workstation. Adding a polkit rule to grant
-`wifi.scan` would silence the prompt but leave Pi-only code probing real
-hardware on every dev machine, so the code fix is the correct one and was left
-to whoever owns this repo.
+On 2026-09-03 a polkit rule was added on the dev workstation
+(`/etc/polkit-1/rules.d/45-nm-wifi-scan.rules`) granting
+`org.freedesktop.NetworkManager.wifi.scan` to the `sudo` group, because the
+prompts were interrupting Jeremy every few minutes. That silences the symptom
+on **one machine only**. It does not fix anything in this repository:
+
+- Pi-only code still probes real hardware whenever it runs off-Pi.
+- Any other machine this repo is checked out on will prompt exactly the same
+  way, with no rule in place.
+- The unmocked `_run` in the display tests is unchanged.
+
+So the fix above is still the real one. Once it lands, that rule can be removed
+if carrying the exemption is unwanted.
+
+Nothing in the vehicle safety path was touched: no change to
+`validate_command`, `ALLOWED_OBD_MODES`, or any OBD gate.
 
 Delete this file once the fix lands.
