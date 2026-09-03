@@ -35,6 +35,15 @@ discount.
   enumerated identifiers; neither is in the drive recorder, and the unattended
   collector still refuses service 22 entirely.
 
+- **Four identifiers were proven and then never captured.** `27BF`, `27BB`,
+  `27B5` and `2709` answered at module `CB` on 2026-09-03 and were left out of
+  the recorder, so each had been seen in exactly one state — warm, parked, just
+  driven — and could never be decoded from that. Proving an identifier answers
+  and then not recording it wastes the discovery: the only way to learn what a
+  field means is to watch it across states it has not been seen in. All four now
+  record every cycle as raw columns, and a test asserts that **nothing proven at
+  `CB` is left uncaptured**, so this cannot recur silently.
+
 - **Six documents were asserting things the code had already disproved.** An
   audit of every file against the current source found claims that had outlived
   the facts, in some cases by a day, in one case inside the same file:

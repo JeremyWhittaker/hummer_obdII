@@ -171,6 +171,16 @@ DECODERS: dict[str, Callable[[bytes], dict]] = {
     # says nothing about 5 C or 55 C.  Capturing it every cycle is how the
     # temperature range needed to settle it gets collected.
     "2AF1": lambda p: {"array_2af1": p.hex().upper()},
+    # Proven to answer at CB on 2026-09-03 and then not captured, which made
+    # them impossible to decode: the only way to learn what a field means is to
+    # watch it across states it has never been seen in, and a value probed once
+    # while parked has been seen in exactly one.  Raw, because a single sample
+    # is not a scaling -- 27BF read 33, 27BB read 100, 27B5 read 21 and 2709
+    # read 110, all on a warm parked truck that had just been driven.
+    "27BF": lambda p: {"regen_field_raw": p.hex().upper()} if p else {},
+    "27BB": lambda p: {"thermal_energy_raw": p.hex().upper()} if p else {},
+    "27B5": lambda p: {"thermal_distance_raw": p.hex().upper()} if p else {},
+    "2709": lambda p: {"compressor_temp_raw": p.hex().upper()} if p else {},
     # Module 40, reachable only at priority 0x18 and unreachable for a day
     # because this recorder sent one priority to every module.  All nine LYRIQ
     # candidates answer there.  Every one is kept RAW: 416C read 2589 then 2593
@@ -235,7 +245,7 @@ GROUPS: tuple[AddressGroup, ...] = (
         address=("ATSHDACBF1", "ATCRA142AF1CB", "ATFCSH14DACBF1",
                  "ATFCSD300000", "ATFCSM1"),
         dids=("27C6", "27AF", "27C7", "27C0", "0046", "5401", "2AF5", "2B43",
-              "2AF1"),
+              "2AF1", "27BF", "27BB", "27B5", "2709"),
     ),
     AddressGroup(
         name="chassis",
@@ -327,6 +337,8 @@ COLUMNS: tuple[str, ...] = (
     "temp_f", "charger_5401_raw", "power_kw",
     "cell_avg_v", "cell_min_v", "cell_max_v", "cell_spread_mv", "cell_extra_raw",
     "array_2af1",
+    "regen_field_raw", "thermal_energy_raw", "thermal_distance_raw",
+    "compressor_temp_raw",
     "evse_current_raw", "group_v1_raw", "group_v2_raw", "group_v3_raw",
     "hv_temp_raw", "batt_temp_a_raw", "batt_temp_b_raw",
     "coolant_1_raw", "coolant_2_raw",

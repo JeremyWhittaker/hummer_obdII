@@ -872,6 +872,46 @@ class TestBodyModuleColumns(unittest.TestCase):
                          {"group_v1_raw": "0A21"})
 
 
+class TestEveryProvenIdentifierIsCaptured(unittest.TestCase):
+    """Proving an identifier answers and then not recording it wastes it.
+
+    The only way to learn what a field means is to watch it across states it
+    has never been seen in.  Four identifiers were proven at module CB on
+    2026-09-03 and then left out of the recorder, so each had been seen in
+    exactly one state -- warm, parked, just driven -- and could never be
+    decoded from that.
+    """
+
+    #: Everything module CB has been shown to answer on this vehicle.
+    PROVEN_AT_CB = frozenset({
+        "27C6", "27AF", "27C7", "27C0", "0046", "5401", "2AF5", "2B43",
+        "2AF1", "27BF", "27BB", "27B5", "2709",
+    })
+
+    def test_nothing_proven_at_cb_is_left_uncaptured(self):
+        recorded = {d for g in drive.GROUPS for d in g.dids}
+        missing = sorted(self.PROVEN_AT_CB - recorded)
+        self.assertEqual(
+            missing, [],
+            f"proven to answer and never recorded, so never decodable: {missing}",
+        )
+
+    def test_the_four_added_have_columns_and_are_read_as_text(self):
+        from hummer_obd.analyze import _TEXT_COLUMNS
+        for column in ("regen_field_raw", "thermal_energy_raw",
+                       "thermal_distance_raw", "compressor_temp_raw"):
+            with self.subTest(column=column):
+                self.assertIn(column, drive.COLUMNS)
+                self.assertIn(column, _TEXT_COLUMNS)
+
+    def test_no_scaling_is_claimed_for_them(self):
+        source = open(drive.__file__, encoding="utf-8").read()
+        for claim in ('"regen_kwh"', '"thermal_energy_kwh"',
+                      '"thermal_distance_mi"', '"compressor_temp_c"'):
+            with self.subTest(claim=claim):
+                self.assertNotIn(claim, source)
+
+
 class TestWakeThreshold(unittest.TestCase):
     def test_threshold_sits_between_the_measured_bands(self):
         # Asleep measured 12.7-12.9 V, running 13.7-13.9 V.

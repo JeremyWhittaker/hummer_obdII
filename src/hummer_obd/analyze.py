@@ -62,6 +62,8 @@ _TEXT_COLUMNS = frozenset({
     "evse_current_raw", "group_v1_raw", "group_v2_raw", "group_v3_raw",
     "hv_temp_raw", "batt_temp_a_raw", "batt_temp_b_raw",
     "coolant_1_raw", "coolant_2_raw",
+    "regen_field_raw", "thermal_energy_raw", "thermal_distance_raw",
+    "compressor_temp_raw",
 })
 
 #: A sample period more than this multiple of the median is treated as a gap
