@@ -98,6 +98,31 @@ published two-byte `/4350` charger-power scaling remains wrong here — it answe
 with a single byte and plateaus across a ninefold power range — and is still not
 applied. Why it alternates between `0x93` and `0x96` while charging is unknown.
 
+### What a charge does to state of charge, range and energy
+
+Measured across 101 samples of the 2026-09-04 AC charge, and they behave
+completely differently:
+
+| Field | Over twenty minutes of charging |
+|---|---|
+| `energy_kwh` `0x27AF` | rises continuously, **132.66 → 134.08 kWh** |
+| `range_mi` `0x27C7` | steps: **three distinct values**, 231.76 → 232.38 → 233.0 |
+| `soc_pct` `0x27C6` | **frozen. One distinct value, 69.943, across all 101 samples** |
+
+The pack gained 1.42 kWh — about 0.74 % — and state of charge did not move by a
+single count, at a resolution of 1/655.35 %. This is not a decode problem: the
+myGMC app showed **70 %** at the same moment, so the vehicle itself is holding
+the value. A coulomb-counted energy figure updating while an OCV-settled state
+of charge waits is the ordinary way a BMS behaves.
+
+**Operationally: during a charge, use `energy_kwh`. State of charge is not a
+live value.**
+
+The app also read **233 mi** against a recorded `range_mi` of **233.0** — exact
+— and 70 % against 69.943 %. That is a cross-check of the decoding against an
+independent readout, though not of the underlying sensors, since the app is
+served from the same vehicle data.
+
 ### Charge/discharge power is derived, not read
 
 `0x5401` is published as "charger DC power" with a two-byte `/4350` scaling.

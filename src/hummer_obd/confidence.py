@@ -236,7 +236,13 @@ CONFIDENCE: Final[dict[str, Evidence]] = {
                      "temp_f lands on 1/1.3 C per count and no designer picks "
                      "that. Over a monotonic ramp any two rising quantities fit "
                      "a line, so a believable slope means a round divisor that "
-                     "holds across a SECOND charge warming at a different rate"),
+                     "holds across a SECOND charge warming at a different "
+                     "rate. The same charge demonstrated the hazard "
+                     "directly: over its first four minutes charge power "
+                     "correlated with temp_f at +0.72, and over the full "
+                     "twenty minutes including the recovery at -0.028, "
+                     "with the hardest and slowest charge rates occurring "
+                     "at the SAME 107.6 F"),
     "4149": Evidence(
         1, ("40",), ("parked", "driving"),
         "EVSE advertised current candidate. Read 384 while parked and "
@@ -290,7 +296,13 @@ CONFIDENCE: Final[dict[str, Evidence]] = {
                      "temp_f lands on 1/17.2 C per count and no designer picks "
                      "that. Over a monotonic ramp any two rising quantities fit "
                      "a line, so a believable slope means a round divisor that "
-                     "holds across a SECOND charge warming at a different rate"),
+                     "holds across a SECOND charge warming at a different "
+                     "rate. The same charge demonstrated the hazard "
+                     "directly: over its first four minutes charge power "
+                     "correlated with temp_f at +0.72, and over the full "
+                     "twenty minutes including the recovery at -0.028, "
+                     "with the hardest and slowest charge rates occurring "
+                     "at the SAME 107.6 F"),
     "40E6": Evidence(1, ("40",), ("parked", "driving", "charging"),
                      "battery coolant temperature 2 candidate. Its charging "
                      "values are DISJOINT from every one of 566 parked samples. "
@@ -300,7 +312,13 @@ CONFIDENCE: Final[dict[str, Evidence]] = {
                      "temp_f lands on 1/5.7 C per count and no designer picks "
                      "that. Over a monotonic ramp any two rising quantities fit "
                      "a line, so a believable slope means a round divisor that "
-                     "holds across a SECOND charge warming at a different rate"),
+                     "holds across a SECOND charge warming at a different "
+                     "rate. The same charge demonstrated the hazard "
+                     "directly: over its first four minutes charge power "
+                     "correlated with temp_f at +0.72, and over the full "
+                     "twenty minutes including the recovery at -0.028, "
+                     "with the hardest and slowest charge rates occurring "
+                     "at the SAME 107.6 F"),
 
     # -- level 0: allowlisted, never answered here -------------------------
     #

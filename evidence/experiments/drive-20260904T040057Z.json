@@ -1,0 +1,14 @@
+{
+  "ambient_f": null,
+  "charge_state": "charging-ac",
+  "dashboard_soc_pct": 70.0,
+  "evse_amps": 40.2,
+  "evse_kw": 9.319,
+  "evse_kwh_delivered": null,
+  "hvac": "",
+  "label_source": "observed-at-vehicle",
+  "notes": "myGMC app at 04:16Z: 70 pct, 233 mi range, target 90 pct, ETA 2:10am local. Charger display earlier: 40.2 A / 9319 W AC.",
+  "observer": "jeremy",
+  "session": "drive-20260904T040057Z.csv",
+  "vehicle_state": "parked-awake"
+}

@@ -20,6 +20,47 @@ discount.
 
 ### Added
 
+- **The thermal-limiting hypothesis was falsified within the hour, by the same
+  charge that suggested it.** Over the charge's first four minutes, power
+  correlated with `temp_f` at **+0.72** while both moved monotonically — the
+  textbook look of a pack warming and the vehicle backing off. It was explicitly
+  *not* claimed at the time, on the grounds that a monotonic ramp cannot
+  separate "tracks temperature" from "tracks time since plug-in".
+
+  It could not. The charge then **recovered**: power went 8.02 → 2.25 → 8.39 kW
+  while temperature rose to 111.2 °F and fell back to 105.8. Over the full 101
+  samples the correlation is **−0.028**, and the decisive detail is that the
+  **hardest charge (−8.39 kW) and the slowest (−2.25 kW) occurred at exactly the
+  same 107.6 °F**. Temperature does not explain the power. What does is not
+  established — the EVSE, the grid, or something the vehicle is doing.
+
+  This is the second time in one day that a convincing short-window correlation
+  evaporated on more data, after `0x2429`. The confidence entries for the three
+  moving thermal candidates now carry the demonstration rather than just the
+  warning.
+
+- **How a charge moves state of charge, range and energy — all three
+  differently.** Across 101 samples the pack gained **1.42 kWh** and:
+
+  | Field | Behaviour |
+  |---|---|
+  | `energy_kwh` | rises continuously, 132.66 → 134.08 |
+  | `range_mi` | steps — **three** distinct values |
+  | `soc_pct` | **frozen**: one distinct value, 69.943, throughout |
+
+  State of charge did not move by a single count at a resolution of 1/655.35 %,
+  while the pack took on 0.74 % of its capacity. That is not a decode fault: the
+  myGMC app showed **70 %** at the same moment, so the vehicle is holding the
+  value. **Operationally: during a charge use energy, not state of charge.**
+
+- **A second outside measurement, and the decode chain checks out against it.**
+  The app read **233 mi** against a recorded `range_mi` of **233.0** — exact —
+  and 70 % against 69.943 %. Its predicted finish (90 % by 2:10 am, five hours
+  out) implies a mean **7.67 kW**; measured power at that moment was
+  **8.27 kW**, and the implied full pack of **191.7 kWh** matches the 191.9 kWh
+  this project established by three other routes. This validates the *decoding*,
+  not the sensors — the app is served from the same vehicle data.
+
 - **The first charge separated the six thermal candidates into two groups, and
   the interesting group is the one that did nothing.** Across 52 charging
   samples the pack warmed **16.2 °F**. Three fields the source calls
@@ -1106,6 +1147,12 @@ discount.
 
 
 ### Fixed
+
+- **A scripted edit asserted on a string whose line-wrapping had changed.** The
+  same class of failure as the `states`-tuple corruption an hour earlier, caught
+  the same way — by asserting before substituting. Redone as an exact
+  whole-line match, which reported how many occurrences it replaced (three)
+  rather than silently doing one or none.
 
 - **A scripted edit wrote six paragraphs into the wrong dataclass field.**
   Inserting before the first `"),` after each identifier put the text inside the
