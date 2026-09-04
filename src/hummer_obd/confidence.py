@@ -211,11 +211,18 @@ CONFIDENCE: Final[dict[str, Evidence]] = {
         "structural results agree on, which is suggestive and is not a decode; "
         "stored raw"),
     "5401": Evidence(
-        1, _CB, ("parked", "driving", "charging"),
-        "the identifier this vehicle contradicted its source about. Published "
-        "as two-byte charger DC power / 4350; it answers with a single byte, "
-        "reads non-zero at idle and plateaus across a 9x power range. Stored "
-        "raw with no equation applied, and it stays here"),
+        2, _CB, ("parked", "driving", "charging"),
+        "the identifier this vehicle contradicted its source about, now "
+        "positively identified as a state rather than a quantity. Published as "
+        "two-byte charger DC power / 4350; it answers with a SINGLE byte and "
+        "plateaus across a 9x power range, so the published scaling is wrong "
+        "here. What it does do is switch cleanly: 0x00 across 566 consecutive "
+        "parked-and-unplugged samples on 2026-09-04, and 0x93/0x96 across every "
+        "one of the 22 samples taken while charging -- completely disjoint sets, "
+        "cross-checked against pack current being negative. So it is a "
+        "charging-state indicator. No scaling is claimed and none is applied; "
+        "why it alternates between 0x93 and 0x96 while charging is not known, "
+        "which is most of why this is 2 and not 3"),
     "27BF": Evidence(1, _CB, ("parked", "driving", "charging"),
                      "regeneration-related candidate; answers, stored raw"),
     "27BB": Evidence(1, _CB, ("parked", "driving", "charging"),

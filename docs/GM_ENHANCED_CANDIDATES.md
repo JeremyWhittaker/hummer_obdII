@@ -258,7 +258,7 @@ confident-looking unit and nothing behind it.
 | `0x4C2D` | **2** | `28` | parked, driving | steering wheel angle -- OBDb/Cadillac-LYRIQ test fixture DA28.224C2D, signed 16-bit * 0.022, degrees |
 | `0x4C2F` | **2** | `28` | parked, driving | lateral acceleration -- OBDb/Cadillac-LYRIQ test fixture DA28.224C2F, signed 16-bit * 0.0015928, g |
 | `0x4C30` | **3** | `28` | parked, driving | longitudinal acceleration -- OBDb/Cadillac-LYRIQ test fixture DA28.224C30, signed 16-bit * 0.0015928, g |
-| `0x5401` | **1** | `CB` | parked, driving, charging | DC charger power -- meatpiHQ/wican-fw vehicle_profiles/gmc/sierra-ev.json (CHARGER_DC_PWR), BT1 platform family |
+| `0x5401` | **2** | `CB` | parked, driving, charging | DC charger power -- meatpiHQ/wican-fw vehicle_profiles/gmc/sierra-ev.json (CHARGER_DC_PWR), BT1 platform family |
 | `0xF187` | **0** | — | probe only | ISO 14229-1 vehicleManufacturerSparePartNumber -- standard identification DID, used here to test reachability, not content |
 | `0xF188` | **0** | — | probe only | ISO 14229-1 vehicleManufacturerECUSoftwareNumber -- standard identification DID, used here to test reachability |
 | `0xF189` | **0** | — | probe only | ISO 14229-1 vehicleManufacturerECUSoftwareVersionNumber -- standard identification DID, used here to test reachability |

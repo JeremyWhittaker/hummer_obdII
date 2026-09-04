@@ -141,7 +141,7 @@ Every cell below is produced by putting that command to that gate and recording 
 | `range_mi` | battery manager (module CB) | `0x27C7` | 0x14 | **3** cross-validated |
 | `dist_since_chg_mi` | battery manager (module CB) | `0x27C0` | 0x14 | **2** decoded |
 | `temp_f` | battery manager (module CB) | `0x0046` | 0x14 | **2** decoded |
-| `charger_5401_raw` | battery manager (module CB) | `0x5401` | 0x14 | **1** answers here |
+| `charger_5401_raw` | battery manager (module CB) | `0x5401` | 0x14 | **2** decoded |
 | `power_kw` | computed by the recorder, not read from a module | `energy slope` | — | — |
 | `cell_avg_v` | battery manager (module CB) | `0x2AF5` | 0x14 | **4** cross-validated in more than one state |
 | `cell_min_v` | battery manager (module CB) | `0x2AF5` | 0x14 | **4** cross-validated in more than one state |

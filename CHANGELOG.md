@@ -20,6 +20,42 @@ discount.
 
 ### Added
 
+- **`0x5401` positively identified: it is a charging *state*, not a quantity.**
+  The 2026-09-04 charge gave a clean boundary: `0x00` across **566 consecutive
+  parked-and-unplugged samples**, `0x93`/`0x96` across **all 22 taken while
+  charging** — completely disjoint, cross-checked against pack current being
+  negative. Level 1 → 2.
+
+  The discredited part stays discredited. The published two-byte `/4350`
+  charger-power scaling is still wrong here — single byte, plateaus across a
+  ninefold power range — and is still not applied; the recorder stores the byte
+  raw. Why it alternates between `0x93` and `0x96` while charging is unknown,
+  which is most of why this is 2 and not 3.
+
+  **A test written that morning blocked this change**, having pinned the
+  identifier at level 1 on the reasoning that "a source disagreeing with the
+  vehicle is exactly when a level must not creep upward". The guard did its job
+  — it stopped the change and forced the question — but it pinned the wrong
+  thing. New evidence about a *different* claim is not a rehabilitation of the
+  discredited scaling. The test now pins the durable invariant instead: the
+  `/4350` equation is never applied, the decoder returns hex rather than a
+  number, and no `charger_kw` column exists. A level may follow evidence; a
+  disproven scaling may not come back.
+
+- **What the first charge measured, beyond that.** `energy_kwh` tracks it
+  properly: **+0.310 kWh over five minutes**, against a ~4 kW mean — the slope
+  route works. But **`soc_pct` and `range_mi` are frozen**: one distinct value
+  each across the entire charge, `69.943 %` and `231.76 mi`, at a resolution
+  (1/655.35 %) that would easily show the 0.16 % gained. For charge monitoring,
+  use energy; state of charge does not update on this timescale.
+
+  The charge also **tapered steeply while the pack warmed** — 8.02 kW down to
+  2.93 kW as `temp_f` rose 93.2 → 104.0 °F and both coolant fields climbed
+  monotonically. That is the signature of thermal limiting and it is *not*
+  claimed as a finding: over four minutes of monotonic ramp everything
+  correlates with everything, and this cannot separate "tracks temperature" from
+  "tracks time since plug-in".
+
 - **The first outside measurement in this project's history.** Every number here
   has come from the vehicle describing itself. On 2026-09-04 at 03:56Z the truck
   was plugged in and the charger's own display was read: **40.2 A, 9319 W AC**,
@@ -1042,6 +1078,13 @@ discount.
 
 
 ### Fixed
+
+- **A comparison of means across unequal windows read as a decrease.** An early
+  look at the charge reported `energy_kwh` down 0.076 kWh — while the pack was
+  gaining. The figure was a mean over 566 parked samples against a mean over 22
+  charging ones, which is not a before-and-after at all. Within the charge the
+  field rises monotonically, `132.72 → 133.03`. Corrected before it reached any
+  document.
 
 - **A link check that could not tell a committed file from a stray one.** Two
   documents were written into `docs/` by a background process and left

@@ -63,7 +63,7 @@ asserts it, so the distinction cannot quietly reappear.
 | Cell voltage maximum | `0x2AF5` | `[B4:B5] / 10000` | V | **measured** |
 | Cell spread | derived | `(max - min)` | mV | **measured** |
 | 26-element array | `0x2B43` | none applied | — | **raw** |
-| Charger field | `0x5401` | none applied | — | **raw** |
+| Charging-state indicator | `0x5401` | none applied | — | **read** |
 | 24-element array | `0x2AF1` | none applied | — | **raw** |
 | `0x2AF5` trailing bytes | `0x2AF5` | `[B6:B9]`, none applied | — | **raw** |
 | Regeneration field | `0x27BF` | none applied | — | **raw** |
@@ -82,6 +82,21 @@ independent structural results agree on — see [pack
 architecture](PACK_ARCHITECTURE.md). The source calls them module temperatures
 and under `(x - 40) / 2` they land within 2 °C of the pack figure, which is one
 sample at one temperature and therefore not a scaling.
+
+### `0x5401` is a state, and the charge of 2026-09-04 proved it
+
+The identifier switches cleanly and carries no quantity:
+
+| | |
+|---|---|
+| parked and unplugged | `0x00` across **566 consecutive samples** |
+| charging | `0x93` / `0x96` across **all 22 samples** |
+
+Completely disjoint, cross-checked against pack current being negative. So it
+reports *whether* the vehicle is charging. It does not report how fast: the
+published two-byte `/4350` charger-power scaling remains wrong here — it answers
+with a single byte and plateaus across a ninefold power range — and is still not
+applied. Why it alternates between `0x93` and `0x96` while charging is unknown.
 
 ### Charge/discharge power is derived, not read
 

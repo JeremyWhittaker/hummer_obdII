@@ -316,11 +316,41 @@ class TestWhatTheLevelsAreFor(unittest.TestCase):
         for did in at_least(PRODUCTION_MINIMUM):
             self.assertGreaterEqual(CONFIDENCE[did].level, 3)
 
-    def test_the_identifier_this_vehicle_contradicted_stays_at_one(self):
-        # 0x5401 is published as two-byte charger DC power / 4350.  It answers
-        # with one byte and reads non-zero at idle.  A source disagreeing with
-        # the vehicle is exactly when a level must not creep upward.
-        self.assertEqual(CONFIDENCE["5401"].level, 1)
+    def test_the_source_scaling_this_vehicle_contradicted_is_never_applied(self):
+        """The durable invariant, restated after the level legitimately moved.
+
+        This test used to pin `0x5401` at level 1 outright, on the reasoning
+        that a source disagreeing with the vehicle is exactly when a level must
+        not creep upward. That guard did its job: it stopped a change and forced
+        the question. But it pinned the wrong thing.
+
+        On 2026-09-04 the identifier was positively identified as a *state* --
+        `0x00` across 566 consecutive parked-and-unplugged samples and
+        `0x93`/`0x96` across all 22 taken while charging, disjoint sets,
+        cross-checked against pack current being negative. That is new evidence
+        about a different claim, not a rehabilitation of the discredited
+        scaling.
+
+        So what must never change is the thing that was actually wrong: the
+        published two-byte `/4350` charger-power equation is not applied, the
+        recorder stores the byte raw, and the basis says so. A level may follow
+        evidence; a disproven scaling may not come back.
+        """
+        from hummer_obd import drive
+        basis = CONFIDENCE["5401"].basis.lower()
+        self.assertIn("wrong", basis, "the basis must still record the contradiction")
+        self.assertIn("no scaling is claimed", basis)
+        # The decoder stores hex, not a number. This is the mechanical guarantee.
+        decoded = drive.DECODERS["5401"](bytes.fromhex("93"))
+        self.assertEqual(decoded, {"charger_5401_raw": "93"})
+        self.assertNotIn("charger_kw", drive.COLUMNS)
+        self.assertIn("charger_5401_raw", drive.COLUMNS)
+
+    def test_a_state_identifier_never_reaches_production_level(self):
+        # Level 3 means a quantity cross-validated against an independent route.
+        # 0x5401 carries no quantity at all, so it must not drift up there on
+        # the strength of the state finding being solid.
+        self.assertLess(CONFIDENCE["5401"].level, PRODUCTION_MINIMUM)
 
     def test_the_iso_identifiers_are_level_zero_and_that_is_correct(self):
         # They have never returned a positive response and never will here.
