@@ -143,9 +143,14 @@ CONFIDENCE: Final[dict[str, Evidence]] = {
         3, _PACK, ("parked", "driving"),
         "module supply voltage, the 12 V domain and not the pack. Modules 17, "
         "1D and 1E answer independently and agree with each other (13.2/13.1/"
-        "13.1 V). They sit consistently ~6% off the adapter's own ATRV reading "
-        "of the same rail, and that disagreement is open -- which is exactly "
-        "why this is not 4"),
+        "13.1 V), and a third route -- legislated PID 0142 -- was added on "
+        "2026-09-04, giving three readings of one rail. They differ, and the "
+        "differences are multiplicative: over 358 paired samples the ratios "
+        "hold to 0.53% while the offsets wander by 23%, and the gap does not "
+        "widen across 387 kW of traction power. That is a scaling difference "
+        "between uncalibrated ADCs rather than a decode error, but which of the "
+        "three is right needs a reference meter this project does not have -- "
+        "which is exactly why this is not 4"),
 
     # -- level 2: decoded, nothing independent confirms the scaling --------
     "27C0": Evidence(

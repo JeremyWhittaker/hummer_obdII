@@ -20,6 +20,36 @@ discount.
 
 ### Added
 
+- **The 12 V disagreement's own discriminator was run, and it came back against
+  the standing explanation.** `PACK_ARCHITECTURE.md` proposed that `ATRV`,
+  `0142` and `0x33E5` differ because they are one measurement at each of three
+  points on a harness rather than three measurements of one point -- and named
+  its own test: an IR drop must **widen under load**. Adding `0142` to the
+  recorder made 358 three-way paired samples available spanning **-68.9 to
+  +317.8 kW**, so the test could be run.
+
+  It does not widen. The gap is 0.02 V larger above 30 kW than below 5 -- a
+  fifth of its own standard deviation -- and its correlation with traction power
+  is `-0.065`, not merely weak but the wrong sign. Meanwhile the *ratio* between
+  any two readings is about forty times more stable than the *difference*,
+  relative to each one's size: 0.53 % against 23 %. A least-squares fit agrees:
+  slopes 0.9763 and 0.9485 with intercepts of +0.015 and -0.093 V, where a
+  resistive drop would give slope 1 and intercepts near -0.29 and -0.76.
+
+  So the evidence moved back toward the scaling explanation that section had set
+  out to undermine. Two things stop it closing: traction power is a poor proxy
+  for 12 V current -- the DC-DC follows lights and blowers, not the inverter,
+  and nothing here measures 12 V current at all -- and the fit rests on 0.90 V
+  of span, so separating slope from intercept extrapolates twelve volts past the
+  data.
+
+  What is established is narrower and still worth having: **three uncalibrated
+  ADCs differing multiplicatively by 2.4 % and 5.9 %, with ratios stable to half
+  a percent across every state recorded.** Which is closest to the truth is not
+  answerable from inside the vehicle; it needs a reference meter on the
+  connector. That is a smaller question than the one that section opened with,
+  and it has a definite answer waiting behind one measurement.
+
 - **The motor telemetry the plan called "the real gap" does not exist
   publicly.** Two independent sweeps across every source where such a thing
   would live -- eight OBDb vehicle repositories, meatpiHQ/wican-fw's profiles,

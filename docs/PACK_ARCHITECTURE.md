@@ -373,6 +373,48 @@ high-power drive would show it. And the ordering should follow harness topology
 rather than device type, which needs wiring information this project does not
 have. Until then: the ordering is measured, the cause is inferred.
 
+### The load test was run, and it came back against that explanation
+
+The paragraph above named its own discriminator. On 2026-09-04 there were 358
+three-way paired samples spanning **−68.9 to +317.8 kW** of traction power, so
+it could be run.
+
+| | `ATRV − 0142` | `ATRV − 33E5` |
+|---|---|---|
+| gap below 5 kW (n=306) | 0.289 V | 0.762 V |
+| gap above 30 kW (n=35) | 0.311 V | 0.774 V |
+| correlation of gap with HV power | **−0.065** | **−0.059** |
+| standard deviation of the *difference* | 0.067 V (23 % of its mean) | 0.071 V (9 %) |
+| standard deviation of the *ratio* | 0.0054 (**0.53 %** of its mean) | 0.0061 (**0.57 %**) |
+
+The gap is nominally 0.02 V wider under load — a fifth of its own standard
+deviation, and the correlation with power is not merely weak but slightly
+*negative*, which is the wrong sign for IR drop. Meanwhile the ratio is roughly
+forty times more stable than the difference, relative to each one's own size.
+
+A least-squares fit says the same thing. Against `ATRV`, `0142` gives slope
+**0.9763** with intercept **+0.015 V**, and `0x33E5` slope **0.9485** with
+intercept **−0.093 V**. A pure resistive drop would give slope 1 with intercepts
+near −0.29 and −0.76 V. Both fits pass close to the origin instead.
+
+So the evidence has moved back toward the scaling explanation the section above
+set out to undermine.
+
+**Two things stop this from closing the question.** Traction power is a *proxy*
+for 12 V current, and a poor one: the DC-DC's output follows the 12 V loads —
+lights, blower, pumps — not what the traction inverter is doing, and nothing
+here measures 12 V current at all. A drive can be at 300 kW with a quiet 12 V
+bus. And the regression rests on 0.90 V of span, so separating slope from
+intercept means extrapolating twelve volts past the data.
+
+What *is* now established is narrower and still useful: **three uncalibrated
+ADCs, differing multiplicatively by about 2.4 % and 5.9 %, with ratios stable to
+half a percent across every state recorded.** Which of the three is closest to
+the truth is not answerable from inside this vehicle — it needs a reference
+meter on the connector, which is hardware this project does not have. That is a
+smaller question than the one this section opened with, and it has a definite
+answer waiting behind one measurement.
+
 This matters for `WAKE_VOLTS`, which is applied to `ATRV` readings. The
 threshold is self-consistent because it is compared against the same source it
 was measured from, so nothing is wrong today. But if the adapter really does
