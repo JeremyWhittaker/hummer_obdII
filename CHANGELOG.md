@@ -20,6 +20,11 @@ discount.
 
 ### Added
 
+- **`hummer-obd-respond --since`.** Every mark is a segment boundary, so the
+  handful written while testing the tooling would slice a real experiment into
+  noise. The fix is not to edit an append-only file — it is to say where the
+  experiment started.
+
 - **`docs/GM_SERVICE_INFORMATION.md` and `docs/OEM_DIAGNOSTIC_WORKFLOW.md`** —
   the two hardware-prerequisite documents. The first is what to retrieve
   privately against the VIN *before* an internal-bus tap can even be evaluated,

@@ -15,6 +15,7 @@ windows are nearly disjoint, so every raw column claimed a response and buried
 the real ones.
 """
 
+import json
 import os
 import tempfile
 import unittest
@@ -148,6 +149,37 @@ class TestItRefusesToOverclaim(unittest.TestCase):
         rows = (rows_at(T0, 20, x=1.0) + rows_at(T0 + timedelta(seconds=200), 20, x=1.0))
         text = format_report(responses(segment(rows, marks((200, "after"))), ["x"]))
         self.assertIn("That is a result", text)
+
+    def test_since_drops_marks_and_rows_before_the_window(self):
+        """Every stray mark is a segment boundary.
+
+        Three setup marks written while testing the tooling would otherwise
+        slice a real experiment into noise, and the fix is not to edit an
+        append-only file -- it is to say where the experiment started.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            sessions = os.path.join(tmp, "s")
+            os.makedirs(sessions)
+            with open(os.path.join(sessions, "drive-a.csv"), "w") as fh:
+                fh.write("utc,x\n")
+                for r in rows_at(T0, 40, step_s=8, x=lambda i: float(i)):
+                    fh.write(f"{r['utc']},{r['x']}\n")
+            marks_path = os.path.join(tmp, "m.jsonl")
+            with open(marks_path, "w") as fh:
+                for entry in marks((10, "stray setup mark"), (160, "real start")):
+                    fh.write(json.dumps(entry) + "\n")
+            cutoff = (T0 + timedelta(seconds=100)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            rc = respond.main(["--dir", sessions, "--marks", marks_path,
+                               "--since", cutoff, "--quiet"])
+            self.assertEqual(rc, 0)
+
+    def test_a_malformed_since_is_refused_with_the_expected_shape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            marks_path = os.path.join(tmp, "m.jsonl")
+            with open(marks_path, "w") as fh:
+                fh.write(json.dumps(marks((0, "x"))[0]) + "\n")
+            self.assertEqual(respond.main(["--dir", tmp, "--marks", marks_path,
+                                           "--since", "last tuesday"]), 2)
 
     def test_no_marks_is_an_error_with_the_command_that_fixes_it(self):
         with tempfile.TemporaryDirectory() as tmp:

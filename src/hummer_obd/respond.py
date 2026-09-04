@@ -260,6 +260,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     parser.add_argument("--dir", default="evidence/sessions")
     parser.add_argument("--marks", default=DEFAULT_MARKS)
+    parser.add_argument("--since", metavar="UTC",
+                        help="ignore marks and rows before this time, e.g. "
+                             "2026-09-04T04:00Z. Every stray mark is a segment "
+                             "boundary, and a run-up of setup marks would "
+                             "otherwise slice the experiment into noise")
     parser.add_argument("--minimum", type=float, default=1.0,
                         help="report changes at or above this effect size")
     parser.add_argument("--json", dest="json_path")
@@ -267,6 +272,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     marks = load_marks(args.marks)
+    if args.since:
+        cutoff = _parse(args.since if args.since.endswith("Z")
+                        else args.since + "Z")
+        if cutoff is None:
+            print(f"cannot read --since {args.since!r}; expected an ISO-8601 "
+                  "UTC time such as 2026-09-04T04:00Z", file=sys.stderr)
+            return 2
+        marks = [m for m in marks
+                 if (_parse(m.get("utc", "")) or cutoff) >= cutoff]
     if not marks:
         print(f"no marks in {args.marks}; nothing to compare", file=sys.stderr)
         return 2
@@ -283,6 +297,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"no session rows in {args.dir}", file=sys.stderr)
         return 2
 
+    if args.since:
+        cutoff = _parse(args.since if args.since.endswith("Z") else args.since + "Z")
+        rows = [r for r in rows if (_parse(r.get("utc", "")) or cutoff) >= cutoff]
+        if not rows:
+            print(f"no session rows at or after {args.since}", file=sys.stderr)
+            return 2
     result = responses(segment(rows, marks), columns)
     if args.json_path:
         with open(args.json_path, "w", encoding="utf-8") as handle:
