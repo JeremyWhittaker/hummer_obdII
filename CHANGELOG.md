@@ -20,6 +20,30 @@ discount.
 
 ### Added
 
+- **Two of the same day's fixes proved themselves in production, hours apart.**
+  At 10:08Z, after the charge finished and the vehicle settled, the recorder
+  logged:
+
+  ```text
+  transport failed: 3 consecutive cycles decoded nothing; exiting so the link
+                    is re-established
+  adapter still silent; reopening the link
+  vehicle awake (12.9 V); starting a session
+  ```
+
+  The first two lines are the dead-cycle check doing exactly what it was added
+  for — the recorder once sat `active (running)` for two hours writing blank
+  rows, and this is the mechanism that ends that. It detected nothing decoding,
+  exited cleanly, and systemd restarted it into a working link.
+
+  The third line is the wake threshold. **12.9 V is the reading that has been
+  wrong twice**, and under the 12.95 V value it carried this morning the vehicle
+  would have been classified asleep and this session would not exist. At 12.8 it
+  is correctly read as awake. The overlap is real — 12.9 V has been observed
+  both asleep and awake — and the resolution stands: the threshold decides when
+  to *try*, and the dead-cycle check decides whether the vehicle is really
+  there. Both halves fired here, in the right order, unattended.
+
 - **The charge finished, and the pack-sizing guidance published two hours
   earlier was wrong.** Complete dataset: 911 samples over **5.32 hours**,
   69.943 % → 89.955 %, **+38.83 kWh**, mean 7.30 kW at the pack, cell spread
