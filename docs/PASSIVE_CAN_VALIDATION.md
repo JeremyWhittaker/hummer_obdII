@@ -1,11 +1,23 @@
 # Passive CAN monitoring: a negative research result
 
-Status: **the bounded experiment this note designed was approved and built on
-2026-09-03.** It is `hummer-obd-passive`
-([`src/hummer_obd/monitor.py`](../src/hummer_obd/monitor.py)). What follows
-below the next section is the research note exactly as written before that
-decision, because the reasoning is what justified the design and rewriting it
-into hindsight would destroy the record.
+Status: **the bounded experiment this note designed was approved, built and
+run.** It is `hummer-obd-passive`
+([`src/hummer_obd/monitor.py`](../src/hummer_obd/monitor.py)).
+
+**It returned zero bytes in thirty seconds**, parked and awake, on 2026-09-04
+(UTC) — transmit error counter unmoved, DTC inventory unchanged, sixty-five
+bytes of adapter configuration transmitted and nothing else. Full conditions and
+transcript hash in
+[VALIDATION.md](VALIDATION.md#passive-can-capture-at-the-diagnostic-connector-2026-09-04).
+
+That is this note's own predicted outcome, now measured on this truck instead of
+inferred from other people's. The practical consequence: **there is no passive
+fallback.** Every byte this project has ever obtained arrived because something
+asked for it, and "try sniffing the DLC" is retired rather than deferred.
+
+What follows below the next section is the research note exactly as written
+before any of that, because the reasoning is what justified the design and
+rewriting it into hindsight would destroy the record.
 
 `ATMA` is still rejected, and so is every other monitor command, by the gate the
 unattended collector runs behind.

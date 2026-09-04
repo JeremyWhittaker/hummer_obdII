@@ -58,10 +58,10 @@ anything new.** The findings this project has accumulated point the other way:
   (`gm_global_a_high_voltage_management.dbc`) came from a tap **behind the
   forward camera on the previous-generation platform** — not from a diagnostic
   connector.
-* `hummer-obd-passive` now measures that directly on this truck rather than
-  arguing about it. **Run it before spending anything.** If the DLC is silent to
-  a classical listener, the interesting hypothesis is not "it was speaking FD" —
-  it is that the gateway forwards nothing unsolicited, which no adapter fixes.
+* `hummer-obd-passive` measured that directly on this truck rather than arguing
+  about it, and **it returned zero bytes in thirty seconds** parked and awake.
+  The interesting hypothesis after a silent DLC is not "it was speaking FD" — it
+  is that the gateway forwards nothing unsolicited, which no adapter fixes.
 
 So the honest framing of a purchase is: an FD interface buys the *ability* to
 sit on an FD segment. It does not buy access to one. Access is the hard rule
@@ -121,9 +121,15 @@ wired into a collector that runs unattended for hours.
 
 In order. Each one is cheap and each one can end the question.
 
-1. **Run `hummer-obd-passive` at the DLC, awake and driving.** Zero frames to a
-   classical listener is the strong result; it says the gateway forwards nothing
-   unsolicited and points away from every interface in the table.
+1. ~~**Run `hummer-obd-passive` at the DLC, awake and driving.**~~ **Done, and
+   it came back zero.** Thirty seconds parked and awake on 2026-09-04 returned
+   no bytes at all
+   ([VALIDATION.md](VALIDATION.md#passive-can-capture-at-the-diagnostic-connector-2026-09-04)).
+   That is the strong result, and it points *away* from every interface in the
+   table: the gateway forwards nothing unsolicited, and no adapter changes what
+   a gateway chooses to forward. Driving and charging remain untested, so this
+   is not yet the whole answer — but it is the answer for the state that was
+   easiest to imagine being chatty.
 2. **Establish whether the DLC negotiates CAN FD at all.** This is the only
    question in this document that hardware answers cheaply and safely, at a
    connector we are already permitted to use.

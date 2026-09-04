@@ -20,6 +20,24 @@ discount.
 
 ### Added
 
+- **The passive experiment was run, and it came back empty.** Thirty seconds at
+  the diagnostic connector on 2026-09-04 (UTC), parked and awake at 380.6 V and
+  75.4 % state of charge: **zero bytes received.** Sixty-five bytes transmitted,
+  every one adapter configuration, reconstructed from the transcript rather than
+  from the program's intentions. `ATCS` read `T:00 R:00` before and after; the
+  DTC inventory was empty before and after; the recorder restarted and resumed
+  writing rows immediately. Conditions, full command manifest and transcript
+  hash in `docs/VALIDATION.md`.
+
+  This is the outcome `PASSIVE_CAN_VALIDATION.md` predicted, now measured on
+  this truck instead of inferred from other people's. **There is no passive
+  fallback**: every byte this project has ever obtained from this vehicle
+  arrived because something asked for it. It does not say the internal networks
+  are quiet — they are certainly not, behind the gateway — and it does not
+  cover driving or charging, which were not tested. What it retires is "try
+  sniffing the DLC" as a recurring idea. The line above that said this was "not
+  yet run on the vehicle" is now superseded within the same release.
+
 - **`hummer-obd-passive`: the first tool here that asks the vehicle nothing.**
   Every other command sends a request and reads the answer. This one puts the
   adapter into receive-only CAN monitoring -- `STCMM0`, where it does not even

@@ -1,6 +1,6 @@
 # Validation record
 
-Last hardware-backed validation: 2026-09-01.
+Last hardware-backed validation: 2026-09-04 (UTC).
 
 This document publishes the useful acceptance results without publishing the
 VIN, network identifiers, Bluetooth addresses, raw diagnostic frames, or local
@@ -1020,3 +1020,85 @@ explicitly rather than reporting a structurally valid hex frame as `ok`.
 
 No clear, control, write, security, enhanced Mode 22, or other forbidden
 request appeared in the transcript.
+
+
+## Passive CAN capture at the diagnostic connector, 2026-09-04
+
+**Result: zero bytes in thirty seconds.** This is the decisive negative that
+[PASSIVE_CAN_VALIDATION.md](PASSIVE_CAN_VALIDATION.md) predicted and asked to
+have published whichever way it came out, and it is worth more than everything
+in that document's findings table, because it is first-hand and about this
+truck.
+
+### Conditions
+
+Parked, awake, stationary, accessory load about 3.9 kW. Pack 380.6 V at 75.4 %
+state of charge, 12.9 V at the connector. The recorder was stopped and its
+sessions pulled to a workstation first; it was restarted immediately afterwards
+and resumed writing rows in a new session.
+
+### What was transmitted, in full
+
+Thirteen writes, sixty-five bytes, every one of them adapter configuration.
+Reconstructed from the transcript's `tx` records rather than from the program's
+intentions:
+
+```text
+ATZ  ATE0  ATL0  ATS1  ATH1  ATAL  ATSP7  ATCAF0  ATCS  STCMM0
+STMA
+<CR>
+ATCS
+```
+
+`ATSP7` pins ISO 15765-4, 29-bit, 500 kbit/s rather than letting the adapter
+auto-detect, because auto-detection discovers a protocol *by transmitting*.
+`STCMM0` is receive-only monitoring: the adapter does not assert the dominant
+acknowledgement bit that a normal CAN node puts on every frame it hears, so the
+claim is "we did not transmit", not merely "we did not request". The lone `<CR>`
+is the stop character, which travels over the UART to the adapter and not onto
+CAN. Nothing outside that manifest appears in the transcript.
+
+### What arrived
+
+| | |
+|---|---|
+| Bytes received during the 30 s window | **0** |
+| Raw-log records written during the window | 0 |
+| Elapsed | 30.064 s, ended by the time bound, not the byte bound |
+| Stop acknowledged by the adapter | yes |
+| `ATCS` before | `T:00 R:00` |
+| `ATCS` after | `T:00 R:00` |
+| DTCs before (`03` / `07` / `0A`) | none / none / none |
+| DTCs after (`03` / `07` / `0A`) | none / none / none |
+| Driver information centre | no new message |
+
+Transcript: 32 JSONL records, 7,949 bytes, zero corrupt records, SHA-256
+
+```text
+aa3e57e59cdd94a43de267a25de01dede9aed5e6b00eba7aa7c9782d6c8b83af
+```
+
+The transmit error counter never moved off zero, which is the stop condition
+that mattered most: it is consistent with having transmitted nothing, though it
+is not by itself proof of it. The manifest above is the stronger evidence.
+
+### What this establishes, and what it does not
+
+**Establishes.** The gateway forwards nothing unsolicited to pins 6 and 14 on
+this vehicle, in this state, to a classical-CAN listener. Every byte this
+project has ever obtained from this truck arrived because something asked for
+it. There is no free stream to fall back on, and the research note's premise —
+that passive monitoring might be a route around the enhanced-identifier problem
+— is now measured rather than argued, and it is false here.
+
+**Does not establish.** Nothing about whether the vehicle's internal networks
+are busy; they certainly are, behind the gateway. Nothing about other states —
+this was one thirty-second capture, parked and awake, and driving or charging
+were not tested. Nothing about CAN FD, which this adapter cannot see at all.
+And nothing about *why*: filtering, authentication, encryption and simple
+silence all look identical from here.
+
+**What it retires.** "Try sniffing the DLC" is no longer an open idea to be
+picked up again on a slow evening. It was tried, under the conditions the
+research note specified, and it returned nothing. The next person to have the
+idea can read this row instead of spending a week on it.
