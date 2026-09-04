@@ -166,18 +166,55 @@ class TestTheGateMatrixShowsTheRealPolicy(unittest.TestCase):
                 self.assertNotIn("\r", line)
                 self.assertNotIn("\t", line)
 
-    def test_every_generated_table_row_has_a_consistent_column_count(self):
-        # A markdown table whose rows disagree with its header renders as
-        # silent nonsense rather than an error.
-        header_widths = {}
-        for line in access.render_matrix().splitlines():
-            if not line.startswith("|"):
+    def test_every_table_in_the_document_is_well_formed(self):
+        """Generated *and* hand-written. A malformed table renders as silent
+        nonsense rather than an error, so nothing downstream complains and a
+        reader simply sees the wrong thing.
+
+        Checking only the generated half would leave the hand-authored tables --
+        the failure shapes, the verification commands, the reasoning index --
+        entirely unguarded, and those are the ones a human edits.
+        """
+        with open(_DOC, encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+
+        tables, current, in_fence = [], [], False
+        for line in lines:
+            if line.startswith("```"):
+                in_fence = not in_fence
+            if in_fence:
                 continue
-            cells = len(re.findall(r"(?<!\\)\|", line))
-            if line.startswith("| Command") or line.startswith("| Column") \
-                    or line.startswith("| Cannot"):
-                header_widths[line.split("|")[1].strip()] = cells
-        self.assertTrue(header_widths, "no generated tables found")
+            if line.startswith("|"):
+                current.append(line)
+            elif current:
+                tables.append(current)
+                current = []
+        if current:
+            tables.append(current)
+
+        self.assertGreater(len(tables), 4,
+                           "the table scanner found almost nothing")
+        for table in tables:
+            header = table[0]
+            width = len(re.findall(r"(?<!\\)\|", header))
+            with self.subTest(table=header[:50]):
+                self.assertGreaterEqual(len(table), 3,
+                                        "a table needs a header, a rule and a row")
+                self.assertRegex(table[1], r"^\|[\s:-]*\|",
+                                 "the second line must be the header rule")
+                for row in table:
+                    self.assertEqual(
+                        len(re.findall(r"(?<!\\)\|", row)), width,
+                        f"row disagrees with its header ({width} delimiters): "
+                        f"{row[:70]}")
+
+    def test_the_table_check_would_notice_a_broken_row(self):
+        # A structural assertion that has never been shown to fire may be
+        # checking nothing.
+        broken = "| a | b |\n|---|---|\n| one | two | three |"
+        widths = {len(re.findall(r"(?<!\\)\|", line))
+                  for line in broken.splitlines()}
+        self.assertGreater(len(widths), 1)
 
     def test_command_batching_is_refused_everywhere(self):
         matrix = self.matrix()
