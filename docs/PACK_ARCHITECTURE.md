@@ -346,6 +346,33 @@ be told apart**: a constant offset and a constant ratio predict nearly the same
 values across one volt of span. Distinguishing them needs a session with a much
 wider voltage swing.
 
+### A third reading changes the explanation
+
+`0142` — each module's own supply voltage, a legislated PID this vehicle's
+support bitmap advertises — was added to the recorder on 2026-09-04. It gives a
+third independent reading of the same rail, and the three are **consistently
+ordered in 15 of 15 rows**:
+
+| source | where it measures | mean |
+|---|---|---|
+| `ATRV` | the adapter, at the OBD connector | **13.100 V** |
+| `0142` | the responding module's own supply | **12.694 V** |
+| `0x33E5` | drive motor controller `1D` | **12.247 V** |
+
+Roughly 0.4 V between each, in the same order every time.
+
+That undermines the calibration explanation offered above. If one device were
+reading high, two would agree and one would differ. Three differing
+*monotonically* is what a distribution with resistance in it looks like — these
+are not three measurements of one point, they are one measurement at each of
+three points, and the further from the source, the lower.
+
+**This is a better explanation, not a proven one.** Two things would settle it.
+The drop should **widen under load**, since IR drop scales with current — a
+high-power drive would show it. And the ordering should follow harness topology
+rather than device type, which needs wiring information this project does not
+have. Until then: the ordering is measured, the cause is inferred.
+
 This matters for `WAKE_VOLTS`, which is applied to `ATRV` readings. The
 threshold is self-consistent because it is compared against the same source it
 was measured from, so nothing is wrong today. But if the adapter really does

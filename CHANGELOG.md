@@ -59,9 +59,20 @@ discount.
   (`decode.py:446-453`) — six more hand-rolled branches would have been
   re-deriving what that module already knows.
 
-  `0142` gives a **third independent reading of the 12 V rail**, added to the
-  cross-checks. The adapter and the drive-motor module already disagree by
-  about 6 %, and a third source is what settles which is off.
+  **Verified on the vehicle**: all six populate 5/5 rows, and `run_time_s`
+  increments at the sample rate — 77, 87, 115 s — which self-validates the
+  decode.
+
+  `0142` gives a **third independent reading of the 12 V rail**, and it changed
+  the explanation rather than confirming it. The three are consistently ordered
+  in 15 of 15 rows — adapter 13.100 V, responding module 12.694 V, drive motor
+  controller 12.247 V, about 0.4 V apart each. The earlier note called the
+  adapter/module gap a 6 % disagreement and guessed at calibration; if one
+  device read high, two would agree and one would differ. Three differing
+  *monotonically* is what a distribution with resistance in it looks like —
+  one measurement at each of three points, not three of the same point.
+  Recorded as a better explanation, not a proven one, with the test that would
+  settle it: IR drop widens under load, so a high-power drive should show it.
 
 - **A charge session is reported as a charge, not as a strange drive.**
   `analyze` detects charging from sustained negative pack current — a vehicle
