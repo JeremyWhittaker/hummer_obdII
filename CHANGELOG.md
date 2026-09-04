@@ -809,6 +809,41 @@ discount.
 
 ### Fixed
 
+- **Six false documentation claims, found by an audit run against the same
+  day's work.** Three were made hours earlier by the change that introduced
+  confidence levels: `0x4A7A`, `0x4C30` and `0x33E5` were promoted to level 3 in
+  code while `TELEMETRY_CATALOG.md` still graded them `read`. Three were older
+  and had simply never been revisited:
+
+  * `CAPABILITIES.md` said "pack voltage and cell balance are still unavailable,
+    because no sourced identifier for them has been found" — while the *same
+    file*, 200 lines below, said pack voltage "is now proven at `0x2885`".
+  * `PASSIVE_CAN_VALIDATION.md`'s findings table said pack current was "still
+    not obtained — no sourced identifier found". The pack-voltage row directly
+    above it had been corrected; this one was not, and the paragraph beneath
+    repeated the error.
+  * `ENHANCED_PID_VALIDATION.md` said passive monitoring "is not approved, and
+    it is not on the allowlist" — after it was approved, built and run.
+
+  Each is corrected with the old text struck through rather than deleted,
+  because a claim that outlived its truth by a known number of days is worth
+  more visible than hidden.
+
+  **The structural fix matters more than the six.** Nothing checked
+  `TELEMETRY_CATALOG.md`'s grade column against `confidence.py`, so it drifted
+  within hours of the levels existing — the fourth hand-kept inventory in this
+  project to do so. `tests/test_confidence.py` now scrapes that column and
+  asserts every identifier's word matches its numeric level, both directions:
+  nothing graded that the gate does not hold, and nothing the vehicle answers
+  left ungraded. Only the four ISO reachability probes are legitimately absent.
+
+  The scraper had a bug of exactly the kind it exists to catch —
+  `grades.get(did, "raw")` gives an unseen identifier rank 1, so `raw` never
+  beat its own default and all sixteen raw-only rows were silently dropped. A
+  vacuity guard asserting the pattern matches at least 25 rows is what caught
+  it, which is the argument for writing that guard into every table-scraping
+  test.
+
 - **The wake threshold was wrong a second time, and it cost a live session.**
   On 2026-09-04 the recorder was restarted, read 12.9 V, classified the vehicle
   as asleep and went to its 300-second watch -- on a truck that was awake in

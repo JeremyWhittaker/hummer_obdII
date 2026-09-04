@@ -316,8 +316,21 @@ work: broadcast frames are unlabelled, so identifying which arbitration ID
 carries state of charge is its own evidence problem, and monitor mode changes
 how the adapter handles the bus.
 
-**This is not approved, and it is not on the allowlist.** `ATMA` and `STM` are
-rejected by the current gate exactly like any other unlisted adapter command.
+**This was not approved when it was written. It is now, and it has been run.**
+On 2026-09-03 a bounded, supervised passive capture path was built as
+`hummer-obd-passive` ([`src/hummer_obd/monitor.py`](../src/hummer_obd/monitor.py))
+behind **two gates of its own**, and on 2026-09-04 it recorded **zero bytes in
+thirty seconds** at the connector — the decisive negative. Details in
+[the passive CAN validation note](PASSIVE_CAN_VALIDATION.md) and
+[the validation record](VALIDATION.md#passive-can-capture-at-the-diagnostic-connector-2026-09-04).
+
+What did **not** change, and is the part this paragraph should have been
+protecting: `ATMA` and `STM` are still rejected by the current gate exactly like
+any other unlisted adapter command — and so are `STMA`, `STCMM0`, `STCMM1` and
+`STCMM2`. `_ALLOWED_AT_EXACT` was never widened, because it feeds
+`validate_command`, which is the unattended collector's gate. All six are put to
+that live gate in `capabilities.GATE_REFUSE_SAMPLES`, so a future widening flips
+a published report entry from refused to accepted in plain sight.
 Enabling either would require the same five-part change-control process in
 [SAFETY.md](SAFETY.md) — written justification, an allowlist update that does
 not weaken the forbidden-service checks, tests proving unsafe variants still

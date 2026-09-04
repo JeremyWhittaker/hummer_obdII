@@ -121,7 +121,7 @@ remaining life) is not advertised; neither is `46` (ambient air temperature).
 |---|---|---|
 | State of charge | The single number the display exists to show | **Obtained** — enhanced read `0x27C6`, not passively |
 | Pack voltage | Health and charge state of the traction battery | **Obtained on 2026-09-03** via `0x2885` at module `17`, and at `1D`/`1E` too. This row said otherwise for a day. Historical note follows: `0x33E5` reads ~13.1 V from each drive motor controller, which is the 12 V domain, not the pack |
-| Pack current / power | Draw while driving, rate while charging | **Still not obtained** — no sourced identifier found |
+| Pack current / power | Draw while driving, rate while charging | **Obtained on 2026-09-03** via `0x2414` at module `17`; power is `pack_v × pack_a`, cross-checked against the energy field's slope. This row said otherwise for a day longer than the pack-voltage row above it, because the row above was corrected and this one was not |
 | Pack temperature | Thermal behaviour under load and fast charge | Partly: `0x0046` returns a temperature the vehicle holds, semantics not yet confirmed |
 | Cell balance / delta | The earliest visible sign of a failing module | **Obtained** — `0x2AF5` gives cell average, minimum and maximum; measured spread 4.9–5.3 mV |
 | DC fast-charge state | Session progress and taper behaviour | `0x5401` responds but returns one byte where the source describes two; untested during an actual charge |
@@ -129,9 +129,15 @@ remaining life) is not advertised; neither is `46` (ambient air temperature).
 
 So the honest position has inverted. Passive monitoring was investigated as the
 route *around* a blocked Mode 22; Mode 22 turned out not to be blocked in the
-way assumed, and it delivered most of the list above. What remains genuinely
-missing — pack voltage, pack current, instantaneous power — is missing because
-**no source names an identifier for it**, not because the path is closed.
+way assumed, and it delivered most of the list above.
+
+~~What remains genuinely missing — pack voltage, pack current, instantaneous
+power — is missing because no source names an identifier for it.~~ **All three
+were obtained on 2026-09-03**, via `0x2885` and `0x2414`. What remains missing
+now is narrower and better understood: individual cell voltages and per-module
+temperatures, for which the 2026-09-04 sweep confirmed **no source names an
+identifier on any Ultium vehicle** — see
+[the sourcing sweep](SOURCING_2026-09-04.md).
 
 That changes what a passive capture is *for*. It is no longer a fallback for
 data we cannot otherwise reach. It is now a narrower question: does the

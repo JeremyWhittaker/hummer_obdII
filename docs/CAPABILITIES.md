@@ -133,9 +133,15 @@ of those signals have been obtained. Six supervised UDS `ReadDataByIdentifier`
 requests — state of charge, energy remaining, range, distance since full charge,
 temperature and charger DC power — all answer from this vehicle's Battery System
 Manager, and they cross-check one another rather than merely looking plausible.
-Pack voltage and cell balance are still unavailable, because no sourced
-identifier for them has been found — not because the path does not exist. See
-[GM enhanced candidates](GM_ENHANCED_CANDIDATES.md).
+~~Pack voltage and cell balance are still unavailable, because no sourced
+identifier for them has been found.~~ **Both were obtained on 2026-09-03 and
+this sentence outlived them by a day.** Cell balance comes from `0x2AF5`
+(average, minimum, maximum, spread); pack voltage from `0x2885` at all three
+drive motor controllers, and pack current from `0x2414` — the reading the commit
+history calls the project's largest gap, closed. The same file said so 200 lines
+below while this paragraph said otherwise. See
+[GM enhanced candidates](GM_ENHANCED_CANDIDATES.md) for the generated list, and
+[the telemetry catalog](TELEMETRY_CATALOG.md) for what each is worth.
 
 ### Service 09 — vehicle information
 

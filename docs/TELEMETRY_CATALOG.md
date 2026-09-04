@@ -184,11 +184,11 @@ alongside the measured pack voltage it should refuse to follow.
 
 | Signal | Identifier | Scaling | Unit | Level |
 |---|---|---|---|---|
-| Wheel speed, four corners | `0x4A7A` | one byte each, FL/FR/RL/RR | km/h | **read** |
+| Wheel speed, four corners | `0x4A7A` | one byte each, FL/FR/RL/RR | km/h | **measured** |
 | Brake pressure | `0x4A7C` | `(B0 - 10) * 100` | kPa | **read** |
 | Steering wheel angle | `0x4C2D` | `signed16 * 0.022` | ° | **read** |
 | Lateral acceleration | `0x4C2F` | `signed16 * 0.0015928` | g | **read** |
-| Longitudinal acceleration | `0x4C30` | `signed16 * 0.0015928` | g | **read** |
+| Longitudinal acceleration | `0x4C30` | `signed16 * 0.0015928` | g | **measured** |
 
 These carry the **best-evidenced scalings in the project**. The source is not a
 stated formula but test fixtures pairing a captured frame with its expected
@@ -196,17 +196,41 @@ value, so each equation was *derived from the vectors* and re-checked against
 every one — including both signs. A transcription error survives copying but not
 arithmetic.
 
+Two of them stopped resting on the vectors alone on 2026-09-04, when this
+vehicle was asked to confirm them:
+
+* **`0x4A7A` against legislated PID `010D`** — recorded in the same row, from a
+  different module. `r=+0.997` on each of the four corners over 670 moving
+  samples spanning 1–130 km/h, mean difference within 0.1 km/h of zero. A vendor
+  scaling from an unmerged BEV3 source, confirmed by the standard's own
+  measurement.
+* **`0x4C30` against the derivative of that same PID** — `r=+0.837` over 1683
+  samples, and the magnitudes match: −2.71..+2.60 m/s² derived against
+  −3.00..+3.19 m/s² read. The correlation is not higher because the two are
+  sampled seconds apart and an eight-second derivative is a smoothed
+  accelerometer; that is a sampling limit, not a disagreement.
+
+`0x4C2F` shares `0x4C30`'s scaling and stays **read**. A sibling being confirmed
+is suggestive and is not evidence: nothing here measures cornering
+independently.
+
 ---
 
 ## 3. Drive motor controllers — modules `17`, `1D`, `1E`
 
 | Signal | Identifier | Scaling | Unit | Level |
 |---|---|---|---|---|
-| Module supply voltage ×3 | `0x33E5` | `B0 / 10` | V | **read** |
+| Module supply voltage ×3 | `0x33E5` | `B0 / 10` | V | **measured** |
 | Pack voltage, at all three | `0x2885` | `[B0:B1] / 100` | V | **measured** |
 
 All three answer `0x33E5` independently: 13.2 / 13.1 / 13.1 V. This is the
 **12 V domain**, not traction-pack voltage, and must never be presented as one.
+Legislated PID `0142` was added on 2026-09-04 as a third independent route to
+that rail; the three differ multiplicatively by about 2.4 % and 5.9 % with
+ratios stable to half a percent, which is a calibration question between
+uncalibrated ADCs rather than a decode error — see [pack
+architecture](PACK_ARCHITECTURE.md). That is what promotes this row to
+**measured** and what stops it going further.
 
 `0x2885` was proven only at module `17` until 2026-09-03, when asking at
 priority `0x18` had `1D` and `1E` answer it too — 382.39 V and 382.37 V against

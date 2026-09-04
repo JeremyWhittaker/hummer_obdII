@@ -15,6 +15,7 @@ being true.
 
 import glob
 import os
+import re
 import unittest
 
 from hummer_obd import drive
@@ -183,6 +184,100 @@ class TestTheLevelThreeClaimsAreRederived(unittest.TestCase):
         self.assertLess(abs(span_field - span_derived) / span_derived, 0.5,
                         f"magnitudes disagree: {span_derived:.2f} vs "
                         f"{span_field:.2f} m/s^2")
+
+
+class TestTheCatalogAgreesWithTheLevels(unittest.TestCase):
+    """The gap the audit found, closed the way `registry.py` closes its own.
+
+    `docs/TELEMETRY_CATALOG.md` grades every signal `measured` / `read` / `raw`
+    and states the mapping to these numeric levels in its own header. Nothing
+    checked that the two agreed, and within hours of the levels existing three
+    signals disagreed: `0x4A7A`, `0x4C30` and `0x33E5` were promoted to level 3
+    in code while the catalog still said `read`.
+
+    That is the fourth hand-kept inventory in this project to drift. This is the
+    test that makes it the last one for this pair.
+
+    Deliberately *not* a generated table. The catalog is prose written for a
+    human -- scalings, units, the reasoning behind each decode -- and generating
+    it would cost more than it saves. Checking one column of it costs nothing.
+    """
+
+    #: The mapping the catalog states in its own "Evidence levels" section.
+    WORD_FOR_LEVEL = {1: "raw", 2: "read", 3: "measured", 4: "measured"}
+    RANK = {"raw": 1, "read": 2, "measured": 3}
+
+    CATALOG = os.path.join(_ROOT, "docs", "TELEMETRY_CATALOG.md")
+
+    #: A table row whose last cell is exactly a bolded level word.  Rows whose
+    #: last cell is prose -- the refusals table, the standard-OBD notes -- carry
+    #: no grade to check and are skipped rather than guessed at.
+    ROW = re.compile(r"^\|.*?\|\s*\*\*(measured|read|raw)\*\*\s*\|\s*$")
+    IDENT = re.compile(r"`0x([0-9A-F]{4})`")
+
+    def catalog_grades(self):
+        """Identifier -> the strongest grade the catalog gives it.
+
+        An identifier legitimately appears more than once with different grades:
+        `0x2AF5` is **measured** for the three cell voltages it carries and
+        **raw** for the four trailing bytes nobody has decoded. The strongest
+        grade is the claim about the identifier; the weaker rows are claims
+        about parts of its payload.
+        """
+        grades: dict[str, str] = {}
+        with open(self.CATALOG, encoding="utf-8") as handle:
+            for line in handle:
+                match = self.ROW.match(line.rstrip("\n"))
+                if not match:
+                    continue
+                word = match.group(1)
+                for did in self.IDENT.findall(line):
+                    # `grades.get(did, "raw")` looks equivalent and is not: it
+                    # gives an unseen identifier rank 1, so "raw" never beats
+                    # its own default and every raw-only row is dropped.  The
+                    # vacuity guard below is what caught that.
+                    current = grades.get(did)
+                    if current is None or self.RANK[word] > self.RANK[current]:
+                        grades[did] = word
+        return grades
+
+    def test_the_catalog_grades_something(self):
+        # A regex that silently matches nothing would make every assertion below
+        # pass vacuously, which is the failure mode of every table-scraping test.
+        grades = self.catalog_grades()
+        self.assertGreater(len(grades), 25, "the row pattern stopped matching")
+        self.assertIn("2885", grades)
+
+    def test_every_graded_identifier_matches_its_confidence_level(self):
+        for did, word in sorted(self.catalog_grades().items()):
+            if did not in CONFIDENCE:
+                continue
+            with self.subTest(did=did):
+                self.assertEqual(
+                    word, self.WORD_FOR_LEVEL[CONFIDENCE[did].level],
+                    f"docs/TELEMETRY_CATALOG.md grades 0x{did} **{word}** while "
+                    f"confidence.py has it at level {CONFIDENCE[did].level}",
+                )
+
+    def test_everything_that_answers_here_is_graded_somewhere_in_the_catalog(self):
+        """The other direction: a signal the vehicle answers must be written up.
+
+        Only the four ISO identifiers are legitimately absent, and they are the
+        one case where absence is correct -- they are reachability probes, not
+        signals, and no module has ever returned a positive response to one.
+        Anything else missing means the vehicle answered something and the
+        catalog never said what it was worth.
+        """
+        graded = set(self.catalog_grades())
+        ungraded = sorted(d for d, e in CONFIDENCE.items()
+                          if e.level >= 1 and d not in graded)
+        self.assertEqual(ungraded, [],
+                         f"identifiers this vehicle answers with no catalog row: {ungraded}")
+
+    def test_nothing_the_catalog_grades_is_missing_from_the_gate(self):
+        unknown = sorted(d for d in self.catalog_grades() if d not in CONFIDENCE)
+        self.assertEqual(unknown, [],
+                         f"the catalog grades identifiers the gate does not hold: {unknown}")
 
 
 class TestWhatTheLevelsAreFor(unittest.TestCase):
