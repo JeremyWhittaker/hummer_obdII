@@ -503,8 +503,12 @@ UNREACHABLE: Final[tuple[Unreachable, ...]] = (
     _u("Freeze frame data", "measured",
        "Service 02 is permitted and proven to work. There is no frame to read: "
        "a freeze frame exists only alongside a stored fault, and this vehicle "
-       "reports none -- services 03, 07 and 0A all return no codes, verified "
-       "either side of the passive capture on 2026-09-04.",
+       "has none. Worth stating how that is known, because it was recorded "
+       "wrongly first: every DTC check before 2026-09-04 returned NO DATA and "
+       "was written down as 'no codes', which is not what NO DATA means. "
+       "Addressed to module 45 all three services answer positively -- 43 00, "
+       "47 00, 4A 00, count zero -- and that frame, not the silence, is the "
+       "evidence.",
        "A fault occurring. This is a capability that is present and has nothing "
        "to show, which is a different thing from a capability that is absent.",
        despite="PID 0101 now records the malfunction lamp and stored-fault "

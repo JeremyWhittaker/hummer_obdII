@@ -216,7 +216,7 @@ The kind of "no" matters more than the list, so it is stated first. These are no
 | The vehicle's internal networks | **hardware** | The diagnostic connector is the gateway's outside. Everything this project has ever obtained came from asking a module through it. What happens on the internal buses is not visible from here, and the one public GM pack decode (gm_global_a_high_voltage_management.dbc) came from a tap behind the forward camera on the previous-generation platform, not from a diagnostic connector. | — | A physical tap, which needs the hardware and the identification in CAN_FD_EXPANSION.md, and is explicitly not authorised by this repository. |
 | GPS or location | **hardware** | There is no GPS receiver on the node, and location lives in the OnStar/VCIM telematics domain rather than on any diagnostic path. No GPS signal appears in any GM Global-A, Rivian or Tesla Model 3 DBC. This is an argument rather than a measurement -- it was not tested against this vehicle -- and it is offered as a reason not to plan on GPS, not as proof it is absent. | — | A GPS receiver on the node, which is hardware and would also change what the session files contain. Session CSVs deliberately carry no location today. |
 | Passive broadcast traffic at the connector | **measured** | Measured directly rather than argued: 30.1 seconds of receive-only CAN monitoring on 2026-09-04, parked and awake, returned ZERO BYTES. The adapter did not even assert the acknowledgement bit a normal CAN node puts on every frame it hears; 65 bytes of adapter configuration went out and nothing came back. CAN error counters read T:00 R:00 before and after, DTC inventory unchanged. | Every byte this project has ever obtained, all of it by asking. | Nothing, on this access path. The gateway forwards nothing unsolicited to pins 6 and 14, and no adapter changes what a gateway chooses to forward. Driving and charging were not tested, so that much remains open -- but the state easiest to imagine being chatty was the one measured. |
-| Freeze frame data | **measured** | Service 02 is permitted and proven to work. There is no frame to read: a freeze frame exists only alongside a stored fault, and this vehicle reports none -- services 03, 07 and 0A all return no codes, verified either side of the passive capture on 2026-09-04. | PID 0101 now records the malfunction lamp and stored-fault count in every row, so a fault appearing mid-drive is caught with the speed and distance either side of it. | A fault occurring. This is a capability that is present and has nothing to show, which is a different thing from a capability that is absent. |
+| Freeze frame data | **measured** | Service 02 is permitted and proven to work. There is no frame to read: a freeze frame exists only alongside a stored fault, and this vehicle has none. Worth stating how that is known, because it was recorded wrongly first: every DTC check before 2026-09-04 returned NO DATA and was written down as 'no codes', which is not what NO DATA means. Addressed to module 45 all three services answer positively -- 43 00, 47 00, 4A 00, count zero -- and that frame, not the silence, is the evidence. | PID 0101 now records the malfunction lamp and stored-fault count in every row, so a fault appearing mid-drive is caught with the speed and distance either side of it. | A fault occurring. This is a capability that is present and has nothing to show, which is a different thing from a capability that is absent. |
 | On-board monitor results (service 06) | **measured** | The service is permitted and proven. The vehicle advertises ZERO monitor IDs, so there is nothing to return. An EV with no combustion emissions monitors is the expected shape of that answer. | — | Nothing. This is the vehicle correctly reporting that it runs no such monitors. |
 | Clearing fault codes (service 04) | **forbidden** | Refused by every gate. Not a configuration option, and an import-time assertion fails the build if service 04 is added to the allowed set. | — | Nothing within this repository. Clearing codes destroys evidence and is outside a read-only telemetry node's remit by design. |
 | Writing, controlling, resetting or unlocking anything | **forbidden** | Every UDS write, control, security, reset and routine service is in FORBIDDEN_SERVICES: 04, 08, 10, 11, 14, 27, 28, 2E, 2F, 31, 34, 35, 36, 37, 38, 3B, 3D, 3E, 83, 84, 85 and 87. The node is structurally incapable of transmitting a command in the imperative sense, and the gate matrix above shows each one refused by all five gates rather than asserting it. | — | Nothing. This is the invariant the whole project is built around, and it is not a tunable. |
@@ -245,6 +245,34 @@ a day — see [CAN priority](CAN_PRIORITY.md).
 before concluding anything about *what* you asked for. Thirteen identifiers at
 one priority is one data point about the priority, not thirteen about the
 identifiers.
+
+### The rule being broken, by the person who wrote it, the same day
+
+This is not a hypothetical failure mode, and the most recent instance is worth
+keeping visible.
+
+Every fault-code check in this project's history returned `NO DATA`, and every
+one was written down as **"no fault codes"** — including in
+[the validation record](VALIDATION.md) earlier on 2026-09-04, in a table on the
+same page as this rule.
+
+Then a run that happened to leave the adapter addressed to module `45` asked
+again:
+
+```text
+probe default addressing   03 -> NO DATA          07 -> NO DATA          0A -> NO DATA
+addressed to module 45     03 -> 18DAF145 02 43 00  07 -> ... 47 00  0A -> ... 4A 00
+```
+
+`43 00` is a positive response to service `03` carrying a DTC count of **zero**.
+So the vehicle does have no fault codes — the conclusion was right and the
+evidence for it was silence, which is not evidence. Two things follow, and the
+second is the one that generalises:
+
+1. **DTCs are genuinely readable and genuinely zero**, addressed to module `45`.
+2. **A `NO DATA` you have already explained to yourself is the dangerous kind.**
+   The rule above is easy to apply to someone else's result and hard to apply to
+   one that agrees with what you expected.
 
 ---
 

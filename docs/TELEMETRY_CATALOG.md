@@ -284,7 +284,7 @@ than describing it, for exactly this reason.
 | 12 V supply, per responding module | `01 42` | **measured** |
 | Run time, distance since codes cleared, distance with MIL on, warm-ups | `01 1F` `01 21` `01 31` `01 30` | **read** |
 | Malfunction lamp, stored-fault count | `01 01` | **measured** — lamp off, zero faults |
-| Stored / pending / permanent DTCs | `03` `07` `0A` | **measured** — zero on this vehicle |
+| Stored / pending / permanent DTCs | `03` `07` `0A` | **measured** — zero on this vehicle, and genuinely measured only since 2026-09-04. Every earlier check returned `NO DATA` and was recorded as "no codes", which `NO DATA` does not mean. Addressed to module `45` all three answer positively: `43 00`, `47 00`, `4A 00` — count zero. See [the validation record](VALIDATION.md#dtcs-were-never-actually-read-until-2026-09-04) |
 | VIN, calibration IDs, CVNs, module names | `09 02` `09 04` `09 06` `09 0A` | **measured** |
 | Freeze frame | `02` | service proven; no frame exists (no DTC) |
 | On-board monitor results | `06` | proven; vehicle advertises **zero** monitor IDs |

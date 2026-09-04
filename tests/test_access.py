@@ -345,6 +345,50 @@ class TestTheHubDocumentsLinksResolve(unittest.TestCase):
         self.assertGreater(checked, 1, "no anchor links were actually checked")
 
 
+class TestEveryDocumentsLinksResolve(unittest.TestCase):
+    """Widened from the hub page to all of `docs/` after two breaks in one edit.
+
+    The hub-only version was written, and within the hour a correction added to
+    VALIDATION.md used `../docs/X.md` from inside `docs/` -- twice. The check
+    that would have caught it existed and was pointed at one file. A link
+    checker scoped to the document you happen to be editing is a link checker
+    scoped to the wrong document.
+    """
+
+    DOCS = os.path.join(_ROOT, "docs")
+    LINK = re.compile(r'\[[^\]]+\]\(([^)\s]+)')
+
+    def markdown_files(self):
+        found = [os.path.join(self.DOCS, n) for n in sorted(os.listdir(self.DOCS))
+                 if n.endswith(".md")]
+        found.append(os.path.join(_ROOT, "README.md"))
+        return found
+
+    def test_every_relative_link_in_every_document_resolves(self):
+        files = self.markdown_files()
+        self.assertGreater(len(files), 15, "no documents found to check")
+        checked = 0
+        for path in files:
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+            base = os.path.dirname(path)
+            for target in self.LINK.findall(text):
+                if target.startswith(("http://", "https://", "#", "mailto:")):
+                    continue
+                filepart = target.split("#", 1)[0]
+                if not filepart:
+                    continue
+                checked += 1
+                with self.subTest(doc=os.path.basename(path), target=target):
+                    self.assertTrue(
+                        os.path.exists(os.path.join(base, filepart)),
+                        f"{os.path.basename(path)} links to {filepart}, "
+                        "which does not exist")
+        self.assertGreater(checked, 40,
+                           f"only {checked} links checked; the pattern is "
+                           "probably not matching")
+
+
 class TestItNeverTouchesTheVehicle(unittest.TestCase):
     """Checked against the module's imports, not against its prose.
 

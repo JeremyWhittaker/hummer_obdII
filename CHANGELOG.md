@@ -863,6 +863,43 @@ discount.
 
 ### Fixed
 
+- **Fault codes were never actually read until 2026-09-04.** Every DTC check in
+  this project's history returned `NO DATA`, and every one was recorded as "no
+  fault codes". That is precisely the error the three-failure-shapes rule exists
+  to prevent — `NO DATA` means *nothing replied* and says nothing whatever about
+  whether codes exist — and it was made by the person who wrote the rule, in a
+  table on the same page as the rule, the same day.
+
+  A run re-confirming modules `CD` and `45` first-hand left the adapter
+  addressed to the gateway, and the DTC read that followed answered properly:
+
+  ```
+  probe default addressing   03 -> NO DATA        07 -> NO DATA        0A -> NO DATA
+  addressed to module 45     03 -> 18DAF145024300 07 -> ...4700       0A -> ...4A00
+  ```
+
+  `43 00` is a positive response to service `03` carrying a DTC count of zero;
+  likewise `47 00` and `4A 00`. **So the vehicle really does have no fault codes
+  — and until that frame arrived, the claim rested on silence.** The conclusion
+  survived; the evidence for it did not, and the difference is the whole point.
+
+  Corrected in `VALIDATION.md` (the passive-capture table now says `NO DATA`
+  with the correction beside it), `TELEMETRY_CATALOG.md` (the **measured** grade
+  is now correct for a different reason than it was first given), and
+  `hummer_obd.access` (the freeze-frame entry cited the same non-evidence).
+  `ACCESS_MATRIX.md` keeps the whole episode as a worked example under the
+  failure-shape rule, because the generalisable lesson is narrower than "read
+  the shapes": **a `NO DATA` you have already explained to yourself is the
+  dangerous kind.** The rule is easy to apply to someone else's result and hard
+  to apply to one that agrees with what you expected.
+
+- **Two broken relative links, written an hour after adding a link checker that
+  would have caught them.** The correction above used `../docs/X.md` from inside
+  `docs/`, twice. The checker existed and was scoped to a single file. A link
+  checker scoped to the document you happen to be editing is scoped to the wrong
+  document; it now covers every markdown file in `docs/` plus `README.md`, and
+  a vacuity guard requires it to have actually checked more than forty links.
+
 - **"5.4 degrees Fahrenheit" was repeated in four places and had quadrupled.**
   It was the corpus-wide temperature span when written, and it was the stated
   reason no thermal field could be decoded. By 2026-09-04 the corpus spanned

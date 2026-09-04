@@ -1068,8 +1068,8 @@ CAN. Nothing outside that manifest appears in the transcript.
 | Stop acknowledged by the adapter | yes |
 | `ATCS` before | `T:00 R:00` |
 | `ATCS` after | `T:00 R:00` |
-| DTCs before (`03` / `07` / `0A`) | none / none / none |
-| DTCs after (`03` / `07` / `0A`) | none / none / none |
+| DTCs before (`03` / `07` / `0A`) | ~~none / none / none~~ — **`NO DATA` from all three**, see the correction below |
+| DTCs after (`03` / `07` / `0A`) | ~~none / none / none~~ — **`NO DATA` from all three**, unchanged either side |
 | Driver information centre | no new message |
 
 Transcript: 32 JSONL records, 7,949 bytes, zero corrupt records, SHA-256
@@ -1081,6 +1081,17 @@ aa3e57e59cdd94a43de267a25de01dede9aed5e6b00eba7aa7c9782d6c8b83af
 The transmit error counter never moved off zero, which is the stop condition
 that mattered most: it is consistent with having transmitted nothing, though it
 is not by itself proof of it. The manifest above is the stronger evidence.
+
+> **Correction, later the same day.** The DTC rows originally read
+> "none / none / none". That was wrong, and wrong in the specific way this
+> project warns about at length: all three services returned **`NO DATA`**, and
+> `NO DATA` means *nothing replied* — it says nothing whatever about whether
+> fault codes exist. The comparison either side of the capture is still valid,
+> because it compares like with like, but "no DTCs" was not what had been
+> measured. What had been measured was silence at that addressing.
+>
+> A genuine answer arrived at 01:50 UTC — see
+> [the DTC finding](#dtcs-were-never-actually-read-until-2026-09-04) below.
 
 ### What this establishes, and what it does not
 
@@ -1102,3 +1113,69 @@ silence all look identical from here.
 picked up again on a slow evening. It was tried, under the conditions the
 research note specified, and it returned nothing. The next person to have the
 idea can read this row instead of spending a week on it.
+
+
+## DTCs were never actually read until 2026-09-04
+
+Every DTC check in this project's history returned `NO DATA`, and every one was
+recorded as "no fault codes". That is the exact error
+[the failure-shape rule](ACCESS_MATRIX.md#4-the-three-ways-a-request-fails)
+exists to prevent, made by the person who wrote the rule, on the same day.
+
+### What happened
+
+Module `CD` and module `45` were being re-confirmed first-hand rather than cited
+from a document. The gateway profile addresses module `45` — `ATSHDA45F1`,
+`ATCRA18DAF145` — and leaves the adapter pointed there. The DTC read that
+followed therefore went to module `45` specifically, and it answered:
+
+```text
+before (probe default addressing)   03 -> NO DATA        07 -> NO DATA        0A -> NO DATA
+after  (addressed to module 45)     03 -> 18DAF145024300 07 -> 18DAF145024700 0A -> 18DAF1450 24A00
+```
+
+Decoded, the "after" frames are unambiguous positives:
+
+| Service | Frame | Meaning |
+|---|---|---|
+| `03` stored | `18DAF145 02 43 00` | positive response `0x43`, **DTC count 0** |
+| `07` pending | `18DAF145 02 47 00` | positive response `0x47`, **DTC count 0** |
+| `0A` permanent | `18DAF145 02 4A 00` | positive response `0x4A`, **DTC count 0** |
+
+**So the vehicle really does have zero fault codes** — that part of the old
+conclusion survives. What did not survive is the evidence for it. Until this
+frame arrived, the claim rested on silence.
+
+### Why the difference
+
+Addressing, not vehicle state. The probe's default DTC path did not reach a
+module willing to answer service `03`; addressed explicitly to the gateway, all
+three services answered immediately. This is the same lesson as
+[CAN priority](CAN_PRIORITY.md): when something is silent, **vary how
+you are asking before concluding anything about what you asked for.** Thirteen
+identifiers at one priority was one data point about the priority. Three
+services at one addressing was one data point about the addressing.
+
+### What was corrected
+
+* The passive-capture table above, which said "none / none / none".
+* `docs/TELEMETRY_CATALOG.md`, which graded DTC reads **measured** on the
+  strength of `NO DATA`. The grade is now correct for the first time, for a
+  different reason than it was originally given.
+* `hummer_obd.access`, whose freeze-frame entry cited the same non-evidence.
+
+### Also confirmed in the same run, first-hand
+
+Both were previously carried from `docs/PROBE_2026-09-03.md` rather than
+measured in the session that cites them:
+
+| Claim | Result, 2026-09-04 01:50 UTC |
+|---|---|
+| Module `CD` refuses everything at priority `0x18` | `22F187`, `2227C6`, `222AF5`, `222AF1` → **all `7F 22 31`** from `18DAF1CD`. Confirmed. |
+| Module `45` holds none of the four ISO identifiers | `22F187`, `22F188`, `22F189`, `22F191` → **all `7F 22 31`** from `18DAF145`. Confirmed. |
+
+A formed `7F 22 31` from a module's own address is the strongest available
+proof that it is present and speaking service 22 — better than a positive
+response would be, because it also shows the module parses the request rather
+than echoing it. Both modules are reachable and neither holds anything asked of
+them.
