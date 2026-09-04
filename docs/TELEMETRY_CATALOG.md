@@ -142,6 +142,44 @@ they are all near-multiples of **0.1 pp** (mean residual 1.1 % of a step). So
 the field's resolution is a tenth of a percentage point, and while charging the
 vehicle chooses to advance it four tenths at a time.
 
+### The cold soak: the best thermal experiment yet, and it decodes nothing
+
+An overnight cool-down gave the first comparison between two genuinely different
+thermal **states** rather than a monotonic ramp — 72 samples at 95.0 °F against
+248 during the charge averaging 102.6 °F.
+
+| Field | cold | warm | Δ | implied °C/count |
+|---|---|---|---|---|
+| `coolant_1_raw` | 860.0 | 931.7 | **+71.7** | 0.0591 |
+| `coolant_2_raw` | 766.1 | 713.7 | **−52.4** | −0.0808 |
+| `hv_temp_raw` | 70.0 | 51.7 | −18.3 | −0.2314 |
+| `batt_temp_a_raw` | 234.0 | 1048.0 | +814.0 | 0.0052 |
+| `batt_temp_b_raw` | 1000.0 | 0.0 | −1000.0 | −0.0042 |
+| `compressor_temp_raw` | 103.1 | 110.3 | +7.2 | 0.5875 |
+
+**What this rules out.**
+
+`batt_temp_a_raw` and `batt_temp_b_raw` are **not continuous temperatures**.
+Across the entire corpus they take **five** and **four** distinct values — 234,
+238, 242, 429, 1048 and 0, 418, 910, 1000 — and in this comparison each simply
+switches between two of them. They are also anti-correlated: when one is low the
+other is high. A quantity that occupies four values in two days of driving and
+charging is a state or an index, whatever its source calls it.
+
+`coolant_2_raw` moves **the wrong way**: it falls as the pack warms, across 252
+distinct values. Whatever it tracks, it is not pack temperature in the direction
+a coolant sensor would.
+
+**What survives, weakly.** `coolant_1_raw` is the only field whose implied
+divisor is near a round number: 0.0591 °C per count against **1/16 = 0.0625**,
+about 5 % out. On 7.6 °F of separation that is suggestive and not establishing,
+and this project has now been fooled twice by a plausible divisor derived from
+too little thermal range.
+
+**What would settle it** is a genuinely cold morning. Arizona in September gave
+7.6 °F between states; 40 °F would make a 5 % discrepancy either vanish or
+become decisive. Until then all six stay at level 1.
+
 ### Modules go quiet during a settled charge
 
 Checked after a night of stopping and restarting the recorder for passive tests,

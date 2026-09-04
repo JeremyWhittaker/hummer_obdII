@@ -20,6 +20,31 @@ discount.
 
 ### Added
 
+- **The cold soak ran, and the thermal fields still do not decode — but the
+  negatives are much sharper.** First comparison between two genuinely different
+  thermal *states* rather than a monotonic ramp: 72 samples at 95.0 °F against
+  248 averaging 102.6 °F during the charge.
+
+  **`batt_temp_a_raw` and `batt_temp_b_raw` are not continuous temperatures.**
+  Across the whole corpus they take **five** and **four** distinct values — 234,
+  238, 242, 429, 1048 and 0, 418, 910, 1000 — switching between two of them here
+  and anti-correlated with each other. A quantity occupying four values across
+  two days of driving and charging is a state or an index, whatever its source
+  calls it. That is a much stronger statement than the earlier "it did not move
+  during a charge", which the same fields then disproved.
+
+  **`coolant_2_raw` moves the wrong way**, falling as the pack warms across 252
+  distinct values.
+
+  **`coolant_1_raw` is the only survivor**, and weakly: 0.0591 °C per count
+  against a round 1/16 = 0.0625, about 5 % out on 7.6 °F of separation.
+  Suggestive, not establishing — this project has been fooled twice already by a
+  plausible divisor from too little thermal range.
+
+  What would settle it is a genuinely cold morning. Arizona in September gave
+  7.6 °F; 40 °F would make a 5 % discrepancy either vanish or become decisive.
+  All six stay at level 1.
+
 - **`0x0046` settled: it is a pack-side temperature, not ambient.** The morning
   after the charge it reads **95.0 F** while the truck's own display shows
   **94 F** — one degree apart, which on its own would argue for an ambient
