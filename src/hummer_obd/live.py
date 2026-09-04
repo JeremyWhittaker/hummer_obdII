@@ -27,12 +27,13 @@ from __future__ import annotations
 import argparse
 import glob
 import os
+import statistics
 import sys
 import time
 from typing import Optional
 
 from . import drive
-from .analyze import read_session
+from .analyze import read_session, sane
 
 __all__ = ["column_sources", "snapshot", "render", "main"]
 
@@ -305,6 +306,265 @@ def snapshot(rows: list[dict]) -> dict:
     }
 
 
+#: The zero point of ``0x2429``, measured rather than assumed: this exact value
+#: is held across 1083 stationary samples corpus-wide and is the only value
+#: present in 7 of the 8 sessions that carry the field.  Above it is drive
+#: torque, below it is regen.  No newtons-per-count is published -- the fitted
+#: constant is not a divisor a designer would pick -- so this reports signed
+#: counts from zero and nothing more.
+TORQUE_ZERO: int = 22534
+
+#: Consecutive-sample current steps smaller than this are not used for the
+#: resistance fit.  The estimator is dV/dI between adjacent samples, so a small
+#: step divides sensor noise by a small number and the result explodes.
+_MIN_STEP_AMPS: float = 20.0
+
+#: Below this many usable steps the resistance figure is not reported at all.
+_MIN_STEPS: int = 5
+
+
+def _num(row: dict, name: str):
+    """A float from a session cell, or ``None``."""
+    value = row.get(name)
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    while text and text[-1] not in "0123456789.":
+        text = text[:-1]
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _hex(row: dict, *names: str):
+    """An int from the first of *names* the row carries, read as hex.
+
+    Takes several names because a column rename leaves every session already on
+    disk carrying the old header, and a live view that only knows the new one
+    would show a blank for the whole back catalogue.
+    """
+    for name in names:
+        value = row.get(name)
+        if value is None or value == "":
+            continue
+        try:
+            return int(str(value).strip(), 16)
+        except ValueError:
+            return None
+    return None
+
+
+def _last(rows: list[dict], name: str):
+    for row in reversed(rows):
+        value = _num(row, name)
+        if value is not None:
+            return value
+    return None
+
+
+def _last_hex(rows: list[dict], *names: str):
+    for row in reversed(rows):
+        value = _hex(row, *names)
+        if value is not None:
+            return value
+    return None
+
+
+def _series(rows: list[dict], name: str) -> list[float]:
+    out = []
+    for row in rows:
+        value = _num(row, name)
+        if value is not None:
+            out.append(value)
+    return out
+
+
+def pack_resistance(rows: list[dict]) -> Optional[tuple[float, int, float]]:
+    """Pack DC internal resistance in milliohms, from consecutive steps.
+
+    Terminal voltage is ``OCV - I*R``, so between two adjacent samples the
+    open-circuit term cancels and ``-dV/dI`` is the resistance.  That
+    cancellation is why this is used rather than regressing voltage on current
+    directly: the level regression carries the state-of-charge trend into the
+    slope, and on one recorded session it returns the wrong sign entirely.
+
+    Returns ``(milliohms, n_steps, correlation)``, or ``None`` when the session
+    has not yet produced enough current movement to measure anything.
+    """
+    steps: list[tuple[float, float]] = []
+    for before, after in zip(rows, rows[1:]):
+        v0, i0 = _num(before, "pack_v"), _num(before, "pack_a")
+        v1, i1 = _num(after, "pack_v"), _num(after, "pack_a")
+        if None in (v0, i0, v1, i1):
+            continue
+        di = i1 - i0
+        if abs(di) < _MIN_STEP_AMPS:
+            continue
+        steps.append((di, v1 - v0))
+    if len(steps) < _MIN_STEPS:
+        return None
+    # Least squares through the origin: a step of no current must produce no
+    # change in voltage, so an intercept here would be fitting noise.
+    denom = sum(di * di for di, _ in steps)
+    if denom <= 0:
+        return None
+    slope = sum(di * dv for di, dv in steps) / denom
+    xs = [di for di, _ in steps]
+    ys = [dv for _, dv in steps]
+    try:
+        r = statistics.correlation(xs, ys)
+    except (statistics.StatisticsError, ValueError):
+        r = float("nan")
+    return (-slope * 1000.0, len(steps), r)
+
+
+def derive(rows: list[dict]) -> dict:
+    """Every quantity this project has established how to compute.
+
+    The raw table above this one answers "is the vehicle talking".  This
+    answers "what does it mean", and it is deliberately separate: a derived
+    number is only as good as the grading behind it, and mixing the two invites
+    reading a level-1 guess with the same confidence as a level-4 measurement.
+    Anything not yet established is left out rather than estimated.
+    """
+    if not rows:
+        return {}
+    out: dict = {}
+
+    # Pack state is read from SANE rows only.  The last row of a session is
+    # very often the vehicle going to sleep with the contactors open, where
+    # pack_v reads about 1 V -- which would show a 1.06 V pack and 0.3 cells
+    # in series, and look like a decode fault rather than a sleeping truck.
+    good = [r for r in rows if sane(r)] or rows
+
+    # -- pack, all level 4 ---------------------------------------------------
+    pack_v = _last(good, "pack_v")
+    pack_a = _last(good, "pack_a")
+    cell_avg = _last(good, "cell_avg_v")
+    soc = _last(good, "soc_pct")
+    energy = _last(good, "energy_kwh")
+    out["pack_v"] = pack_v
+    out["pack_a"] = pack_a
+    out["pack_kw"] = (pack_v * pack_a / 1000.0) if None not in (pack_v, pack_a) else None
+    out["cell_avg_v"] = cell_avg
+    out["cell_spread_mv"] = _last(good, "cell_spread_mv")
+    out["soc_pct"] = soc
+    out["energy_kwh"] = energy
+    out["series_cells"] = (pack_v / cell_avg) if pack_v and cell_avg else None
+    # Usable capacity implied by where the pack sits right now.  Corpus median
+    # is 190.5 kWh with sd 0.89 over 6961 rows, so a live value far from that
+    # is a reading problem rather than a discovery.
+    out["implied_kwh"] = (energy / (soc / 100.0)) if energy and soc else None
+
+    # -- measured constants --------------------------------------------------
+    out["resistance"] = pack_resistance(good)
+
+    # -- motion and energy over this session ---------------------------------
+    odo = _series(good, "odometer_km")
+    out["distance_km"] = (max(odo) - min(odo)) if len(odo) >= 2 else None
+    ek = _series(good, "energy_kwh")
+    out["energy_used_kwh"] = (max(ek) - min(ek)) if len(ek) >= 2 else None
+
+    # Efficiency is measured over the MOVING window, not the whole session.
+    # A session that parked with the air conditioning on for forty minutes
+    # drained several kWh against zero distance, and charging that to the
+    # drive turns a real 42 kWh/100km into a meaningless 63.
+    moving = [
+        i for i, r in enumerate(good)
+        if (_num(r, "speed_kph") or _num(r, "wheel_fl_kph") or 0) > 1
+    ]
+    if len(moving) >= 2:
+        span = good[moving[0]:moving[-1] + 1]
+        d_odo = _series(span, "odometer_km")
+        d_ek = _series(span, "energy_kwh")
+        if len(d_odo) >= 2 and len(d_ek) >= 2:
+            km = max(d_odo) - min(d_odo)
+            kwh = max(d_ek) - min(d_ek)
+            out["drive_km"] = km
+            out["drive_kwh"] = kwh
+            if km > 0.05 and kwh > 0:
+                out["kwh_per_100km"] = kwh / km * 100.0
+                out["mi_per_kwh"] = (km * 0.621371) / kwh
+    speeds = _series(rows, "speed_kph")
+    out["speed_max_kph"] = max(speeds) if speeds else None
+    out["speed_now_kph"] = _last(rows, "speed_kph")
+    kw = _series(rows, "hv_power_kw")
+    out["kw_peak_drive"] = max(kw) if kw else None
+    out["kw_peak_regen"] = min(kw) if kw else None
+
+    # Energy split by direction, trapezoid over the samples that carry both a
+    # power and a timestamp.  Regen fraction is the honest headline here; the
+    # absolute kWh depend on a 7-9 s poll that misses short events.
+    #
+    # Integrated over the MOVING span for the same reason efficiency is: a
+    # parked air-conditioning load is drawn energy that no amount of braking
+    # could ever return, so including it silently deflates the fraction.
+    span_for_energy = (
+        good[moving[0]:moving[-1] + 1] if len(moving) >= 2 else good
+    )
+    drawn = returned = 0.0
+    for before, after in zip(span_for_energy, span_for_energy[1:]):
+        p0, p1 = _num(before, "hv_power_kw"), _num(after, "hv_power_kw")
+        t0, t1 = _num(before, "elapsed_s"), _num(after, "elapsed_s")
+        if None in (p0, p1, t0, t1) or t1 <= t0:
+            continue
+        dt = (t1 - t0) / 3600.0
+        mid = (p0 + p1) / 2.0
+        if mid >= 0:
+            drawn += mid * dt
+        else:
+            returned += -mid * dt
+    out["kwh_drawn"] = drawn or None
+    out["kwh_regen"] = returned or None
+    out["regen_pct"] = (returned / drawn * 100.0) if drawn > 0 else None
+
+    # -- the torque signal, zero-referenced ----------------------------------
+    torque = _last_hex(rows, "field_2429_raw")
+    if torque is not None:
+        out["torque_counts"] = torque - TORQUE_ZERO
+        out["torque_dir"] = (
+            "drive" if torque > TORQUE_ZERO + 30
+            else "regen" if torque < TORQUE_ZERO - 30
+            else "neutral"
+        )
+
+    # -- the 12 V domain -----------------------------------------------------
+    out["volts_adapter"] = _last(rows, "volts")
+    out["volts_module"] = _last(rows, "module_voltage")
+    out["volts_dmc2"] = _last(rows, "dmc2_v")
+
+    # -- vehicle state -------------------------------------------------------
+    # 0x4127 tracks whether the powertrain is reporting road speed.  1048 is
+    # the state in which no speed is reported at all -- in 477 corpus samples
+    # at that value, not one carries a speed.
+    state_word = _last_hex(rows, "field_4127_raw", "batt_temp_a_raw")
+    out["state_word"] = state_word
+    out["powertrain"] = {
+        1048: "down (no road speed reported)",
+        246: "reporting road speed",
+        234: "awake, stationary",
+        601: "cabin heat active",
+    }.get(state_word)
+    charger = None
+    for row in reversed(rows):
+        value = row.get("charger_5401_raw")
+        if value not in (None, ""):
+            charger = str(value).strip()
+            break
+    out["charger_raw"] = charger
+    out["charging"] = (charger not in (None, "", "00")) if charger is not None else None
+
+    # -- since-last-charge accumulators --------------------------------------
+    out["thermal_energy"] = _last_hex(rows, "thermal_energy_raw")
+    out["thermal_distance"] = _last_hex(rows, "thermal_distance_raw")
+    out["regen_counter"] = _last_hex(rows, "regen_field_raw")
+    out["dist_since_charge_mi"] = _last(rows, "dist_since_chg_mi")
+    return out
+
+
 def _format_value(name: str, value) -> str:
     if value is None:
         return "--"
@@ -330,8 +590,128 @@ def _format_age(age: Optional[float], period: Optional[float]) -> str:
     return f"{text:>10}"
 
 
+def _fmt(value, spec: str = ".2f", dash: str = "--") -> str:
+    """A number formatted, or a dash.  Never a bare ``None`` on screen."""
+    if value is None:
+        return dash
+    try:
+        return format(value, spec)
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def render_derived(d: dict) -> list[str]:
+    """The derived block: what the raw columns above actually mean.
+
+    Every line here is downstream of a grading in ``confidence.py``.  Where a
+    quantity is established the number is given plainly; where only the
+    behaviour is established and not the units -- the accumulators, the torque
+    signal -- the raw count is shown and no unit is invented for it.
+    """
+    if not d:
+        return []
+    out: list[str] = []
+    out.append("-- DERIVED -- what the numbers above mean " + "-" * 36)
+
+    out.append("  TRACTION PACK                              96S, three routes agree")
+    out.append(
+        f"    pack              {_fmt(d.get('pack_v'))} V"
+        f"   {_fmt(d.get('pack_a'), '+.2f')} A"
+        f"   {_fmt(d.get('pack_kw'), '+.2f')} kW"
+    )
+    out.append(
+        f"    cells             {_fmt(d.get('series_cells'), '.1f')} in series"
+        f"   avg {_fmt(d.get('cell_avg_v'), '.4f')} V"
+        f"   spread {_fmt(d.get('cell_spread_mv'), '.1f')} mV"
+    )
+    out.append(
+        f"    charge            {_fmt(d.get('soc_pct'), '.3f')} %"
+        f"   {_fmt(d.get('energy_kwh'))} kWh"
+        f"   implies {_fmt(d.get('implied_kwh'), '.1f')} kWh pack"
+    )
+    res = d.get("resistance")
+    if res:
+        milliohms, n, r = res
+        out.append(
+            f"    resistance        {milliohms:.2f} mOhm"
+            f"   {milliohms / 96.0:.4f} mOhm/cell"
+            f"   (n={n} steps, r={r:+.3f})"
+        )
+    else:
+        out.append(
+            "    resistance        -- (needs current steps above 20 A; "
+            "parked sessions cannot)"
+        )
+
+    out.append("  MOTION AND ENERGY")
+    out.append(
+        f"    speed             now {_fmt(d.get('speed_now_kph'), '.1f')}"
+        f"   peak {_fmt(d.get('speed_max_kph'), '.1f')} kph"
+    )
+    out.append(
+        f"    whole session     {_fmt(d.get('distance_km'), '.2f')} km"
+        f"   {_fmt(d.get('energy_used_kwh'), '.2f')} kWh used (parked draw included)"
+    )
+    if d.get("kwh_per_100km"):
+        out.append(
+            f"    while moving      {_fmt(d.get('drive_km'), '.2f')} km"
+            f"   {_fmt(d.get('drive_kwh'), '.2f')} kWh"
+        )
+        out.append(
+            f"    efficiency        {_fmt(d.get('kwh_per_100km'), '.1f')} kWh/100km"
+            f"   {_fmt(d.get('mi_per_kwh'), '.2f')} mi/kWh   (moving only)"
+        )
+    if d.get("regen_pct") is not None:
+        out.append(
+            f"    regen             {_fmt(d.get('kwh_regen'), '.2f')} kWh back of"
+            f" {_fmt(d.get('kwh_drawn'), '.2f')} drawn"
+            f"   = {_fmt(d.get('regen_pct'), '.1f')} %"
+        )
+    out.append(
+        f"    peak power        {_fmt(d.get('kw_peak_drive'), '+.1f')} drive"
+        f"   {_fmt(d.get('kw_peak_regen'), '+.1f')} regen  kW"
+    )
+    if d.get("torque_counts") is not None:
+        out.append(
+            f"    torque signal     {d['torque_counts']:+d} counts from zero"
+            f"   ({d.get('torque_dir')})   0x2429, no unit established"
+        )
+
+    out.append("  12 V DOMAIN                                one rail, stable offsets")
+    out.append(
+        f"    adapter ATRV      {_fmt(d.get('volts_adapter'))} V"
+        f"   PID 0142 {_fmt(d.get('volts_module'), '.3f')} V"
+        f"   0x33E5 {_fmt(d.get('volts_dmc2'))} V"
+    )
+    out.append("                      PID 0142 is the instrument: 1 mV vs 0.1 V steps")
+
+    out.append("  VEHICLE STATE")
+    word = d.get("state_word")
+    out.append(
+        f"    powertrain        {d.get('powertrain') or 'unknown'}"
+        + (f"   (0x4127 = {word})" if word is not None else "")
+    )
+    charging = d.get("charging")
+    out.append(
+        f"    charging          "
+        f"{'yes' if charging else 'no' if charging is not None else '--'}"
+        f"   (0x5401 = {d.get('charger_raw') or '--'})"
+    )
+
+    out.append("  SINCE LAST CHARGE                          counters, units unknown")
+    out.append(
+        f"    thermal energy    {d.get('thermal_energy') if d.get('thermal_energy') is not None else '--'}"
+        f"   distance counter {d.get('thermal_distance') if d.get('thermal_distance') is not None else '--'}"
+        f"   regen {d.get('regen_counter') if d.get('regen_counter') is not None else '--'}"
+    )
+    out.append(f"    distance          {_fmt(d.get('dist_since_charge_mi'))} mi")
+    out.append("")
+    return out
+
+
 def render(snap: dict, *, path: str = "", sources: Optional[dict] = None,
-           stale_after: float = 30.0, expand: bool = True) -> str:
+           stale_after: float = 30.0, expand: bool = True,
+           derived: Optional[dict] = None) -> str:
     """The whole node's sensor state as one page of text."""
     sources = sources if sources is not None else column_sources()
     out: list[str] = []
@@ -349,6 +729,12 @@ def render(snap: dict, *, path: str = "", sources: Optional[dict] = None,
     out.append(f"rows    : {snap['rows']}    newest: {snap.get('newest_utc')}")
     out.append(f"sampling: every {period}s" if period else "sampling: unknown")
     out.append("")
+    # The derived block goes FIRST.  The raw table below answers "is the
+    # vehicle talking"; this answers "what is it saying", which is what a
+    # person watching actually wants, and it should not need scrolling past
+    # fifty rows of hex to reach.
+    if derived:
+        out.extend(render_derived(derived))
 
     # Group columns by the module that supplies them, so a whole module going
     # quiet is visible as a block rather than as scattered dashes.
@@ -453,8 +839,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         except OSError as exc:
             print(f"cannot read {path}: {exc}", file=sys.stderr)
             return 2
+        # The snapshot is windowed so a stale column still shows its last
+        # value; the derived figures use the WHOLE session, because distance,
+        # efficiency and resistance are properties of the drive rather than of
+        # the last few minutes of it.
         print(render(snapshot(rows[-args.window:]), path=path,
-                     stale_after=args.stale_after, expand=not args.compact))
+                     stale_after=args.stale_after, expand=not args.compact,
+                     derived=derive(rows)))
         return 0
 
     if not args.watch:

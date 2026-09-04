@@ -305,3 +305,107 @@ class TestSessionSelection(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class TestDerivedQuantities(unittest.TestCase):
+    """The derived block: what the raw columns mean.
+
+    These exist because the first working version of this block printed a
+    1.06 V pack and 0.3 cells in series -- it read the very last row of a real
+    session, which was the vehicle going to sleep with the contactors open.
+    A person glancing at that sees a broken decoder, not a sleeping truck.
+    """
+
+    def test_pack_state_ignores_the_contactors_open_row(self):
+        rows = _rows([
+            (0, {"pack_v": 388.6, "cell_avg_v": 4.0479, "soc_pct": 80.0,
+                 "energy_kwh": 152.4}),
+            (9, {"pack_v": 388.7, "cell_avg_v": 4.0489, "soc_pct": 80.0,
+                 "energy_kwh": 152.4}),
+            # The vehicle drops the contactors: a real row, an impossible pack.
+            (18, {"pack_v": 1.06, "cell_avg_v": 4.0489, "soc_pct": 80.0,
+                  "energy_kwh": 152.4}),
+        ])
+        d = live.derive(rows)
+        self.assertAlmostEqual(d["pack_v"], 388.7, places=1)
+        self.assertGreater(d["series_cells"], 90)
+        self.assertLess(d["series_cells"], 100)
+
+    def test_efficiency_is_measured_over_the_moving_window_only(self):
+        # Parked with a load for two samples (energy falls, distance does not),
+        # then a drive.  Charging that parked draw against the drive's distance
+        # is what turned a real 42 kWh/100km into 63.
+        rows = _rows([
+            (0,  {"speed_kph": 0.0, "odometer_km": 100.0, "energy_kwh": 160.0,
+                  "pack_v": 388.0, "cell_avg_v": 4.04}),
+            (10, {"speed_kph": 0.0, "odometer_km": 100.0, "energy_kwh": 158.0,
+                  "pack_v": 388.0, "cell_avg_v": 4.04}),
+            (20, {"speed_kph": 50.0, "odometer_km": 100.0, "energy_kwh": 158.0,
+                  "pack_v": 388.0, "cell_avg_v": 4.04}),
+            (30, {"speed_kph": 50.0, "odometer_km": 110.0, "energy_kwh": 154.0,
+                  "pack_v": 388.0, "cell_avg_v": 4.04}),
+        ])
+        d = live.derive(rows)
+        self.assertAlmostEqual(d["drive_km"], 10.0, places=3)
+        self.assertAlmostEqual(d["drive_kwh"], 4.0, places=3)
+        self.assertAlmostEqual(d["kwh_per_100km"], 40.0, places=1)
+        # The whole-session figure keeps the parked draw and is reported too,
+        # so the two are visibly different rather than silently merged.
+        self.assertAlmostEqual(d["energy_used_kwh"], 6.0, places=3)
+
+    def test_resistance_recovers_a_known_value_from_a_synthetic_pack(self):
+        # V = OCV - I*R with R = 20 mOhm exactly.
+        ocv, r_ohms = 390.0, 0.020
+        samples = []
+        for i, amps in enumerate([0, 200, 0, 400, 0, -150, 300, 0]):
+            samples.append((i * 9, {
+                "pack_a": float(amps),
+                "pack_v": ocv - amps * r_ohms,
+                "cell_avg_v": 4.04,
+            }))
+        result = live.pack_resistance(_rows(samples))
+        self.assertIsNotNone(result)
+        milliohms, n, _r = result
+        self.assertAlmostEqual(milliohms, 20.0, places=6)
+        self.assertGreaterEqual(n, live._MIN_STEPS)
+
+    def test_resistance_is_withheld_when_the_current_never_moves(self):
+        # A parked session cannot measure resistance and must not pretend to:
+        # dividing sensor noise by a near-zero current step gives a number.
+        rows = _rows([(i * 9, {"pack_a": 0.4, "pack_v": 388.6}) for i in range(40)])
+        self.assertIsNone(live.pack_resistance(rows))
+
+    def test_the_torque_signal_is_reported_as_signed_counts_from_its_zero(self):
+        for raw, direction, counts in (("5806", "neutral", 0),
+                                       ("5A00", "drive", 0x5A00 - live.TORQUE_ZERO),
+                                       ("5000", "regen", 0x5000 - live.TORQUE_ZERO)):
+            with self.subTest(raw=raw):
+                d = live.derive(_rows([(0, {"field_2429_raw": raw})]))
+                self.assertEqual(d["torque_counts"], counts)
+                self.assertEqual(d["torque_dir"], direction)
+
+    def test_the_state_word_is_read_under_either_header_era(self):
+        # Sessions written before the rename carry batt_temp_a_raw; the live
+        # view must not go blank on the entire back catalogue.
+        for column in ("field_4127_raw", "batt_temp_a_raw"):
+            with self.subTest(column=column):
+                d = live.derive(_rows([(0, {column: "0418"})]))
+                self.assertEqual(d["state_word"], 1048)
+                self.assertIn("no road speed", d["powertrain"])
+
+    def test_a_hex_column_is_never_read_as_a_decimal_number(self):
+        # "0418" is 1048, not 418.  float() would take it and not complain.
+        d = live.derive(_rows([(0, {"field_4127_raw": "0418",
+                                    "thermal_energy_raw": "00BE"})]))
+        self.assertEqual(d["state_word"], 1048)
+        self.assertEqual(d["thermal_energy"], 190)
+
+    def test_the_block_renders_with_nothing_available(self):
+        # Every field absent must give dashes, not a traceback: the recorder
+        # writes rows before the vehicle answers anything.
+        text = "\n".join(live.render_derived(live.derive(_rows([(0, {})]))))
+        self.assertIn("--", text)
+        self.assertIn("TRACTION PACK", text)
+
+    def test_derive_on_no_rows_is_empty_rather_than_an_error(self):
+        self.assertEqual(live.derive([]), {})

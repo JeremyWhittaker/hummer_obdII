@@ -20,6 +20,29 @@ discount.
 
 ### Added
 
+- **`hummer-obd-live` now opens with a derived block** -- what the raw columns
+  mean, not just whether they answered. Computed live from the session in
+  progress: pack V/A/kW, cells in series, SoC with the implied pack capacity,
+  **internal resistance fitted from that session's own current steps**,
+  distance, efficiency, regen fraction, the `0x2429` torque signal as signed
+  counts from its measured zero of 22534, the three 12 V readings, powertrain
+  and charging state, and the since-last-charge counters. On the 2026-09-04
+  commute it reports 388.75 V / 95.9 cells / 190.6 kWh implied / 18.00 mOhm /
+  42.3 kWh/100km, all matching the offline analysis.
+
+  Two defects were found and fixed while building it, and both have tests.
+  Pack state read the last row of the session, which is usually the vehicle
+  dropping its contactors -- it displayed a **1.06 V pack and 0.3 cells in
+  series**, which reads as a broken decoder rather than a sleeping truck; it
+  now uses only rows passing the sanity filter. And efficiency charged the
+  parked HVAC draw against the drive's distance, turning a real 42 kWh/100km
+  into **63**; it is now measured over the moving window, with the
+  whole-session figure shown separately rather than silently merged.
+
+  Nothing here invents a unit. The torque signal and the three accumulators
+  are shown as raw counts, because their behaviour is established and their
+  scaling is not.
+
 - **The commute decoded `0x2429` into a physical quantity, and measured the
   pack's internal resistance for the first time.** A 20.1 km drive swung pack
   current **−275 A to +630 A** with 27 sign reversals — the one input shape

@@ -138,9 +138,24 @@ See every sensor the node can collect, and which ones are actually answering:
 hummer-obd-live --watch
 ```
 
-One line per column: the value, the identifier that carries it, and how long
-since it last answered, grouped by the module it comes from. Columns holding
-several values in one cell are broken out individually -- `0x2B43`'s 26
+It opens with a **derived block** -- what the raw numbers actually mean --
+computed live from the session in progress: pack voltage, current and power,
+cells in series, state of charge with the pack capacity it implies, **internal
+resistance fitted from the session's own current steps**, distance, efficiency
+over the moving window, regen fraction, the `0x2429` torque signal as signed
+counts from its measured zero, the three 12 V readings, powertrain and charging
+state, and the since-last-charge counters.
+
+Two rules that block is built on. Pack state is read only from rows that pass
+the sanity filter, because the last row of a session is usually the vehicle
+dropping its contactors and a naive read shows a 1.06 V pack. And efficiency is
+measured over the **moving** window only -- a session that sat with the air
+conditioning on for forty minutes drained kWh against zero distance, and
+charging that to the drive turns a real 42 kWh/100km into 63.
+
+Below it, one line per column: the value, the identifier that carries it, and
+how long since it last answered, grouped by the module it comes from. Columns
+holding several values in one cell are broken out individually -- `0x2B43`'s 26
 per-module readings are shown one per line with each one's drift from its
 neighbours, which is the earliest visible sign of a single module going bad.
 `--compact` leaves them collapsed. What the pack's own data says about its
@@ -160,7 +175,7 @@ The right-hand column is the one that matters operationally.
 |---|---|---|
 | `hummer-obd-capabilities` | Sanitized report of a node's live state | **no** |
 | `hummer-obd-analyze` | Reads a session back; `--trend` compares them all | **no** |
-| `hummer-obd-live` | Every sensor and how long since it answered | **no** |
+| `hummer-obd-live` | Derived quantities, then every sensor and how long since it answered | **no** |
 | `hummer-obd-decode` | Correlates undecoded raw fields against measured quantities | **no** |
 | `hummer-obd-export` | Local export of stored telemetry | **no** |
 | `hummer-obd-drive` | The automatic session recorder (a service) | yes — `ATRV` only while asleep |
