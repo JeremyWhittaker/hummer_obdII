@@ -317,6 +317,30 @@ over Bluetooth at 115200 baud; it caps at a few hundred frames per second
 against a bus carrying thousands. The capture is lossy by construction and the
 loss is not recorded anywhere.
 
+### Comparing captures (`hummer-obd-passive-diff`)
+
+One capture answers *is anything being said*. Two answer the more interesting
+question: *does it change when something happens?* Take a baseline with the
+vehicle awake and nothing going on, then one capture per physical event —
+one event each, never two in a file:
+
+```bash
+hummer-obd-passive-diff logs/raw/monitor-BASELINE.jsonl logs/raw/monitor-EVENT.jsonl
+```
+
+It opens no serial device and transmits nothing, so it is safe at any time.
+
+**It will very likely tell you both captures are empty**, and that is a result
+rather than a fault — the 2026-09-04 baseline returned zero bytes. Run two or
+three event captures before investing any further in this path: if a fob lock
+and a charge start also produce nothing, passive monitoring at this connector is
+finished.
+
+**A frame that changes when the doors lock is a lead, not a command.** This
+project does not replay frames, and the tool says so in its own output. Modern
+CAN security can include freshness counters, sequence numbers and message
+authentication; a byte pattern is not an instruction.
+
 Stop the capture and pull the adapter if `ATCS` — recorded automatically either
 side of every capture — shows a transmit error counter off zero, if the driver
 information centre shows any new message, or if any vehicle behaviour changes.

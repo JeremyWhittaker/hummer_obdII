@@ -20,6 +20,49 @@ discount.
 
 ### Added
 
+- **`hummer-obd-passive-diff`: compare two passive captures and say what
+  differs, if anything.** One capture answers *is anything being said at this
+  connector*. Two answer the question worth asking: *does it change when
+  something happens to the vehicle?* Take a baseline with the truck awake and
+  quiet, then one capture per physical event — a door, a fob lock, the climate
+  system, a charge starting — and compare identifier counts, payload sets and
+  which byte positions moved.
+
+  **It expects to find nothing, and says so as a first-class result.** The
+  2026-09-04 baseline returned zero bytes, so the honest default outcome is
+  "there is nothing to compare" — and reporting that plainly beats a page of
+  zeroes. The tool exists so that the day something does arrive, the comparison
+  is already written rather than improvised.
+
+  Three deliberate refusals: it never opens the serial device (a tool that both
+  captures and compares is one that gets pointed at a vehicle to "just re-run the
+  baseline"); it never suggests replaying anything, because a frame that changes
+  when the doors lock is a **lead, not a command** — modern CAN security can
+  include freshness counters, sequence numbers and message authentication, so a
+  byte pattern is not an instruction; and it states in its own output that frame
+  counts are not bus load, because ASCII over Bluetooth at 115200 caps at a few
+  hundred frames per second and an absent identifier may simply have been
+  dropped. **Absence is weak evidence; presence is strong.**
+
+  Running it against the real 2026-09-04 transcript on its first execution found
+  two bugs in itself. `monitor.py` logs the adapter's reply to the stop character
+  *before* it writes `capture_end`, so "every received byte between
+  `capture_start` and `capture_end`" swept in ten bytes of adapter prompt and
+  made a genuinely empty capture read as non-empty. Selecting on the note the
+  stream writer actually uses is precise where a window is not; bytes waiting
+  before the capture and bytes drained after it are now counted separately, and
+  a test pins each.
+
+- **`ROADMAP.md` rewritten against measured state.** It was three days old and
+  still listed Mode 22 enhanced PIDs and passive CAN monitoring as *blocked* —
+  31 of 35 identifiers now answer and the passive experiment has been run. It
+  now carries the six-goal plan as complete, an item-by-item status for the
+  larger external expansion proposal (A–J), and a *Blocked on physical
+  conditions* table where each row names the specific event that would release
+  it: a labelled charge, a cold morning, a DC fast charge, a fault occurring,
+  someone at the vehicle to cause an event, a GM Service Information
+  subscription.
+
 - **`docs/ACCESS_MATRIX.md` and `hummer-obd-access`: one page that says what
   this node can and cannot reach, and how to check every line of it.** Twenty
   documents describe this project and not one answered the question a new reader

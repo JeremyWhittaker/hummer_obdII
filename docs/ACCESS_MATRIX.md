@@ -289,6 +289,7 @@ second is the one that generalises:
 | "the cross-validations still hold" | `PYTHONPATH=src python3 -m pytest tests/test_confidence.py -q` |
 | "this column is actually populated" | `PYTHONPATH=src python3 -m hummer_obd.live --dir evidence/sessions` |
 | "what the vehicle said, unparsed" | `PYTHONPATH=src python3 scripts/review_raw_log.py <transcript>` |
+| "nothing changed at the connector between these two states" | `PYTHONPATH=src python3 -m hummer_obd.passive_diff <baseline> <event>` |
 
 ---
 
