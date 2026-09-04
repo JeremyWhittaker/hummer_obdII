@@ -138,6 +138,27 @@ they are all near-multiples of **0.1 pp** (mean residual 1.1 % of a step). So
 the field's resolution is a tenth of a percentage point, and while charging the
 vehicle chooses to advance it four tenths at a time.
 
+### Onboard charger efficiency, measured twice
+
+The one quantity here that no amount of vehicle telemetry could produce. Pack DC
+taken from samples within 90 seconds of each charger reading:
+
+| Time | Pack DC | Wall AC (JuiceBox) | Efficiency |
+|---|---|---|---|
+| 04:16Z | 378.46 V x −21.58 A = **8.17 kW** | 9.319 kW at 40.2 A | **87.6 %** |
+| 05:24Z | 382.37 V x −22.25 A = **8.51 kW** | 9.351 kW at 40.2 A | **91.0 %** |
+
+Both in the plausible band for an onboard charger, and the second is higher for a
+sound reason: the pack voltage has risen, so the same wall power delivers more DC
+power.
+
+**A first attempt at this reported 60 %**, by comparing the *mean* pack power
+across the whole charge — 5.59 kW, dragged down by a dip to 2.25 kW — against an
+AC reading taken at one moment. A mean over one window against a point in
+another is not a comparison. It is the same error shape as the `energy_kwh`
+"decrease" recorded and corrected earlier the same evening, and it is worth
+naming twice because it looked entirely reasonable both times.
+
 ### An outside measurement is not automatically better evidence
 
 The app read **70 %** and later **75 %** across that same hour, and the vehicle

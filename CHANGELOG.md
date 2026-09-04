@@ -20,6 +20,22 @@ discount.
 
 ### Added
 
+- **Onboard charger efficiency, measured twice: 87.6 % and 91.0 %.** Pack DC
+  taken within 90 seconds of each JuiceBox reading — 8.17 kW against 9.319 kW at
+  04:16Z, and 8.51 kW against 9.351 kW at 05:24Z. The second is higher for a
+  sound reason: the pack voltage rose from 378.46 to 382.37 V, so the same wall
+  power delivers more DC power. **No amount of vehicle telemetry produces this
+  number**; it exists only because the display was read.
+
+- **`0x4149` held `0x00A0` across all 147 charging samples** while the JuiceBox
+  read **40.2 A twice, 65 minutes apart**. 160 / 4 = 40.0, and the divisor fits
+  the other corpus values too — `0x0060` → 24.0 A, `0x0064` → 25.0 A, all
+  plausible EVSE currents. Strong circumstantial support and **still not a
+  decode**: it read the same `0x00A0` while parked and *unplugged*, so it is a
+  capability — an advertised pilot current or configured limit — not a
+  measurement of current flowing. Stays at level 1. A different EVSE with a
+  different rating settles it in one session.
+
 - **State of charge steps by exactly 0.400 pp while charging.** An hour of the
   2026-09-04 charge took `soc_pct` through thirteen values, 69.943 to 74.743,
   and every gap is 0.400: **mean 0.4000, standard deviation 0.0008**, one step
@@ -1276,6 +1292,19 @@ discount.
 
 
 ### Fixed
+
+- **An efficiency figure of 60 %, from comparing a mean against a point.** The
+  first pass at onboard charger efficiency divided the *mean* pack power across
+  the whole charge — 5.59 kW, dragged down by a dip to 2.25 kW — by an AC
+  reading taken at a single moment. A mean over one window against a point in
+  another is not a comparison, and 60 % is not a plausible onboard charger.
+  Corrected to instantaneous, matched within 90 seconds: **87.6 % and 91.0 %**.
+
+  This is the same error shape as the `energy_kwh` "decrease" recorded and
+  corrected earlier the same evening, which compared 566 parked samples against
+  22 charging ones. Worth naming twice because it looked entirely reasonable
+  both times, and it was caught both times only by the answer being physically
+  implausible rather than by anything structural.
 
 - **A protocol was recorded as though writing it down made it happen.** The
   three passive captures at 04:28–04:31 were published as "the owner worked the

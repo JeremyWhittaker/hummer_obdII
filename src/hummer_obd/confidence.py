@@ -245,9 +245,16 @@ CONFIDENCE: Final[dict[str, Evidence]] = {
                      "at the SAME 107.6 F"),
     "4149": Evidence(
         1, ("40",), ("parked", "driving"),
-        "EVSE advertised current candidate. Read 384 while parked and "
-        "unplugged, which is the state that says least about an EVSE current. "
-        "A charge session is what decides it"),
+        "EVSE advertised current candidate. The 2026-09-04 charge is strong "
+        "circumstantial support and still not a decode: it held 0x00A0 = 160 "
+        "across all 147 charging samples while a JuiceBox read 40.2 A twice, "
+        "65 minutes apart, and 160/4 = 40.0. The divisor also fits the other "
+        "values in the corpus -- 0x0060 -> 24.0 A, 0x0064 -> 25.0 A, all "
+        "plausible EVSE currents. What stops it being a decode is that it read "
+        "0x00A0 while parked and UNPLUGGED too, so it is a capability -- an "
+        "advertised pilot current or a configured limit -- rather than a "
+        "measurement of current flowing. A different EVSE with a different "
+        "rating settles it in one session"),
     "416C": Evidence(
         1, ("40",), ("parked", "driving"),
         "battery group voltage 1 candidate. Read 2589 then 2593 a minute apart, "

@@ -1,0 +1,14 @@
+{
+  "ambient_f": null,
+  "charge_state": "charging-ac",
+  "dashboard_soc_pct": 75.0,
+  "evse_amps": 40.2,
+  "evse_kw": 9.351,
+  "evse_kwh_delivered": null,
+  "hvac": "",
+  "label_source": "observed-at-vehicle",
+  "notes": "JuiceBox display 05:24Z: 40.2 A, 9351 W AC. myGMC app 05:21Z: 75 pct, 249 mi. Second charger reading, 65 min after the first, same current.",
+  "observer": "jeremy",
+  "session": "drive-20260904T051458Z.csv",
+  "vehicle_state": "parked-awake"
+}
