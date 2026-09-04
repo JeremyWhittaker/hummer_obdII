@@ -195,34 +195,42 @@ another is not a comparison. It is the same error shape as the `energy_kwh`
 "decrease" recorded and corrected earlier the same evening, and it is worth
 naming twice because it looked entirely reasonable both times.
 
-### Do not size the pack from a short charge window
+### Sizing the pack: the estimate converges with span, and only with span
 
 The energy-over-state-of-charge ratio should give the pack's capacity. Measured
-in thirds across three and a half hours of charging, it does not settle until
-late:
+across the complete 5.32-hour charge — 69.943 % to 89.955 %, +38.83 kWh — it
+converges monotonically as the span grows:
 
-| Window | SoC | Energy | Implied pack |
+| Span measured | Δenergy | Implied pack | vs 191.9 kWh |
 |---|---|---|---|
-| first third | 69.943 → 73.143 | +7.13 kWh | **222.8 kWh** |
-| middle third | 73.143 → 77.943 | +9.50 kWh | 197.9 kWh |
-| last third | 77.943 → 83.145 | +9.77 kWh | **187.8 kWh** |
-| whole charge | 69.943 → 83.145 | +26.51 kWh | 200.8 kWh |
+| 2.80 pp | 6.55 kWh | 233.9 kWh | **+21.9 %** |
+| 5.20 pp | 10.85 kWh | 208.7 kWh | +8.7 % |
+| 10.00 pp | 20.34 kWh | 203.4 kWh | +6.0 % |
+| 16.40 pp | 32.19 kWh | 196.3 kWh | +2.3 % |
+| **20.01 pp (whole charge)** | 38.83 kWh | **194.0 kWh** | **+1.1 %** |
 
-The drift has a cause, and it is the lag documented above. For the first twenty
-minutes `soc_pct` did not move at all while `energy_kwh` climbed 1.42 kWh. A
-window containing that stall under-reports the SoC change and therefore
-**over-reports** the capacity — by 16 % in the first third. As the field catches
-up the estimate converges, and the last third lands at 187.8 kWh against the
-**191.9 kWh** established by three independent routes.
+**Why short spans are biased, and it is not the initial stall alone.**
+`soc_pct` advances in 0.400 pp steps roughly every 5.4 minutes while
+`energy_kwh` rises continuously. At any window *edge* the two are out of step by
+up to one quantum — 0.4 pp against however much energy accrued since the last
+step. On a 2.8 pp span that edge error is a seventh of the measurement; on a
+20 pp span it is a fiftieth. The bias is an edge effect, and edge effects shrink
+with span.
 
-An earlier hour-long window that happened to exclude the stall gave 188.3 kWh,
-which is the same answer. So the settled figure from this charge is about
-**188 kWh, roughly 2 % under** the established one — and the whole-charge number
-is the least trustworthy of the four despite resting on the most data, because
-it is the only one that contains the lag.
+> **An earlier version of this section said the opposite** — that the
+> whole-charge figure was "the least trustworthy of the four despite resting on
+> the most data" and that capacity should be measured "across a window where
+> state of charge is already moving". That was written when the charge had run
+> 13.2 pp, and it was wrong. Sub-windows are *more* contaminated, not less,
+> because each one adds two fresh edges. The whole-charge span is the best
+> estimate available and it lands 1.1 % from the established figure.
 
-**The rule: measure capacity across a window where state of charge is already
-moving.** More data does not fix a systematic bias; it just averages it in.
+A per-band table computed the same way suggested **~234 kWh** across every 2 pp
+band from 70 % to 88 % — flatly contradicting both the whole-charge figure and
+the established one. That is the same artefact at its worst: a 1.6 pp band
+cannot absorb an edge error of 0.4 pp. It is recorded here as a trap rather than
+a finding, because it was internally consistent across ten bands and looked
+exactly like a real measurement.
 
 ### An outside measurement is not automatically better evidence
 

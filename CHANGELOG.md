@@ -20,7 +20,37 @@ discount.
 
 ### Added
 
-- **Do not size a pack from a short charge window.** The
+- **The charge finished, and the pack-sizing guidance published two hours
+  earlier was wrong.** Complete dataset: 911 samples over **5.32 hours**,
+  69.943 % → 89.955 %, **+38.83 kWh**, mean 7.30 kW at the pack, cell spread
+  narrowing 3.7 → **1.5 mV**.
+
+  Implied capacity converges monotonically with the *span* measured: 233.9 kWh
+  over 2.8 pp, 208.7 over 5.2, 203.4 over 10.0, 196.3 over 16.4, and
+  **194.0 kWh over the full 20.01 pp — 1.1 % from the established 191.9**.
+
+  The bias is an **edge effect**, not the initial stall alone. `soc_pct` steps
+  0.400 pp every ~5.4 minutes while `energy_kwh` rises continuously, so at any
+  window edge the two are out of step by up to one quantum. On a 2.8 pp span
+  that is a seventh of the measurement; on 20 pp it is a fiftieth.
+
+  **So the earlier entry had it backwards.** It said the whole-charge figure was
+  "the least trustworthy of the four despite resting on the most data" and
+  advised measuring "across a window where state of charge is already moving".
+  Sub-windows are *more* contaminated, because each adds two fresh edges. That
+  entry has been corrected in place with the reversal marked.
+
+  A per-band table computed the same way gave **~234 kWh** across every 2 pp
+  band from 70 to 88 % — contradicting both the whole-charge figure and the
+  established one, while being internally consistent across ten bands. Recorded
+  as a trap rather than a finding: it looked exactly like a real measurement.
+
+- **The app's charge forecast was good.** It predicted 90 % by 2:10 am local
+  (09:10Z) from a 04:16Z reading. The vehicle reached 89.955 % at **08:44Z** —
+  **26 minutes early on a 5.2-hour forecast, 8.2 % error**, and conservative.
+
+- ~~**Do not size a pack from a short charge window.**~~ *(superseded above —
+  the reasoning was right, the conclusion inverted.)* The
   energy-over-state-of-charge ratio should give capacity. Across three and a
   half hours it drifts badly and only settles late: **222.8 kWh** in the first
   third, 197.9 in the middle, **187.8** in the last, and 200.8 for the whole
