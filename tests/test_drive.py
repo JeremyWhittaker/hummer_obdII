@@ -5,10 +5,12 @@ vehicle receives nothing but ``ATRV``, and that the recorder cannot transmit
 anything neither safety gate allows.
 """
 
+import os
 import unittest
 
 from hummer_obd import drive
 from hummer_obd.drive import (
+    DEAD_CYCLES_BEFORE_EXIT,
     COLUMNS,
     DECODERS,
     GROUPS,
@@ -678,7 +680,112 @@ class TestDrivingBelowTheWakeBand(unittest.TestCase):
             asleep.reconnects, 0,
             "a sleeping vehicle is not a broken link and must not be reconnected",
         )
-        self.assertLess(session.cycles, 3, "it should stop promptly, not grind on")
+        # Three dead cycles, not one: a single silent cycle during a drive is a
+        # transient, and ending a live recording on one would cost more than
+        # the extra sixteen seconds. What must NOT happen -- and is asserted
+        # above -- is a reconnect, because the link was never broken.
+        self.assertLessEqual(session.cycles, DEAD_CYCLES_BEFORE_EXIT,
+                             "it should stop promptly, not grind on")
+
+
+class TestASleepingVehicleDoesNotBecomeARestartLoop(unittest.TestCase):
+    """The regression that ran on the real vehicle for twenty minutes.
+
+    A genuinely sleeping truck sat at 12.9 V -- above the wake threshold, and a
+    voltage that has been measured in BOTH states. The recorder therefore
+    started a session, decoded nothing, exited to force a reconnect, and systemd
+    restarted it into the same state about once a minute. Each pass sent a full
+    session init and a round of enhanced reads to a sleeping vehicle, which is
+    the exact opposite of the guarantee that a sleeping vehicle sees only
+    ``ATRV``.
+
+    The voltage could never have settled it. Whether the adapter *answers* can:
+    a reply proves the link is healthy, so silence on the bus is the vehicle's
+    doing and not the link's.
+    """
+
+    def _asleep_but_high_rail(self, volts):
+        """CAN answers nothing; ATRV answers normally at `volts`.
+
+        Based on `_Droppable` for its `reconnects` counter, which is the whole
+        point of these tests -- a working link must never be reconnected.
+        """
+        class _Link(_Droppable):
+            def send(self, command, timeout=None):
+                if command == "ATRV":
+                    self.sent.append(command)
+                    return Response(command=command,
+                                    data=f"{volts}V\r\r>".encode(), elapsed_s=0.01)
+                if command.startswith("AT"):
+                    return _Fake.send(self, command, timeout)
+                self.sent.append(command)
+                return Response(command=command, data=b"NO DATA\r\r>", elapsed_s=0.01)
+        return _Link()
+
+    def test_it_ends_the_session_instead_of_raising_for_a_restart(self):
+        link = self._asleep_but_high_rail(12.9)
+        session = record(link, interval_s=0, duration_s=200.0,
+                         sleeper=lambda s: None, clock=_bounded_clock())
+        self.assertEqual(len(session.rows), 0, "nothing decoded, so nothing written")
+        self.assertLessEqual(session.cycles, DEAD_CYCLES_BEFORE_EXIT + 1)
+
+    def test_it_does_not_reconnect_a_link_that_is_working(self):
+        link = self._asleep_but_high_rail(12.9)
+        record(link, interval_s=0, duration_s=200.0, sleeper=lambda s: None,
+               clock=_bounded_clock())
+        self.assertEqual(link.reconnects, 0,
+                         "the adapter was answering; the link was never broken")
+
+    def test_a_silent_adapter_still_raises_so_the_link_is_re_established(self):
+        # The other half. If ATRV does not answer either, the link really is
+        # suspect and exiting for a fresh one is right.
+        dead = _Droppable(drop_after_sends=len(SESSION_INIT))
+        with self.assertRaises(TransportError):
+            record(dead, interval_s=0, duration_s=200.0,
+                   sleeper=lambda s: None, clock=_bounded_clock())
+
+    def test_the_ambiguous_voltage_is_not_what_decides(self):
+        # Same silence at a clearly-awake rail voltage: still ends the session
+        # rather than looping, because the adapter answering is the evidence.
+        for volts in (12.7, 12.9, 13.4):
+            with self.subTest(volts=volts):
+                link = self._asleep_but_high_rail(volts)
+                record(link, interval_s=0, duration_s=200.0,
+                       sleeper=lambda s: None, clock=_bounded_clock())
+                self.assertEqual(link.reconnects, 0)
+
+
+    def test_the_verdict_is_recorded_on_the_session(self):
+        # run_auto needs to know WHY the session ended. Without this it re-reads
+        # the same ambiguous voltage, calls it awake, and opens another session
+        # immediately -- observed once every ninety seconds on the real vehicle.
+        link = self._asleep_but_high_rail(12.8)
+        session = record(link, interval_s=0, duration_s=200.0,
+                         sleeper=lambda s: None, clock=_bounded_clock())
+        self.assertTrue(session.ended_asleep)
+
+    def test_a_normal_session_does_not_claim_the_vehicle_slept(self):
+        session = record(_Fake(), interval_s=0, max_cycles=2,
+                         sleeper=lambda s: None, clock=_bounded_clock())
+        self.assertFalse(session.ended_asleep)
+
+    def test_the_watch_stops_opening_sessions_once_told(self):
+        """The loop, end to end: one session then the watch, not session after
+        session."""
+        import tempfile
+        link = self._asleep_but_high_rail(12.8)
+        calls = {"n": 0}
+
+        def stop():
+            calls["n"] += 1
+            return calls["n"] > 40
+
+        with tempfile.TemporaryDirectory() as tmp:
+            run_auto(link, output_dir=tmp, interval_s=0, asleep_interval_s=0,
+                     sleeper=lambda s: None, clock=_bounded_clock(), stop=stop)
+            made = [n for n in os.listdir(tmp) if n.startswith("drive-")]
+        self.assertLessEqual(len(made), 2,
+                             f"the watch kept opening sessions: {len(made)} files")
 
 
 class TestTheWatchCanGetADeadLinkBack(unittest.TestCase):

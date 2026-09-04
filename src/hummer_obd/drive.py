@@ -498,6 +498,15 @@ class Session:
     cycles: int = 0
     rows: list[dict] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    #: True when the session ended because the adapter was answering and the
+    #: vehicle was not -- the one conclusion the rail voltage cannot reach.
+    #:
+    #: `run_auto` needs this. Without it, a session that correctly identified a
+    #: sleeping vehicle returns to a watch that re-reads the same ambiguous
+    #: voltage, calls it awake, and starts another session immediately. On
+    #: 2026-09-04 that produced a new session roughly every ninety seconds
+    #: against a truck at 12.8 V that was plainly asleep.
+    ended_asleep: bool = False
 
 
 def _payload(reply, request: str) -> Optional[bytes]:
@@ -649,16 +658,41 @@ def record(
             session.errors.append(f"cycle decoded nothing ({dead_cycles} consecutive)")
             say(f"  [{row['elapsed_s']:>8.1f}s] decoded nothing "
                 f"({dead_cycles}/{DEAD_CYCLES_BEFORE_EXIT})")
-            # A sleeping vehicle and a broken link both stop decoding.  Only
-            # one of them is a fault, and the voltage tells them apart *here*,
-            # where it is corroborated by silence, rather than on its own.
-            if _asleep(transport, timeout):
-                say("  nothing answered and the rail is low; vehicle asleep")
-                break
+            # A sleeping vehicle and a broken link both stop decoding, and
+            # only one of them is a fault.  What tells them apart is whether
+            # the adapter ANSWERS ``ATRV`` -- not what the answer says.
+            #
+            # This used to ask `_asleep()`, which compares the voltage against
+            # WAKE_VOLTS, and it produced a restart loop on 2026-09-04: a
+            # genuinely sleeping vehicle sat at 12.9 V, above the threshold, so
+            # every cycle decided "not asleep", exited to force a reconnect,
+            # and systemd restarted it into the same state about once a minute.
+            # Each pass sent a full session init and a round of enhanced reads
+            # to a sleeping truck -- the opposite of the guarantee that a
+            # sleeping vehicle sees only ATRV.
+            #
+            # The voltage could never have settled this: 12.9 V has been
+            # measured both asleep and awake.  Whether the adapter replies can,
+            # and it is the question actually being asked -- is the LINK
+            # broken, or is the VEHICLE quiet?
+            volts = _volts(transport, timeout)
+            if volts is not None:
+                # The adapter answers, so the link is healthy and it is the
+                # vehicle that is quiet.  Reconnecting would be treating a
+                # working link as a broken one, and every reconnect re-sends a
+                # full session init to a sleeping truck.
+                if dead_cycles >= DEAD_CYCLES_BEFORE_EXIT:
+                    say(f"  nothing answered, but the adapter replies ({volts} V); "
+                        f"vehicle asleep, ending the session")
+                    session.ended_asleep = True
+                    break
+                sleeper(interval_s)
+                continue
+            # The adapter is silent too, so the link itself is suspect.
             if dead_cycles >= DEAD_CYCLES_BEFORE_EXIT:
                 raise TransportError(
-                    f"{dead_cycles} consecutive cycles decoded nothing; exiting "
-                    f"so the link is re-established"
+                    f"{dead_cycles} consecutive cycles decoded nothing and the "
+                    f"adapter is silent too; exiting so the link is re-established"
                 )
             try:
                 _revive(transport, timeout=timeout, attempt=dead_cycles - 1)
@@ -962,6 +996,20 @@ def run_auto(
                 row_sink=sink,
             )
         say(f"{session.cycles} cycles -> {path}")
+
+        # `record()` proved the vehicle asleep by the only evidence that can:
+        # the adapter answered and the modules did not.  Honour it, or the
+        # watch re-reads the same ambiguous rail voltage, calls it awake, and
+        # opens another session immediately -- which is what happened on
+        # 2026-09-04, roughly once every ninety seconds, against a truck at
+        # 12.8 V that was plainly asleep.  Each pass cost a fresh session file
+        # and a round of enhanced reads sent to a sleeping vehicle.
+        if session.ended_asleep:
+            awake = False
+            say(f"vehicle asleep (its modules stopped answering); "
+                f"watching every {asleep_interval_s:.0f}s")
+            sleeper(asleep_interval_s)
+            continue
 
 
 def main(argv: Optional[list[str]] = None) -> int:

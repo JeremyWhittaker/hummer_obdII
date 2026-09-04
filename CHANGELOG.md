@@ -1392,6 +1392,41 @@ discount.
 
 ### Fixed
 
+- **A sleeping vehicle became a restart loop, and it was caused by that
+  morning's threshold change.** Found by checking the node after the charge
+  rather than by anything reporting a fault.
+
+  The truck was asleep at **12.8–12.9 V** — above the new `WAKE_VOLTS`, and a
+  reading that has now been measured in *both* states. So `run_auto` called it
+  awake and opened a session; `record()` decoded nothing, exited to force a
+  reconnect; systemd restarted the process; repeat, about once a minute. **Each
+  pass sent a full session init and a round of enhanced reads to a sleeping
+  truck** — the exact opposite of the guarantee that a sleeping vehicle sees
+  only `ATRV`. Two hundred-odd rows of nothing and a fresh session file every
+  ninety seconds.
+
+  The old reasoning had been "a false wake costs about three dead cycles". That
+  is true *once*. It ignored systemd restarting the process, which turns a cheap
+  one-off into an unbounded loop.
+
+  **Two fixes, and neither is a threshold.** Raising it back would restore the
+  risk of sleeping through a drive, and 12.9 V genuinely cannot be classified.
+
+  *`record()` now asks whether the adapter **answers**, not what it says.* A
+  reply proves the link is healthy, so silence on the bus is the vehicle's doing
+  — end the session. Only if `ATRV` is silent *too* is the link suspect and
+  worth exiting for. It also no longer reconnects a link that is answering,
+  which it previously did twice on the way to giving up.
+
+  *`run_auto` honours that verdict* via a new `Session.ended_asleep`. Without it
+  the watch re-read the same ambiguous voltage, called it awake, and opened
+  another session immediately — the loop simply moved from between processes to
+  inside one, which the first fix alone did on the live vehicle before this was
+  added.
+
+  Four new tests, including one that drives `run_auto` end to end and asserts it
+  creates at most two session files against a permanently silent vehicle.
+
 - **An efficiency figure of 60 %, from comparing a mean against a point.** The
   first pass at onboard charger efficiency divided the *mean* pack power across
   the whole charge — 5.59 kW, dragged down by a dip to 2.25 kW — by an AC
