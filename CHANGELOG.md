@@ -26,9 +26,23 @@ discount.
   state than the parked-and-awake baseline and the earlier capture had not
   covered it, so this genuinely extends the negative.
 
-  **It does not close the passive question, and this entry originally claimed it
-  did.** See the correction under *Fixed*. Event-triggered traffic remains
-  untested; the standing objection to the first zero-byte result is still open.
+  **That entry originally overclaimed** — see the correction under *Fixed*.
+
+  **The experiment was then run properly, and the answer is the same.** A
+  60-second receive-only capture at `04:46:19Z` while the owner stood at the
+  vehicle and performed **unlock x5, lock x5**: **0 bytes from the vehicle**,
+  `T:00 R:00` either side. The confirmation was recorded *after* the fact as an
+  appended mark, and the capture carried the label "REQUESTED, owner
+  confirmation pending" until it arrived — which is the whole correction from
+  the failed attempt.
+
+  **The passive question is closed.** The fob messages exist; the doors locked.
+  They do not cross the gateway to pins 6 and 14. Everything this project will
+  ever obtain from this vehicle must be asked for.
+
+  Stated limit: nothing timestamps the presses independently. The window ran
+  `04:46:19`–`04:47:19` and the owner reported finishing around `04:47:20`, so
+  they overlap by his account rather than by measurement.
 
 - **The thermal-limiting hypothesis was falsified within the hour, by the same
   charge that suggested it.** Over the charge's first four minutes, power

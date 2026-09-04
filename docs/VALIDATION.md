@@ -1223,12 +1223,41 @@ and said nothing about what a door, a lock or a remote start might produce — i
 Also unestablished: that the vehicle's internal networks are quiet (they are
 certainly not, behind the gateway), and anything about driving.
 
-### What would settle it
+### It was settled twenty minutes later
 
-One 60-second capture with somebody at the vehicle actually pressing the fob.
-That is the whole experiment, it costs a minute, and it has not yet been run.
-`hummer-obd-passive` and `hummer-obd-passive-diff` stay in the tree for exactly
-that reason.
+The experiment above was then run properly.
+
+| | |
+|---|---|
+| Capture | 60.12 s, `04:46:19Z`, receive-only (`STCMM0`) |
+| Owner | **at the vehicle**, confirmed afterwards in his own words |
+| Performed | **unlock x5, lock x5** |
+| Vehicle | charging |
+| **Received from the vehicle** | **0 bytes** |
+| Own command echoed back | 0 |
+| `ATCS` | `T:00 R:00` before and after |
+
+The confirmation was recorded **after** the fact, as an appended mark, and the
+capture was labelled "REQUESTED, owner confirmation pending" until it arrived.
+That ordering is the whole correction from the previous attempt: the state goes
+into the record when it is confirmed, not when it is asked for.
+
+**So the passive question is closed.** A person stood at the vehicle and
+operated it ten times while a receive-only monitor listened at the diagnostic
+connector, and nothing crossed. The fob messages exist — the doors locked — and
+they do not reach pins 6 and 14.
+
+**Everything this project will ever obtain from this vehicle must be asked
+for.** `hummer-obd-passive` and `hummer-obd-passive-diff` stay in the tree
+because a negative worth four minutes is worth being able to re-run, and because
+if a firmware update ever changes this, the tooling is written.
+
+One limit worth stating: nothing timestamps the button presses independently.
+The window ran `04:46:19`–`04:47:19` and the owner reported finishing at about
+`04:47:20`, so the two overlap by his account and not by measurement. Ten
+presses a few seconds apart is roughly fifty seconds of activity, which fits —
+but a press landing wholly outside the window cannot be excluded from the record
+alone.
 
 ### One defect it exposed
 
