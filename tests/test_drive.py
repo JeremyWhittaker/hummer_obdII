@@ -75,7 +75,7 @@ class TestSleepingVehicleSeesNoTraffic(unittest.TestCase):
     """The property that makes this safe to enable at boot."""
 
     def test_auto_mode_sends_only_atrv_while_asleep(self):
-        fake = _Fake(volts_sequence=[12.8, 12.8, 12.8])
+        fake = _Fake(volts_sequence=[12.7, 12.7, 12.7])
         calls = {"n": 0}
 
         def stop():
@@ -445,7 +445,7 @@ class TestSilenceIsNotSleep(unittest.TestCase):
         self.assertFalse(drive._asleep(_Silent(), 1.0))
 
     def test_a_measured_low_voltage_is_reported_asleep(self):
-        self.assertTrue(drive._asleep(_Fake(volts_sequence=[12.8]), 1.0))
+        self.assertTrue(drive._asleep(_Fake(volts_sequence=[12.7]), 1.0))
 
     def test_a_measured_running_voltage_is_not_reported_asleep(self):
         self.assertFalse(drive._asleep(_Fake(volts_sequence=[13.9]), 1.0))
@@ -641,7 +641,7 @@ class TestDrivingBelowTheWakeBand(unittest.TestCase):
 
     def test_a_vehicle_that_answers_keeps_recording_below_the_wake_band(self):
         # Every enhanced read succeeds; only the 12 V rail looks asleep.
-        fake = _Fake(volts_sequence=[12.9] * 40)
+        fake = _Fake(volts_sequence=[12.7] * 40)
         session = record(fake, interval_s=0, max_cycles=5, sleeper=lambda s: None,
                          clock=_bounded_clock())
         self.assertEqual(
@@ -654,7 +654,7 @@ class TestDrivingBelowTheWakeBand(unittest.TestCase):
         # Now the link is gone *and* the rail is low: that really is asleep,
         # and it should end cleanly rather than raise for a restart.
         fake = _Droppable(drop_after_sends=len(SESSION_INIT), volts_sequence=[])
-        fake._replies["ATRV"] = "12.9V\r\r>"
+        fake._replies["ATRV"] = "12.7V\r\r>"
 
         class _AsleepLink(_Droppable):
             """Nothing on the CAN bus answers, but ATRV still reads low."""
@@ -663,7 +663,7 @@ class TestDrivingBelowTheWakeBand(unittest.TestCase):
                 self.sends += 1
                 if command == "ATRV":
                     self.sent.append(command)
-                    return Response(command=command, data=b"12.9V\r\r>", elapsed_s=0.01)
+                    return Response(command=command, data=b"12.7V\r\r>", elapsed_s=0.01)
                 if self.drop_after_sends and self.sends > self.drop_after_sends:
                     self.dead = True
                 if self.dead:
@@ -1023,11 +1023,6 @@ class TestEveryProvenIdentifierIsCaptured(unittest.TestCase):
 
 
 class TestWakeThreshold(unittest.TestCase):
-    def test_threshold_sits_between_the_measured_bands(self):
-        # Asleep measured 12.7-12.9 V, running 13.7-13.9 V.
-        self.assertGreater(drive.WAKE_VOLTS, 12.9)
-        self.assertLess(drive.WAKE_VOLTS, 13.7)
-
     def test_the_threshold_is_below_every_voltage_measured_while_driving(self):
         # The ATRV probes taken across the drive lost on 2026-09-03.  A
         # threshold above any of these cannot detect this vehicle driving,
@@ -1042,10 +1037,54 @@ class TestWakeThreshold(unittest.TestCase):
 
     def test_the_threshold_is_above_every_voltage_measured_asleep(self):
         # The other half of the constraint: a parked vehicle must never be
-        # polled on the CAN bus.
-        for asleep in (12.7, 12.9):
+        # polled on the CAN bus.  This listed 12.9 as a sleeping voltage until
+        # 2026-09-04, when the vehicle sat awake at exactly that for twenty
+        # minutes; see TestTheWakeThresholdAgainstMeasuredStates.
+        for asleep in (12.7,):
             with self.subTest(asleep=asleep):
                 self.assertGreater(drive.WAKE_VOLTS, asleep)
+
+
+class TestTheWakeThresholdAgainstMeasuredStates(unittest.TestCase):
+    """Both sides of the band, pinned to what was actually observed.
+
+    This threshold has been wrong twice. First at 13.2 V, which slept through a
+    12.6-mile commute. Then at 12.95 V, set 0.05 V above a state nobody had
+    watched: on 2026-09-04 the vehicle sat parked and awake at a steady 12.9 V
+    for over twenty minutes -- answering service 22 from five modules, 4 kW of
+    accessory load, 146 rows every one of which reads 12.9V -- and a restarted
+    recorder read that as asleep.
+
+    Each measured state gets an assertion, so the next edit has to disagree with
+    a measurement rather than with a number.
+    """
+
+    MEASURED = (
+        (12.7, True,  "asleep, observed"),
+        (12.9, False, "parked and awake, observed 2026-09-04 over 20 minutes"),
+        (13.0, False, "driving, observed"),
+        (13.1, False, "driving, observed"),
+        (13.2, False, "arrived, DC-DC boosting"),
+        (13.8, False, "running, observed"),
+    )
+
+    def test_each_measured_state_is_classified_the_way_it_was_observed(self):
+        for volts, expect_asleep, what in self.MEASURED:
+            with self.subTest(volts=volts, state=what):
+                self.assertEqual(volts < drive.WAKE_VOLTS, expect_asleep, what)
+
+    def test_the_threshold_sits_between_the_two_nearest_measurements(self):
+        self.assertGreater(drive.WAKE_VOLTS, 12.7, "would call a sleeping vehicle awake")
+        self.assertLess(drive.WAKE_VOLTS, 12.9, "would call an awake vehicle asleep")
+
+    def test_silence_is_still_not_evidence_of_sleep(self):
+        # An unanswered ATRV read as zero ended a session that was recording a
+        # drive, because zero is below every threshold.
+        class _Silent:
+            def send(self, command, timeout=None):
+                raise TransportError("link gone")
+
+        self.assertFalse(drive._asleep(_Silent(), 1.0))
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -20,6 +20,52 @@ discount.
 
 ### Added
 
+- **The motor telemetry the plan called "the real gap" does not exist
+  publicly.** Two independent sweeps across every source where such a thing
+  would live -- eight OBDb vehicle repositories, meatpiHQ/wican-fw's profiles,
+  issues and pull requests, commaai/opendbc -- found **no identifier, on any
+  platform, for motor RPM, motor torque, inverter temperature, stator
+  temperature, motor or inverter coolant temperature, propulsion or regen power
+  limit, or motor phase current.** Nothing was added. Written up in
+  `docs/SOURCING_2026-09-04.md`, because a negative that took two sweeps is
+  worth exactly as much as a positive and is easier to lose.
+
+  Three near-misses, each rejected for a stated reason. The Bolt EV signalset
+  carries **96 sequential per-cell voltage identifiers**, merged, byte-exact --
+  the single thing this project most wants -- and they are 11-bit `7E7`/`7EF`
+  headers on the 2017-2023 Bolt: a different addressing scheme and a different
+  battery architecture. The Bolt charger block was **tried on a real 2025 LYRIQ,
+  one platform generation closer than the Bolt, and returned `NRC 0x31` in every
+  vehicle mode**, independently confirmed by that repository's own CI probe --
+  sourced *and measured negative* on the nearest platform, which is a stronger
+  reason to decline than this project usually has. The Honda Prologue is BEV3
+  and GM-built and names 168 per-cell voltages and six module temperatures at
+  `0x2028`/`0x202C` -- with no formula anywhere, on Honda's own address map.
+
+- **A public source disagreement about `0x33E5` that this vehicle already
+  settles.** Two unmerged LYRIQ pull requests by the same author, two days
+  apart, read that identifier mutually exclusively: PR #13 calls it HV pack
+  voltage at `x 2.7` (the byte `0x84` becomes 356.4 V), PR #14 is an explicit
+  correction calling it the 12 V rail at `/10` (the same byte becomes 13.2 V).
+  Both are still open, so a reader arriving there today finds two claims
+  differing by a factor of 27 and no merged answer.
+
+  This project uses `/10`, and modules `17`, `1D` and `1E` each answer 13.2 /
+  13.1 / 13.1 V in the same minute the pack reads 382.65 V from `0x2885`. Being
+  on the right side of an unresolved public dispute is worth recording. It does
+  not tighten the divisor beyond the 6 % this project already has open against
+  `ATRV`, and `0x33E5` stays at confidence level 3.
+
+- **`0x2429` answered, and it is 96 nominal cells.** Sent for the first time
+  since being allowlisted -- see the profile note above -- it returned `0x5806`
+  = 22534. The source's `/64` gives **352.09 V**, which across the 96 cells this
+  pack was independently shown to have in series is **3.6676 V per cell**: the
+  textbook nominal for an NMC cell, a figure nothing here fitted. It is captured
+  every cycle as `nominal_pack_v` and graded **level 2**, not 3: that is a
+  structural corroboration of the divisor, and what would settle it is the thing
+  a nominal must do, which is hold still while the pack does not. One reading in
+  one state cannot show that.
+
 - **The ninth thing module 17 advertises is now collected too.** The per-module
   census had module `17` advertise nine service 01 PIDs; seven were wired in
   when that was found, and `01` was left out because it is the awkward one --
@@ -732,6 +778,34 @@ discount.
 
 
 ### Fixed
+
+- **The wake threshold was wrong a second time, and it cost a live session.**
+  On 2026-09-04 the recorder was restarted, read 12.9 V, classified the vehicle
+  as asleep and went to its 300-second watch -- on a truck that was awake in
+  front of it, answering service 22 from five modules, pack at 379 V, drawing
+  about 4 kW.
+
+  The threshold had been moved to 12.95 on the strength of an argument that read
+  well and was wrong: *"12.9 V was never a steady state; it was one sample on the
+  way down."* It is a steady state. The vehicle sat parked and awake at exactly
+  12.9 V for over twenty minutes, and 146 recorded rows every one of which reads
+  `12.9V` were sitting in the corpus while that sentence was written.
+
+  The error was in the sampling, not the arithmetic. Three states had been
+  observed -- asleep, driving, shutting down -- and the conclusion was drawn as
+  though those were all of them. **Parked-and-awake is a fourth**, it floats
+  lower than driving because nothing is moving, and no measurement covered it.
+  The threshold was then set 0.05 V above a state nobody had watched.
+
+  Now 12.8, splitting the two measured anchors -- 12.7 asleep, 12.9 awake -- with
+  0.1 V either side, one step of the resolution `ATRV` reports. That is thin, and
+  the asymmetry is what makes it acceptable: **a false wake costs about three
+  dead cycles and a handful of unanswered requests; a false sleep costs an entire
+  drive.** When the margin is this narrow, err toward recording. Every measured
+  state now has its own assertion, so the next edit has to disagree with a
+  measurement rather than with a number -- and three existing tests that used
+  12.8 or 12.9 as a stand-in for "asleep" now use 12.7, the only sleeping voltage
+  actually observed.
 
 - **The session report keyed distance off the least reliable column it had.**
   `odometer_km` and `speed_kph` are standard OBD PIDs, and on 2026-09-03 they

@@ -136,6 +136,7 @@ They were never fitted to one another, yet they agree:
 |---|---|---|---|---|
 | Traction pack voltage | `0x2885` | `[B0:B1] / 100` | V | **measured** |
 | Traction pack current | `0x2414` | `signed16 / 20`, negative = charging | A | **measured** |
+| Nominal pack voltage | `0x2429` | `[B0:B1] / 64` | V | **read** |
 | Instantaneous HV power | derived | `pack_v * pack_a / 1000` | kW | **measured** |
 
 This was the project's single largest gap and it is now closed. Measured during
@@ -158,6 +159,24 @@ platform were confirmed by a measurement taken a completely different way.
 Both power figures are kept side by side in the recorder rather than averaged.
 Two independent routes to one quantity is what exposed the `0x5401` mislabel;
 disagreement between them is a signal worth seeing.
+
+### `0x2429`, and how it was nearly lost
+
+`0x2429` was allowlisted on 2026-09-03 and reachable from **no profile at all**,
+so nothing could ever transmit it — an identifier approved for use and then
+never used. Building `hummer_obd.confidence` is what found that, and it is the
+clearest argument for having built it.
+
+Sent for the first time on 2026-09-04, it answered `0x5806` = 22534. The
+source's `/64` gives **352.09 V**, which across the 96 cells this pack was
+[independently shown](PACK_ARCHITECTURE.md) to have in series is **3.6676 V per
+cell** — the textbook nominal for an NMC cell, and a figure nothing here fitted.
+
+That is a structural corroboration of the divisor, not a proof of it, and the
+level says **read** rather than measured. What would settle it is the thing a
+*nominal* voltage must do: hold still while the pack does not. One reading in
+one state cannot show that, which is exactly why it is now captured every cycle
+alongside the measured pack voltage it should refuse to follow.
 
 ---
 
@@ -228,7 +247,11 @@ PR #14. This vehicle has confirmed only that it answers them.
 
 ## 4. Standard OBD-II
 
-Functional broadcast, priority `0x18`, header `DB33F1`.
+Priority `0x18`, addressed to module `17` (`18DA17F1`). This section said
+"functional broadcast, header `DB33F1`" until 2026-09-04; the recorder was
+pointed at one module some time before that and the sentence survived the
+change. `live.py` reads the addressing out of `drive.STANDARD_ADDRESS` rather
+than describing it, for exactly this reason.
 
 | Signal | Request | Level |
 |---|---|---|
@@ -236,6 +259,7 @@ Functional broadcast, priority `0x18`, header `DB33F1`.
 | Odometer | `01 A6` | **measured** |
 | 12 V supply, per responding module | `01 42` | **measured** |
 | Run time, distance since codes cleared, distance with MIL on, warm-ups | `01 1F` `01 21` `01 31` `01 30` | **read** |
+| Malfunction lamp, stored-fault count | `01 01` | **measured** — lamp off, zero faults |
 | Stored / pending / permanent DTCs | `03` `07` `0A` | **measured** — zero on this vehicle |
 | VIN, calibration IDs, CVNs, module names | `09 02` `09 04` `09 06` `09 0A` | **measured** |
 | Freeze frame | `02` | service proven; no frame exists (no DTC) |

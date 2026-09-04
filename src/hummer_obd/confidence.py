@@ -265,11 +265,16 @@ CONFIDENCE: Final[dict[str, Evidence]] = {
                      "ISO 14229-1 ECU hardware number; reachability probe, "
                      "7F 22 31 everywhere asked"),
     "2429": Evidence(
-        0, (), ("never sent",),
-        "nominal battery voltage candidate at module 17. Allowlisted on "
-        "2026-09-03 and then reachable from no profile at all, so nothing has "
-        "ever transmitted it -- found by building this table, which is the "
-        "point of building it"),
+        2, ("17",), ("parked",),
+        "nominal pack voltage. Allowlisted 2026-09-03 and reachable from no "
+        "profile at all until building this table found it; sent for the first "
+        "time on 2026-09-04 and answered 0x5806 = 22534. The source's /64 gives "
+        "352.09 V, which is 3.6676 V across the 96 cells this pack was "
+        "independently shown to have in series -- the textbook nominal for an "
+        "NMC cell. That is a structural corroboration of the divisor and not a "
+        "proof of it. What would make it a nominal rather than a coincidence is "
+        "holding still while the pack does not, and one reading in one state "
+        "cannot show that. It is now captured every cycle, which is what will"),
 }
 
 

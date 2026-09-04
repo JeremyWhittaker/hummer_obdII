@@ -211,6 +211,18 @@ DECODERS: dict[str, Callable[[bytes], dict]] = {
     # confirmed while plugged in.
     "2885": lambda p: {"pack_v": round(_u16(p, 0) / 100, 2)} if len(p) >= 2 else {},
     "2414": lambda p: {"pack_a": round(_s16(p, 0) / 20, 2)} if len(p) >= 2 else {},
+    # Nominal pack voltage -- the rated figure, not a measurement, so a value
+    # that never moves is the expected result rather than a dead field.
+    #
+    # Answered 0x5806 = 22534 on 2026-09-04, the first time it was ever sent:
+    # allowlisted a day earlier and reachable from no profile at all until the
+    # confidence table found it.  The source's /64 gives 352.09 V, which is
+    # 3.6676 V across the 96 cells this pack was independently shown to have in
+    # series -- the textbook nominal for an NMC cell.  That is a structural
+    # corroboration of the divisor and not yet a proof of it: what makes this a
+    # nominal rather than a coincidence is holding still while the pack does
+    # not, and one reading cannot show that.  Which is why it is captured.
+    "2429": lambda p: {"nominal_pack_v": round(_u16(p, 0) / 64, 2)} if len(p) >= 2 else {},
 }
 
 
@@ -265,7 +277,7 @@ GROUPS: tuple[AddressGroup, ...] = (
         ecu="17",
         address=("ATSHDA17F1", "ATCRA142AF117", "ATFCSH14DA17F1",
                  "ATFCSD300000", "ATFCSM1"),
-        dids=("2885", "2414"),
+        dids=("2885", "2414", "2429"),
     ),
     AddressGroup(
         name="drive_motor",
@@ -389,7 +401,7 @@ COLUMNS: tuple[str, ...] = (
     "evse_current_raw", "group_v1_raw", "group_v2_raw", "group_v3_raw",
     "hv_temp_raw", "batt_temp_a_raw", "batt_temp_b_raw",
     "coolant_1_raw", "coolant_2_raw",
-    "pack_v", "pack_a", "hv_power_kw",
+    "pack_v", "pack_a", "nominal_pack_v", "hv_power_kw",
     "dmc2_v",
     "wheel_fl_kph", "wheel_fr_kph", "wheel_rl_kph", "wheel_rr_kph",
     "brake_kpa", "steering_deg", "lateral_g", "longitudinal_g",
@@ -735,17 +747,34 @@ def write_csv(session: Session, path: str) -> None:
 #:
 #: A vehicle that has been awake a while charges its 12 V battery full, and the
 #: DC-DC then holds a float around 13.0-13.1 V -- *below* the old threshold.
-#: 12.9 V was never a steady state; it was one sample on the way down.  So the
-#: bands do not overlap after all: asleep tops out at 12.9 and driving bottoms
-#: out at 13.0, and 12.95 is the only value that separates them at the 0.1 V
-#: resolution ATRV reports.
 #:
-#: A false wake is now cheap, which is what makes this margin acceptable: a
-#: sleeping vehicle answers nothing, so the dead-cycle check ends the session
-#: within about three cycles having sent a handful of requests that no module
-#: replies to.  Before that check existed, a threshold this close to the
-#: sleeping band would have been reckless.
-WAKE_VOLTS: float = 12.95
+#: **The next paragraph was wrong, and it is left standing because how it was
+#: wrong is the useful part.** It read: "12.9 V was never a steady state; it was
+#: one sample on the way down. So the bands do not overlap after all: asleep
+#: tops out at 12.9 and driving bottoms out at 13.0, and 12.95 is the only value
+#: that separates them."
+#:
+#: On 2026-09-04 the vehicle sat **parked and awake for over twenty minutes at a
+#: steady 12.9 V**: answering service 22 from five modules, pack at 379 V,
+#: drawing about 4 kW of accessory load, 146 recorded rows every one of which
+#: reads `12.9V`.  12.9 is a steady state, and it is an *awake* one.
+#:
+#: The error was in the sampling, not the arithmetic.  Three states had been
+#: observed -- asleep, driving, shutting down -- and the conclusion was drawn as
+#: though those were all of them.  Parked-and-awake is a fourth, it floats lower
+#: than driving because nothing is moving, and no measurement had covered it.
+#: The threshold was then set 0.05 V above a state nobody had watched.
+#:
+#: It cost a real session: the recorder restarted at 12.9 V, read that as asleep
+#: and went to its 300-second watch on a vehicle that was awake in front of it.
+#:
+#: The measured anchors now are 12.7 V asleep and 12.9 V awake, so 12.8 splits
+#: them with 0.1 V either side -- one step of the resolution ATRV reports.  That
+#: is thin, and the asymmetry is what makes it acceptable: **a false wake costs
+#: about three dead cycles and a handful of unanswered requests, and a false
+#: sleep costs an entire drive.**  When the margin is this narrow, err toward
+#: recording.
+WAKE_VOLTS: float = 12.8
 
 
 def _volts(transport: Transport, timeout: float) -> Optional[float]:

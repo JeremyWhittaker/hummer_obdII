@@ -452,7 +452,7 @@ ENHANCED_READ_DIDS: Final[dict[str, str]] = {
              "PR #14, module 40, UNMERGED, not BT1"),
     "40E6": ("battery coolant temperature 2 candidate -- OBDb/Cadillac-LYRIQ "
              "PR #14, module 40, UNMERGED, not BT1"),
-    "2429": ("nominal battery voltage candidate -- OBDb/Cadillac-LYRIQ PR #14 "
+    "2429": ("nominal battery voltage -- OBDb/Cadillac-LYRIQ PR #14 "
              "(LYRIQ_HVBAT_NOMINAL_V), hdr DA17, 16-bit / 64 volts, max 1023. "
              "The source calls it the constant rated pack voltage rather than a "
              "live measurement, so a value that does not move is the expected "
