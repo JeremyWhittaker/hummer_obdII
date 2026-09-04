@@ -788,6 +788,69 @@ class TestASleepingVehicleDoesNotBecomeARestartLoop(unittest.TestCase):
                              f"the watch kept opening sessions: {len(made)} files")
 
 
+class TestASleepingVehicleSeesOnlyATRVAndOneProbe(unittest.TestCase):
+    """The guarantee, restored after this morning's threshold change broke it.
+
+    Between 05:00 and 10:25 on 2026-09-04 the recorder opened a full session
+    every five minutes against a truck asleep at 12.8 V -- roughly a hundred
+    requests per attempt, because no threshold can classify that voltage. The
+    documented promise is that a sleeping vehicle sees only ``ATRV``.
+
+    It cannot be only ATRV forever: something has to notice the vehicle waking,
+    and the rail demonstrably cannot. So the cost is one legislated request
+    instead of a session.
+    """
+
+    def _silent(self, volts):
+        class _Link(_Droppable):
+            def send(self, command, timeout=None):
+                if command == "ATRV":
+                    self.sent.append(command)
+                    return Response(command=command,
+                                    data=f"{volts}V\r\r>".encode(), elapsed_s=0.01)
+                if command.startswith("AT"):
+                    return _Fake.send(self, command, timeout)
+                self.sent.append(command)
+                return Response(command=command, data=b"NO DATA\r\r>", elapsed_s=0.01)
+        return _Link()
+
+    def test_after_one_silent_session_it_stops_opening_them(self):
+        import tempfile
+        link = self._silent(12.8)
+        calls = {"n": 0}
+
+        def stop():
+            calls["n"] += 1
+            return calls["n"] > 60
+
+        with tempfile.TemporaryDirectory() as tmp:
+            run_auto(link, output_dir=tmp, interval_s=0, asleep_interval_s=0,
+                     sleeper=lambda s: None, clock=_bounded_clock(), stop=stop)
+            made = [n for n in os.listdir(tmp) if n.startswith("drive-")]
+        self.assertLessEqual(len(made), 2,
+                             f"kept opening sessions on a silent vehicle: {len(made)}")
+
+    def test_the_probe_is_one_legislated_request(self):
+        from hummer_obd.safety import validate_command
+        # It must pass the ordinary unattended gate -- no enhanced identifier
+        # may be used to poke a sleeping vehicle.
+        self.assertEqual(validate_command(drive.WAKE_PROBE), "010D")
+
+    def test_a_vehicle_that_starts_answering_is_picked_up_again(self):
+        # The probe must not latch the watch shut. Once the modules reply, a
+        # session opens on the next pass.
+        link = self._silent(12.8)
+        self.assertFalse(drive._vehicle_answers(link, 1.0))
+        answering = _Fake()
+        self.assertTrue(drive._vehicle_answers(answering, 1.0))
+
+    def test_a_dead_link_is_not_mistaken_for_a_waking_vehicle(self):
+        class _Dead(_Fake):
+            def send(self, command, timeout=None):
+                raise TransportError("gone")
+        self.assertFalse(drive._vehicle_answers(_Dead(), 1.0))
+
+
 class TestTheWatchCanGetADeadLinkBack(unittest.TestCase):
     """A link that dies while the vehicle is parked must not strand the watch.
 

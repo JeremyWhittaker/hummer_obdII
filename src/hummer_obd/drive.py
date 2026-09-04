@@ -880,6 +880,33 @@ def _asleep(transport: Transport, timeout: float) -> bool:
     return volts is not None and volts < WAKE_VOLTS
 
 
+#: One legislated request, used only to ask "is anyone home?" after the modules
+#: have already been observed to stop answering.
+#:
+#: The alternative is opening a whole session to find out, which is what the
+#: recorder did between 05:00 and 10:25 on 2026-09-04: roughly a hundred
+#: requests every five minutes against a truck that was plainly asleep, because
+#: its rail sat at 12.8 V and no threshold can call that. One request costs a
+#: hundredth of that and answers the same question.
+WAKE_PROBE: str = "010D"
+
+
+def _vehicle_answers(transport: Transport, timeout: float) -> bool:
+    """True if anything at all replies to one standard request.
+
+    This is the question the rail voltage cannot answer, asked as cheaply as it
+    can be asked.  A sleeping vehicle costs one request to check; a woken one
+    is detected on the next pass either way.
+    """
+    try:
+        reply = parse_reply(
+            transport.send(validate_command(WAKE_PROBE), timeout=timeout).data
+        )
+    except TransportError:
+        return False
+    return any(bytes([0x41, 0x0D]) in frame for frame in reply.frames)
+
+
 def run_auto(
     transport: Transport,
     *,
@@ -905,6 +932,9 @@ def run_auto(
     produces its own file rather than one unbounded CSV.
     """
     awake = False
+    #: Set once the modules have been observed to stop answering while the
+    #: rail still read awake.  Until they answer again, do not open a session.
+    slept_by_silence = False
     unanswered = 0
     while not stop():
         volts = _volts(transport, timeout)
@@ -952,6 +982,14 @@ def run_auto(
             continue
 
         if not awake:
+            # The rail says awake.  If the modules were last seen to have
+            # STOPPED answering, the rail has already been wrong about this
+            # once, so confirm with one request before spending a session on
+            # it.  Everything a sleeping vehicle sees stays at ATRV plus this.
+            if slept_by_silence and not _vehicle_answers(transport, timeout):
+                sleeper(asleep_interval_s)
+                continue
+            slept_by_silence = False
             awake = True
             say(f"vehicle awake ({volts} V); starting a session")
 
@@ -1006,6 +1044,7 @@ def run_auto(
         # and a round of enhanced reads sent to a sleeping vehicle.
         if session.ended_asleep:
             awake = False
+            slept_by_silence = True
             say(f"vehicle asleep (its modules stopped answering); "
                 f"watching every {asleep_interval_s:.0f}s")
             sleeper(asleep_interval_s)

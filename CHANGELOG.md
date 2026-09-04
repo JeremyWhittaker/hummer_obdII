@@ -1392,6 +1392,26 @@ discount.
 
 ### Fixed
 
+- **A sleeping vehicle saw a hundred requests every five minutes instead of
+  one.** The restart-loop fix above stopped the process churning, but left the
+  watch opening a full session on each 300-second pass — the rail read 12.8 V,
+  no threshold can classify that, so it tried, spent a session init and three
+  cycles of enhanced reads finding nothing, and slept again. Better than once a
+  minute, and still the opposite of the documented promise that **a sleeping
+  vehicle sees only `ATRV`**.
+
+  It cannot be *only* `ATRV` forever: something has to notice the vehicle
+  waking, and the rail demonstrably cannot. So the cost is now **one legislated
+  request** — `010D`, through the ordinary unattended gate, no enhanced
+  identifier is used to poke a sleeping truck. Once the modules have been seen
+  to stop answering while the rail still read awake, the watch asks that one
+  question and only opens a session if something replies.
+
+  A hundredth of the traffic, answering the same question. Four tests, including
+  one that runs `run_auto` against a permanently silent vehicle and asserts at
+  most two session files, and one that confirms the probe does not latch the
+  watch shut when the vehicle does wake.
+
 - **A sleeping vehicle became a restart loop, and it was caused by that
   morning's threshold change.** Found by checking the node after the charge
   rather than by anything reporting a fault.
