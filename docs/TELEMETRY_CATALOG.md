@@ -357,6 +357,45 @@ sample (237.64 kW) compared against a 60-second average; the trailing mean at
 that same row was 42.01 kW against `−power_kw` of 37.82 — 10 % apart. Corpus-wide
 r = +0.9725 against the 60 s mean, versus +0.3988 against the instantaneous value.
 
+### The second drive: the independent repeat, which confirms two and dents one
+
+A 9.10 km drive later the same day, 93 samples, −325.8 to +577.5 A. Its whole
+value is that nothing here was fitted to it.
+
+**Pack internal resistance reproduces.** 18.86 mΩ on this drive alone
+(n = 62 steps, r = −0.9926, 0.1964 mΩ/cell) against 18.59 mΩ pooled over the
+earlier corpus — **1.5 % apart**, from a separate drive on separate roads.
+
+**`0x4127`'s no-speed rule holds; its "246" claim does not.** All 22 samples
+with no road speed reported read 1048, and no sample with a speed did — the
+same rule that holds across 477 corpus samples. But this drive holds **242**
+across all 68 moving samples, where the previous one held 246 throughout. So
+the powertrain-up value is a **per-session constant** drawn from the
+234/238/242/246 family, not a fixed motion marker. The state distinction is
+between that family and 1048, not between its members.
+
+**`0x2429`'s zero point survives, and the exception is confirmatory.** All 22
+powertrain-down samples read exactly 22534. But the three samples at speed 0
+with the powertrain *up* read +435, −441 and +462 counts from it — and those
+are not noise:
+
+| brake pressure | counts from zero | what it is |
+|---|---|---|
+| 100 kPa | **+435** | creep torque, held at a stop |
+| **1000 kPa** | **−441** | still decelerating, −0.134 g |
+| 700 kPa | **+462** | creep torque |
+
+A stopped EV in Drive is not a zero-torque EV. The earlier phrasing — constant
+"whenever stationary" — was measured entirely on parked and charging samples,
+where the powertrain is down. The correct claim is **zero when the powertrain
+is down**, and a voltage could not produce that pattern at all. The sign
+convention also reproduces: 31 of 32 samples above +20 A sit above the zero
+point, 28 of 29 below −20 A sit below it.
+
+Both identifiers move to level 3 on this. `0x2429` names its independent route
+explicitly — the module-28 accelerometer model shares no signal with the
+module-17 power fit and lands on the same answer.
+
 ### The cold soak: the best thermal experiment yet, and it decodes nothing
 
 An overnight cool-down gave the first comparison between two genuinely different
@@ -621,7 +660,7 @@ They were never fitted to one another, yet they agree:
 |---|---|---|---|---|
 | Traction pack voltage | `0x2885` | `[B0:B1] / 100` | V | **measured** |
 | Traction pack current | `0x2414` | `signed16 / 20`, negative = charging | A | **measured** |
-| Unknown, load-tracking | `0x2429` | none applied | — | **read** |
+| Unknown, load-tracking | `0x2429` | none applied | — | **measured** |
 | Instantaneous HV power | derived | `pack_v * pack_a / 1000` | kW | **measured** |
 
 This was the project's single largest gap and it is now closed. Measured during
@@ -760,7 +799,7 @@ priority](CAN_PRIORITY.md).
 | Battery group voltage 2 | `0x416D` | none applied | — | **raw** |
 | Battery group voltage 3 | `0x416E` | none applied | — | **raw** |
 | HV battery temperature | `0x434F` | none applied | — | **raw** |
-| Battery temperature A | `0x4127` | none applied | — | **read** |
+| Battery temperature A | `0x4127` | none applied | — | **measured** |
 | Battery temperature B | `0x4124` | none applied | — | **raw** |
 | Battery coolant temperature 1 | `0x40E5` | none applied | — | **read** |
 | Battery coolant temperature 2 | `0x40E6` | none applied | — | **read** |

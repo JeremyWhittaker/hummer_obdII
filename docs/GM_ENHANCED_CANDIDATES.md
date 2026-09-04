@@ -230,7 +230,7 @@ confident-looking unit and nothing behind it.
 |---|---|---|---|---|
 | `0x0046` | **2** | `CB` | parked, driving, charging | temperature -- meatpiHQ/wican-fw vehicle_profiles/gmc/sierra-ev.json (TMP_A), BT1 platform family |
 | `0x2414` | **4** | `17` | parked, driving, charging | HV pack current candidate -- OBDb/Cadillac-LYRIQ PR #14, LYRIQ_HVBAT_A, signed 16-bit / 20 amps, negative = charging. Ships test vectors (0xFE39 -> -22.75 A, 0x0012 -> 0.9 A) which the formula reproduces exactly. UNMERGED, 2025 Lyriq BEV3, not BT1 |
-| `0x2429` | **2** | `17` | parked, driving, charging | nominal battery voltage per its source, CONTRADICTED HERE -- OBDb/Cadillac-LYRIQ PR #14 (LYRIQ_HVBAT_NOMINAL_V), hdr DA17, 16-bit / 64 volts, max 1023. The source calls it the constant rated pack voltage rather than a live measurement, so a value that does not move is the expected result and not a failed decode. UNMERGED, 2025 Lyriq BEV3, not BT1 |
+| `0x2429` | **3** | `17` | parked, driving, charging | nominal battery voltage per its source, CONTRADICTED HERE -- OBDb/Cadillac-LYRIQ PR #14 (LYRIQ_HVBAT_NOMINAL_V), hdr DA17, 16-bit / 64 volts, max 1023. The source calls it the constant rated pack voltage rather than a live measurement, so a value that does not move is the expected result and not a failed decode. UNMERGED, 2025 Lyriq BEV3, not BT1 |
 | `0x2709` | **1** | `CB` | parked, driving, charging | A/C compressor temperature candidate -- meatpiHQ/wican-fw issue #884, BEV3 Bolt, UNMERGED, not BT1 |
 | `0x27AF` | **4** | `CB` | parked, driving, charging | HV battery energy remaining -- meatpiHQ/wican-fw vehicle_profiles/gmc/sierra-ev.json (HV_CAPACITY_R). Sierra EV is BT1, the same platform family bt1.json groups with the Hummer EV |
 | `0x27B5` | **1** | `CB` | parked, driving, charging | thermal-management distance candidate -- meatpiHQ/wican-fw issue #884, BEV3 Bolt, UNMERGED, not BT1 |
@@ -247,7 +247,7 @@ confident-looking unit and nothing behind it.
 | `0x40E5` | **2** | `40` | parked, driving, charging | battery coolant temperature 1 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
 | `0x40E6` | **2** | `40` | parked, driving, charging | battery coolant temperature 2 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
 | `0x4124` | **1** | `40` | parked, driving, charging | HV battery temperature B candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
-| `0x4127` | **2** | `40` | parked, driving, charging | HV battery temperature A candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
+| `0x4127` | **3** | `40` | parked, driving, charging | HV battery temperature A candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
 | `0x4149` | **1** | `40` | parked, driving | EVSE advertised/pilot current candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
 | `0x416C` | **2** | `40` | parked, driving, charging | HV battery group voltage 1 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
 | `0x416D` | **1** | `40` | parked, driving | HV battery group voltage 2 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |

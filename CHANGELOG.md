@@ -20,6 +20,34 @@ discount.
 
 ### Added
 
+- **A second drive independently confirms two findings and corrects a third.**
+  9.10 km, 93 samples, −325.8 to +577.5 A, and nothing in it was fitted to.
+
+  - **Pack internal resistance reproduces**: 18.86 mΩ on this drive alone
+    (n = 62, r = −0.9926) against 18.59 mΩ pooled over the earlier corpus —
+    1.5 % apart, separate drive, separate roads. `0x4127` and `0x2429` both
+    move to **level 3**.
+  - **`0x2429`'s zero point holds, and its one exception confirms the reading.**
+    All 22 powertrain-down samples read exactly 22534. The three samples at
+    speed 0 with the powertrain *up* read +435, −441 and +462 — and they line
+    up with the brake: +435 at 100 kPa and +462 at 700 kPa are creep torque
+    held at a stop, while −441 sits at 1000 kPa with −0.134 g still
+    decelerating. A stopped EV in Drive is not a zero-torque EV. The claim is
+    now "zero when the powertrain is **down**", not "whenever stationary" — the
+    original was measured entirely on parked and charging samples. Sign
+    convention reproduces: 31/32 above +20 A sit above zero, 28/29 below −20 A
+    sit below.
+
+### Fixed
+
+- **`0x4127 = 246` is not "the moving value".** The previous entry said 246
+  "appears in no other session and is first seen in the exact poll of first
+  wheel motion". The second drive holds **242** across all 68 moving samples.
+  The powertrain-up value is a per-session constant from the 234/238/242/246
+  family, not a fixed motion marker; the state distinction is between that
+  family and 1048. The no-speed rule itself is now cross-validated — 22 of 22
+  no-speed samples at 1048, matching 477 of 477 corpus samples.
+
 - **`0x416C` is an HVAC field, not a battery group voltage.** The source's
   label is falsified: across 2,737 paired samples it correlates with measured
   pack voltage at **+0.088**, and their ratio spans 0.00 to 6.93. A per-group

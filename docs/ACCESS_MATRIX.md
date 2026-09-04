@@ -127,7 +127,7 @@ Every cell below is produced by putting that command to that gate and recording 
 
 ## 2. What is collected
 
-**53 columns** per sample. The level is from `hummer_obd.confidence`; **only level 3 and above is a production telemetry reading**, and **16 of 53** columns clear that bar. Everything below it is either raw evidence being accumulated or a candidate waiting for the vehicle state that will decide it.
+**53 columns** per sample. The level is from `hummer_obd.confidence`; **only level 3 and above is a production telemetry reading**, and **18 of 53** columns clear that bar. Everything below it is either raw evidence being accumulated or a candidate waiting for the vehicle state that will decide it.
 
 | Column | Where it comes from | Identifier | Priority | Level |
 |---|---|---|---|---|
@@ -164,13 +164,13 @@ Every cell below is produced by putting that command to that gate and recording 
 | `group_v2_raw` | body (module 40) | `0x416D` | 0x18 | **1** answers here |
 | `group_v3_raw` | body (module 40) | `0x416E` | 0x18 | **1** answers here |
 | `hv_temp_raw` | body (module 40) | `0x434F` | 0x18 | **1** answers here |
-| `field_4127_raw` | body (module 40) | `0x4127` | 0x18 | **2** decoded |
+| `field_4127_raw` | body (module 40) | `0x4127` | 0x18 | **3** cross-validated |
 | `field_4124_raw` | body (module 40) | `0x4124` | 0x18 | **1** answers here |
 | `coolant_1_raw` | body (module 40) | `0x40E5` | 0x18 | **2** decoded |
 | `coolant_2_raw` | body (module 40) | `0x40E6` | 0x18 | **2** decoded |
 | `pack_v` | pack power (module 17) | `0x2885` | 0x14 | **4** cross-validated in more than one state |
 | `pack_a` | pack power (module 17) | `0x2414` | 0x14 | **4** cross-validated in more than one state |
-| `field_2429_raw` | pack power (module 17) | `0x2429` | 0x14 | **2** decoded |
+| `field_2429_raw` | pack power (module 17) | `0x2429` | 0x14 | **3** cross-validated |
 | `hv_power_kw` | computed by the recorder, not read from a module | `V x A` | — | — |
 | `dmc2_v` | drive motor controller (module 1D) | `0x33E5` | 0x14 | **3** cross-validated |
 | `wheel_fl_kph` | brake / chassis controller (module 28) | `0x4A7A` | 0x14 | **3** cross-validated |
