@@ -327,15 +327,29 @@ a field is an **outside intervention**.
 The recorder does not need stopping for this. It is already sampling every
 column every eight seconds; all you add is a note of when you did something.
 
+One-time setup, so the command is short enough to type at the vehicle:
+
+```bash
+scripts/install_mark_alias.sh          # on the node; safe to re-run
+```
+
+A command you will not type one-handed in the dark is a measurement you will
+not take.
+
 ```bash
 # on the node, or over ssh from a phone
+mark "hvac max cool on"                # or the full form:
 PYTHONPATH=src python3 -m hummer_obd.experiment mark "hvac max cool on"
 #   ... hold that state at least three minutes ...
 PYTHONPATH=src python3 -m hummer_obd.experiment mark "hvac off"
 
 # then, offline, from anywhere
 hummer-obd-respond --dir evidence/sessions
+hummer-obd-respond --since 2026-09-04T04:00Z    # just tonight's experiment
 ```
+
+`--since` matters more than it looks: **every mark is a segment boundary**, so a
+stray one from setting the tooling up will slice the experiment into noise.
 
 **Two rules that decide whether the result means anything.**
 
