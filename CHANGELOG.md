@@ -20,6 +20,36 @@ discount.
 
 ### Added
 
+- **The first outside measurement in this project's history.** Every number here
+  has come from the vehicle describing itself. On 2026-09-04 at 03:56Z the truck
+  was plugged in and the charger's own display was read: **40.2 A, 9319 W AC**,
+  implying 231.8 V. That is the first `label_source: observed-at-vehicle`
+  sidecar; the other 23 are all `inferred-from-telemetry`.
+
+  It buys two things immediately.
+
+  **The onboard charger's efficiency, measured for the first time.** Pack DC was
+  377.51 V x -21.25 A = 8.022 kW against 9.319 kW at the wall — **86.1 %**. No
+  combination of vehicle-reported values could have produced that number.
+
+  **A decode candidate for `0x4149`.** It read `0x00A0` = 160, and 160 / 4 =
+  **40.0 A** against the charger's 40.2. The divisor holds across the other
+  values already in the corpus: `0x0060` -> 24.0 A, `0x0064` -> 25.0 A. Those are
+  plausible EVSE currents rather than arbitrary numbers.
+
+  **The disconfirming evidence, recorded with it rather than after it.**
+  `evse_current_raw` also read `0x00A0` while parked and *unplugged*, so this is
+  not a measurement of current flowing — more likely the advertised pilot current
+  or a configured limit that the vehicle retains. One matching sample is not a
+  decode, and `0x2429` was decoded on one convincing sample earlier the same day
+  and was wrong. It stays at level 1. What would settle it is a different EVSE
+  with a different rating, or the current changing mid-session with the field
+  following.
+
+  Separately, `charger_5401_raw` went from `00` to `93`/`96` on the charge
+  starting, which supports this project's own earlier finding that `0x5401` is a
+  charging-state signal rather than the "charger DC power" its source claimed.
+
 - **`hummer-obd-respond --since`.** Every mark is a segment boundary, so the
   handful written while testing the tooling would slice a real experiment into
   noise. The fix is not to edit an append-only file — it is to say where the

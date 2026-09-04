@@ -1,14 +1,14 @@
 {
   "ambient_f": null,
-  "charge_state": "unplugged",
+  "charge_state": "charging-ac",
   "dashboard_soc_pct": null,
-  "evse_amps": null,
-  "evse_kw": null,
+  "evse_amps": 40.2,
+  "evse_kw": 9.319,
   "evse_kwh_delivered": null,
   "hvac": "",
-  "label_source": "inferred-from-telemetry",
-  "notes": "state derived from the session's own speed and pack-current columns; no outside measurement was taken",
-  "observer": "automated",
+  "label_source": "observed-at-vehicle",
+  "notes": "charger display read at 8:56pm local (03:56Z): 40.2 A, 9319 W AC, implying 231.8 V. First outside measurement in this project that is not the vehicle describing itself.",
+  "observer": "jeremy",
   "session": "drive-20260904T020049Z.csv",
   "vehicle_state": "parked-awake"
 }
