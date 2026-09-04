@@ -1266,3 +1266,60 @@ adapter echoing the tool's own stream command back despite `ATE0`. Bytes this
 tool transmitted are not bytes the vehicle sent, and a capture that received
 nothing must not report otherwise. The echo is now recognised, logged under its
 own note so it is preserved rather than dropped, and excluded from the count.
+
+
+## Protocol sweep, 2026-09-04: the negative was narrower than it looked
+
+Every passive capture before this one used `ATSP7` — ISO 15765-4, 29-bit,
+500 kbit/s — which is what this vehicle answers *diagnostics* on. There was
+never a reason to assume body traffic shares that framing, and a frame at
+11-bit or 250 kbit/s would have been invisible to all of it. "Nothing arrives"
+had been established for one protocol and quietly generalised.
+
+Four 45-second receive-only windows, back to back, owner at the vehicle pressing
+unlock continuously:
+
+| Protocol | Framing | Result |
+|---|---|---|
+| `ATSP7` | 29-bit, 500 kbit/s | **0 bytes** in 45.1 s (control) |
+| `ATSP6` | 11-bit, 500 kbit/s | **0 bytes** in 45.1 s |
+| `ATSP9` | 29-bit, 250 kbit/s | **did not run** — see below |
+| `ATSP8` | 11-bit, 250 kbit/s | **0 bytes** in 45.1 s |
+
+`ATCS` read `T:00 R:00` after every window that ran.
+
+So the connector is silent across **three** framings rather than one. That is a
+wider negative than the project had, and it was obtained in three minutes.
+
+### `ATSP9` did not run, and that is not a zero
+
+It failed on its first command — `ATZ`, before any protocol was selected:
+
+```text
+read_failed: device reports readiness to read but returned no data
+             (device disconnected or multiple access on port?)
+```
+
+That is a Bluetooth RFCOMM hiccup between one capture closing the port and the
+next opening it, **not** the adapter refusing the protocol. The tool behaved
+correctly: it logged the empty partial, recorded the failure and exited rather
+than reporting a capture that never started.
+
+**It is recorded as untested, not as silent.** A run that did not happen is not
+evidence, and the whole point of keeping `NO DATA` separate from a formed
+refusal is that the same discipline applies to this project's own tooling.
+`ATSP9` remains the one framing never listened to.
+
+### What this does and does not narrow
+
+**Does:** three of the four common CAN framings on pins 6 and 14 carry nothing
+unsolicited, with a person operating the vehicle a metre away.
+
+**Does not:** touch **single-wire CAN**. GM historically carried body functions —
+locks, lights, remote fob — on GMLAN SW-CAN at 33.3 kbit/s on **J1962 pin 1**,
+a physically different conductor from the high-speed pair on 6 and 14 that every
+capture in this project has listened to. If the fob traffic is there, none of
+this would ever have seen it. Whether the adapter can monitor that wire *without
+transmitting* is the question that decides whether it is tried at all — SW-CAN
+has a high-voltage wakeup mode, and this tool's only promise is that it puts
+nothing on the wire.

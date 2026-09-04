@@ -20,6 +20,32 @@ discount.
 
 ### Added
 
+- **The passive negative covered one protocol, not all of them.** Every capture
+  before 2026-09-04 used `ATSP7` — 29-bit, 500 kbit/s — which is what this
+  vehicle answers *diagnostics* on. Body traffic had no reason to share that
+  framing, and a frame at 11-bit or 250 kbit/s would have been invisible to all
+  of it. The conclusion had been generalised from a single protocol.
+
+  Four 45-second windows with the owner pressing unlock continuously:
+  `ATSP7` **0 bytes**, `ATSP6` (11-bit/500k) **0 bytes**, `ATSP8` (11-bit/250k)
+  **0 bytes**. `T:00 R:00` after every one. **Three framings silent instead of
+  one** — a wider negative, obtained in three minutes.
+
+  `ATSP9` (29-bit/250k) **did not run**, and is recorded as untested rather than
+  silent. It failed on `ATZ`, before any protocol was selected, with a Bluetooth
+  RFCOMM error between one capture closing the port and the next opening it. The
+  tool logged the empty partial, recorded the failure and exited rather than
+  reporting a capture that never started. **A run that did not happen is not
+  evidence** — the same rule that keeps `NO DATA` distinct from a formed
+  refusal, applied to this project's own tooling.
+
+  What none of it touches: **single-wire CAN on J1962 pin 1**. GM historically
+  carried locks, lights and remote fob on GMLAN SW-CAN at 33.3 kbit/s, a
+  physically different conductor from the high-speed pair every capture here has
+  listened to. Whether the adapter can monitor it *without transmitting* decides
+  whether it is tried — SW-CAN has a high-voltage wakeup mode, and this tool's
+  only promise is that it puts nothing on the wire.
+
 - **The connector is silent while charging.** Four receive-only captures — about
   four minutes across parked, awake and **charging at 8 kW** — returned nothing
   from the vehicle. `T:00 R:00` before and after every one. Charging is a busier
