@@ -73,7 +73,7 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | Vehicle information | VIN (masked outside the raw log), calibration IDs, calibration verification numbers, full module names |
 | Module inventory | 8 modules named by the vehicle, including three drive-motor controllers |
 | 12 V system voltage | `ATRV`, with **zero CAN traffic** — sampled on a timer while the vehicle sleeps |
-| Live driving telemetry | speed to 94 km/h, odometer, and 12 V control-module voltage under load, from a bounded trial |
+| Live driving telemetry | speed to 143 km/h, odometer, and 12 V control-module voltage under load. No longer a bounded trial: whole drives record unattended, and the standard PID `010D` and the enhanced wheel speeds agree at 143.0 km/h exactly |
 | Vehicle-state detection | awake, gateway-refusing, and fully asleep are distinguishable |
 | Local persistence | byte-exact append-only transcript plus WAL-mode SQLite |
 | Bounded collection | self-stopping trials by cycle count or wall-clock duration, under systemd supervision |
