@@ -20,6 +20,45 @@ discount.
 
 ### Added
 
+- **`hummer-obd-experiment mark` and `hummer-obd-respond`: do something to the
+  vehicle and find out which field noticed.** Seventeen recorded columns are raw
+  payload bytes whose meaning is unclaimed, and correlating them against the
+  truck's *other* numbers can only show that two of its outputs move together.
+  What identifies a field is an **outside intervention**: switch the climate
+  system on, plug in, open a door, and see what moves.
+
+  `mark` is time-keyed rather than session-keyed, deliberately — an operator at
+  the vehicle does not know which CSV is being written, may cross a session
+  boundary mid-experiment, and should not have to care. Append-only, for the
+  same reason the raw log is.
+
+  **Both of the tool's metrics were wrong on its first run**, and both were
+  caught because the validation case had a known answer — a drive, where
+  `speed_kph` and the wheel speeds obviously must respond:
+
+  * The numeric metric divided by the *larger* of the two spreads, which
+    suppresses exactly the response that matters most: a field that sat at a
+    constant zero and then started swinging has a huge spread afterwards.
+    `speed_kph` did not appear in a report about a drive. Now pooled, with a
+    separate variance term so a field that goes flat-to-variable with no mean
+    shift still registers.
+  * The text metric asked "are there new values", which is useless for a payload
+    like `array_2b43` carrying 779 distinct values across the corpus: any two
+    windows are nearly disjoint, so **every** raw column claimed a response and
+    buried the real ones. Now it asks whether a field is *stable within* each
+    segment and *different between* them — a column holding one value throughout
+    and then another is a strong response; one churning through fifty in each is
+    telling you nothing about your intervention.
+
+  It refuses to report a difference when either side has fewer than eight
+  samples, because at an eight-second cycle that is under two minutes and a
+  difference from five samples is a coincidence with a decimal point. And it
+  states in its own output that what it found is **association in time and
+  nothing more**: a field that moves when the climate system starts may be
+  measuring compressor current, cabin temperature, the pack heater reacting or
+  the 12 V load. Separating it from everything that did *not* move is progress;
+  it is not identification.
+
 - **`hummer-obd-experiment`: what a person observed, recorded beside the
   session.** Every number this project holds comes from the vehicle, and that is
   a problem for the fields it cannot decode: correlating the truck's numbers

@@ -40,6 +40,9 @@ from typing import Optional
 __all__ = [
     "Experiment",
     "LABEL_SOURCES",
+    "mark",
+    "load_marks",
+    "DEFAULT_MARKS",
     "VEHICLE_STATES",
     "CHARGE_STATES",
     "sidecar_path",
@@ -243,6 +246,53 @@ def unlabelled_sessions(session_dir: str = DEFAULT_SESSION_DIR,
             if os.path.splitext(os.path.basename(p))[0] not in labelled]
 
 
+DEFAULT_MARKS = "evidence/experiments/marks.jsonl"
+
+
+def mark(label: str, *, path: str = DEFAULT_MARKS,
+         when: Optional[str] = None) -> dict:
+    """Record that something happened, right now, with a UTC timestamp.
+
+    Deliberately time-keyed rather than session-keyed. An operator at the
+    vehicle does not know which CSV the recorder is writing, may cross a session
+    boundary mid-experiment, and should not have to care. The recorder stamps
+    every row with `utc`; so does this; the analysis joins them.
+
+    Append-only, one JSON object per line, for the same reason the raw log is:
+    a mark written during an experiment must not be alterable by the analysis
+    that reads it.
+    """
+    from datetime import datetime, timezone
+    entry = {
+        "utc": when or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+        "label": " ".join(label.split()),
+    }
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, sort_keys=True) + "\n")
+    return entry
+
+
+def load_marks(path: str = DEFAULT_MARKS) -> list[dict]:
+    """Every mark, oldest first. A malformed line is reported, never skipped."""
+    if not os.path.exists(path):
+        return []
+    out: list[dict] = []
+    with open(path, encoding="utf-8") as handle:
+        for lineno, line in enumerate(handle, 1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                out.append({"utc": "", "label": "", "corrupt": line[:80],
+                            "lineno": lineno})
+                continue
+            out.append(entry)
+    return sorted(out, key=lambda e: e.get("utc") or "")
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Record what a person observed while a session was running. "
@@ -267,11 +317,39 @@ def main(argv: Optional[list[str]] = None) -> int:
     add.add_argument("--observer", default="")
     add.add_argument("--dir", default=DEFAULT_EXPERIMENT_DIR)
 
+    marker = sub.add_parser("mark", help="record that something just happened")
+    marker.add_argument("label", nargs="+",
+                        help='what happened, e.g. "hvac max cool on"')
+    marker.add_argument("--at", dest="when",
+                        help="UTC timestamp if not now, e.g. 2026-09-04T02:41:00Z")
+    marker.add_argument("--file", default=DEFAULT_MARKS)
+
+    marks = sub.add_parser("marks", help="list recorded marks")
+    marks.add_argument("--file", default=DEFAULT_MARKS)
+
     check = sub.add_parser("check", help="validate sidecars and list unlabelled sessions")
     check.add_argument("--dir", default=DEFAULT_EXPERIMENT_DIR)
     check.add_argument("--sessions", default=DEFAULT_SESSION_DIR)
 
     args = parser.parse_args(argv)
+
+    if args.command == "mark":
+        entry = mark(" ".join(args.label), path=args.file, when=args.when)
+        print(f"{entry['utc']}  {entry['label']}")
+        return 0
+
+    if args.command == "marks":
+        entries = load_marks(args.file)
+        if not entries:
+            print(f"no marks in {args.file}")
+            return 0
+        for entry in entries:
+            if entry.get("corrupt"):
+                print(f"  line {entry['lineno']}: CORRUPT {entry['corrupt']}",
+                      file=sys.stderr)
+            else:
+                print(f"  {entry['utc']}  {entry['label']}")
+        return 0
 
     if args.command == "record":
         experiment = Experiment(

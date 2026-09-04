@@ -35,6 +35,7 @@ hummer-obd-passive = "hummer_obd.monitor:main"
 hummer-obd-access = "hummer_obd.access:main"
 hummer-obd-passive-diff = "hummer_obd.passive_diff:main"
 hummer-obd-experiment = "hummer_obd.experiment:main"
+hummer-obd-respond = "hummer_obd.respond:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
