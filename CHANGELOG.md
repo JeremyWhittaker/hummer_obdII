@@ -20,6 +20,24 @@ discount.
 
 ### Added
 
+- **`0x0046` settled: it is a pack-side temperature, not ambient.** The morning
+  after the charge it reads **95.0 F** while the truck's own display shows
+  **94 F** — one degree apart, which on its own would argue for an ambient
+  sensor. It is not: the same field rose **93.2 → 111.2 F during an overnight
+  charge**, and garage ambient cannot move 18 F at 2 a.m. The two agree this
+  morning because the pack has equilibrated to the garage overnight. That is a
+  **convergence, not an identity**, and the distinction is the finding.
+
+  The catalog had this as "a temperature the vehicle holds, semantics not yet
+  confirmed" since it was first read. Confirmed now, and by two readings that
+  disagree about what it is until you look at both.
+
+- **The cold-soak reading, finally.** Pack at 95.0 F against the 111.2 F it
+  reached charging — **16.2 F of gradient**, the largest this project has had on
+  the module-40 fields and the reason they are undecoded. Display readings
+  matched throughout: 91 % against `soc_pct` 91.362, and 303 mi against
+  `range_mi` 302.59.
+
 - **Two of the same day's fixes proved themselves in production, hours apart.**
   At 10:08Z, after the charge finished and the vehicle settled, the recorder
   logged:
@@ -1391,6 +1409,44 @@ discount.
 
 
 ### Fixed
+
+- **"Three fields the source calls temperatures did not move" said more than it
+  should have.** During the charge `0x434F`, `0x4127` and `0x4124` held single
+  values while the pack warmed 16.2 F, and that was written up as evidence
+  against the source's labels. The morning after weakens it: two of them **do**
+  take other values in other states — `0x4127` went 1048 → 234 and `0x4124` went
+  0 → 1000 across the overnight cool-down. They are not dead fields; they held
+  still through a charge.
+
+  The rule still applies to that window and it says less than it appeared to.
+  Corrected in all three entries.
+
+- **A guard I wrote this morning fired on a false positive.** The check that no
+  claimed temperature span exceeds the corpus span matched any `N.N F` in the
+  basis text, so it broke the moment that entry gained an *absolute* reading —
+  "reads 95.0 F while the display shows 94 F" is not a claim about how much
+  evidence exists. It now matches only figures explicitly described as a span.
+  A guard that cannot tell the two apart gets silenced rather than heeded.
+
+- **The `0x4149` "match" was coincidence, and one query last night would have
+  shown it.** The entry above reports the field holding `0x00A0` = 160 across
+  all 147 charging samples while the JuiceBox read 40.2 A, with 160/4 = 40.0,
+  and calls it strong circumstantial support.
+
+  **It had already been 160 for 124 minutes before the charger was plugged in.**
+  The charge did not produce the value; it was simply the value at the time.
+  Across the corpus the field takes 36, 96, 100, 160, 384, 385, 388 and 389,
+  changing repeatedly with nothing connected, and it read **384** the morning
+  after unplugging — a value it also took several times overnight while idle.
+
+  Two loose clusters and no relationship to a connected EVSE that this data
+  supports. Level 1 was already correct and the divisor was never applied, so
+  nothing downstream was wrong — but the *reasoning* published was, and the
+  check that would have caught it was one query: **when did this value first
+  appear, relative to the event it supposedly responds to?**
+
+  That question is now the first one to ask of any field that appears to react
+  to something.
 
 - **A sleeping vehicle saw a hundred requests every five minutes instead of
   one.** The restart-loop fix above stopped the process churning, but left the

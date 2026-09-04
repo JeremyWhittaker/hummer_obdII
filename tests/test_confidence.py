@@ -172,8 +172,16 @@ class TestTheLevelThreeClaimsAreRederived(unittest.TestCase):
                      and isinstance(r.get("temp_f"), (int, float))]
         field_span = (max(with_2af1) - min(with_2af1)) if with_2af1 else 0.0
 
+        # Only figures explicitly described as a SPAN. The naive version of
+        # this matched any "N.N F" and fired the moment the basis gained an
+        # absolute reading -- "reads 95.0 F while the display shows 94 F" is
+        # not a claim about how much evidence exists, and a guard that cannot
+        # tell the two apart will be silenced rather than heeded.
         basis = CONFIDENCE["0046"].basis
-        claimed = [float(m) for m in re.findall(r"(\d+\.\d+) F", basis)]
+        claimed = [float(m) for m in
+                   re.findall(r"spans? ([\d.]+) F|([\d.]+) F of (?:spread|span|range)",
+                              basis)
+                   for m in [next(g for g in (m if isinstance(m, tuple) else (m,)) if g)]]
         self.assertTrue(claimed, "the basis quotes no span at all")
         for value in claimed:
             with self.subTest(claimed=value):

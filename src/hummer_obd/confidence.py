@@ -160,7 +160,12 @@ CONFIDENCE: Final[dict[str, Evidence]] = {
         "and that comparison has not been run"),
     "0046": Evidence(
         2, _CB, ("parked", "driving", "charging"),
-        "a temperature the vehicle holds. 0x2AF1's array lands within 1.5-2.0 C "
+        "a PACK-SIDE temperature, settled 2026-09-04. It reads 95.0 F while "
+        "the truck's own display shows 94 F -- but it rose 93.2 to 111.2 F "
+        "during an overnight charge, and garage ambient cannot move 18 F at "
+        "2 a.m., so it is not an ambient sensor. The two agree this morning "
+        "because the pack has equilibrated to the garage, which is a "
+        "convergence rather than an identity. 0x2AF1's array lands within 1.5-2.0 C "
         "of it under one candidate scaling, which is one sample at one "
         "temperature and therefore not a confirmation. The corpus spans 23.4 F "
         "as of 2026-09-04 -- it said 5.4 F when this was written, and the "
@@ -245,16 +250,17 @@ CONFIDENCE: Final[dict[str, Evidence]] = {
                      "at the SAME 107.6 F"),
     "4149": Evidence(
         1, ("40",), ("parked", "driving"),
-        "EVSE advertised current candidate. The 2026-09-04 charge is strong "
-        "circumstantial support and still not a decode: it held 0x00A0 = 160 "
-        "across all 147 charging samples while a JuiceBox read 40.2 A twice, "
-        "65 minutes apart, and 160/4 = 40.0. The divisor also fits the other "
-        "values in the corpus -- 0x0060 -> 24.0 A, 0x0064 -> 25.0 A, all "
-        "plausible EVSE currents. What stops it being a decode is that it read "
-        "0x00A0 while parked and UNPLUGGED too, so it is a capability -- an "
-        "advertised pilot current or a configured limit -- rather than a "
-        "measurement of current flowing. A different EVSE with a different "
-        "rating settles it in one session"),
+        "EVSE advertised current candidate, and a lesson in checking WHEN a "
+        "value appeared. It held 0x00A0 = 160 across all 147 samples of the "
+        "2026-09-04 charge while a JuiceBox read 40.2 A twice, and 160/4 = "
+        "40.0 -- which was written up as strong circumstantial support. It is "
+        "not. The value had already been 160 for **124 minutes before the "
+        "charger was connected**, so the charge did not produce it and the "
+        "match is coincidence. Across the corpus the field takes 36, 96, 100, "
+        "160, 384, 385, 388 and 389, changing repeatedly while nothing is "
+        "plugged in at all, and it read 384 the morning after unplugging. Two "
+        "loose clusters, no relation to a connected EVSE that this data "
+        "supports. Stored raw, level 1, and the divisor is not claimed"),
     "416C": Evidence(
         1, ("40",), ("parked", "driving"),
         "battery group voltage 1 candidate. Read 2589 then 2593 a minute apart, "
@@ -269,32 +275,35 @@ CONFIDENCE: Final[dict[str, Evidence]] = {
     "434F": Evidence(1, ("40",), ("parked", "driving", "charging"),
                      "HV battery temperature candidate. Across 52 charging samples on 2026-09-04 the pack warmed "
                      "16.2 F and this field DID NOT MOVE -- one distinct value "
-                     "throughout. A field that holds still while the thing it "
-                     "allegedly measures changes is not measuring it, which is "
-                     "this project's own rule turned on its own candidate. "
-                     "Evidence against the source's label, not proof: a slow "
-                     "update cadence or a different thermal zone would look the "
-                     "same over ten minutes. Reads 0x46 "
+                     "throughout. That was written up as evidence against the "
+                     "source's label. The morning after weakens it: the field "
+                     "DOES take other values in other states, so it is not "
+                     "dead, it simply held still through a charge. The rule -- "
+                     "a field that does not move while the thing it allegedly "
+                     "measures does is not measuring it -- still applies to "
+                     "that window, and says less than it first appeared to. Reads 0x46 "
                      "throughout"),
     "4127": Evidence(1, ("40",), ("parked", "driving", "charging"),
                      "battery temperature A candidate. Across 52 charging samples on 2026-09-04 the pack warmed "
                      "16.2 F and this field DID NOT MOVE -- one distinct value "
-                     "throughout. A field that holds still while the thing it "
-                     "allegedly measures changes is not measuring it, which is "
-                     "this project's own rule turned on its own candidate. "
-                     "Evidence against the source's label, not proof: a slow "
-                     "update cadence or a different thermal zone would look the "
-                     "same over ten minutes. Reads 0x0418 "
+                     "throughout. That was written up as evidence against the "
+                     "source's label. The morning after weakens it: the field "
+                     "DOES take other values in other states, so it is not "
+                     "dead, it simply held still through a charge. The rule -- "
+                     "a field that does not move while the thing it allegedly "
+                     "measures does is not measuring it -- still applies to "
+                     "that window, and says less than it first appeared to. Reads 0x0418 "
                      "throughout"),
     "4124": Evidence(1, ("40",), ("parked", "driving", "charging"),
                      "battery temperature B candidate. Across 52 charging samples on 2026-09-04 the pack warmed "
                      "16.2 F and this field DID NOT MOVE -- one distinct value "
-                     "throughout. A field that holds still while the thing it "
-                     "allegedly measures changes is not measuring it, which is "
-                     "this project's own rule turned on its own candidate. "
-                     "Evidence against the source's label, not proof: a slow "
-                     "update cadence or a different thermal zone would look the "
-                     "same over ten minutes. It reads 0x0000 "
+                     "throughout. That was written up as evidence against the "
+                     "source's label. The morning after weakens it: the field "
+                     "DOES take other values in other states, so it is not "
+                     "dead, it simply held still through a charge. The rule -- "
+                     "a field that does not move while the thing it allegedly "
+                     "measures does is not measuring it -- still applies to "
+                     "that window, and says less than it first appeared to. It reads 0x0000 "
                      "throughout, which is not a temperature in any scaling"),
     "40E5": Evidence(1, ("40",), ("parked", "driving", "charging"),
                      "battery coolant temperature 1 candidate. Moved monotonically through the 2026-09-04 charge while "
