@@ -768,12 +768,27 @@ def write_csv(session: Session, path: str) -> None:
 #: It cost a real session: the recorder restarted at 12.9 V, read that as asleep
 #: and went to its 300-second watch on a vehicle that was awake in front of it.
 #:
-#: The measured anchors now are 12.7 V asleep and 12.9 V awake, so 12.8 splits
-#: them with 0.1 V either side -- one step of the resolution ATRV reports.  That
-#: is thin, and the asymmetry is what makes it acceptable: **a false wake costs
-#: about three dead cycles and a handful of unanswered requests, and a false
-#: sleep costs an entire drive.**  When the margin is this narrow, err toward
-#: recording.
+#: And the bands do not merely touch at 12.9 -- **they overlap there.**  The
+#: journal has both, hours apart:
+#:
+#:     16:10:48  12.9 V   nothing answered      -> genuinely asleep
+#:     00:41-01:03  12.9 V   five modules answering, 146 rows -> genuinely awake
+#:
+#: So no threshold can classify 12.9 V correctly, and looking for one is the
+#: mistake that has now been made twice.  The recorder already has the right
+#: instrument and it is not the voltmeter: `record()` ends a session when
+#: **nothing answers** for three consecutive cycles, which is a measurement of
+#: the thing actually being asked about.  The 16:10:48 line above is that check
+#: firing, not this threshold.
+#:
+#: The threshold's job is therefore narrower than it looks.  It decides when to
+#: *try*, and answers decide whether the vehicle is really there.  Given that,
+#: it belongs below the ambiguous region rather than inside it, and the
+#: asymmetry settles where: **a false wake costs about three dead cycles and a
+#: handful of unanswered requests; a false sleep costs an entire drive.**  12.8
+#: sits above the only unambiguous sleeping reading (12.7) and below the
+#: ambiguous one, so every ambiguous case is resolved by asking rather than by
+#: guessing.
 WAKE_VOLTS: float = 12.8
 
 

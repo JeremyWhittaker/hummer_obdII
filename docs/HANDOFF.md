@@ -8,9 +8,13 @@ making a change.
 
 Maintain a small, read-only Hummer EV telemetry node without expanding vehicle
 control authority. The current release proves standard OBD-II transport,
-logging, decoding, storage, Bluetooth recovery, and e-paper status. It does not
-authorize enhanced PID exploration or continuous polling until the remaining
-power test is complete.
+logging, decoding, storage, Bluetooth recovery, and e-paper status.
+
+Since 2026-09-02 it also proves **supervised** enhanced reads: an exact,
+enumerated identifier set behind its own narrower gate, never guessed and never
+swept, and a drive/charge session recorder that runs unattended
+(`hummer-drive.service`). The *unattended collector* is a separate thing and is
+still disabled pending the power test; do not conflate them.
 
 ## Non-negotiable invariants
 
@@ -23,9 +27,18 @@ power test is complete.
    import-time assertion fails the build if anyone adds it.
    On 2026-09-02 a separate, narrower gate `validate_enhanced_command()` was
    added for supervised reads of an exact enumerated identifier set
-   (`ENHANCED_READ_DIDS`, currently one entry). Identifiers are never guessed,
-   incremented or swept; each needs a fetchable source naming it exactly. See
-   `docs/GM_ENHANCED_CANDIDATES.md`.
+   (`ENHANCED_READ_DIDS`). Identifiers are never guessed, incremented or swept;
+   each needs a fetchable source naming it exactly. **Do not write the count
+   here** -- three hand-kept inventories in this project have gone stale, and
+   `docs/GM_ENHANCED_CANDIDATES.md` now renders the list, each identifier's
+   confidence level and where it answers directly from the gate.
+
+   On 2026-09-03 two further gates were added for passive capture:
+   `validate_monitor_setup_command` (the production gate plus `STCMM0`) and
+   `validate_monitor_stream_command` (`STMA` alone). `_ALLOWED_AT_EXACT` was
+   **not** widened, deliberately: it feeds `validate_command`, which is the
+   unattended collector's gate. `hasattr(SerialTransport, "capture")` must stay
+   `False`.
 4. Every command must pass `safety.validate_command()` immediately before
    serial I/O; do not add a bypass.
 5. Preserve raw TX/RX bytes append-only before parsing.
@@ -33,7 +46,9 @@ power test is complete.
    an unmasked VIN, JSONL transcripts, SQLite databases, or provisioning
    captures.
 7. Treat a sleeping vehicle as a wait condition. Do not increase traffic to
-   wake it.
+   wake it. While asleep the recorder sends **only `ATRV`**, which reaches no
+   module. If you change `WAKE_VOLTS`, read its comment first: it has been wrong
+   twice, and each measured state now has a test asserting how it is classified.
 8. Keep the continuous collector disabled until the physical power gate is
    satisfied. Overnight stability **is** now observed — 6.8 hours asleep with
    the hardware attached, rail at 12.80 V, and a second 2.5-hour sleep the same
@@ -54,9 +69,11 @@ power test is complete.
 | Protocol | AUTO, ISO 15765-4 (CAN 29-bit / 500 kbit/s) |
 | Probe | completed and reviewed; raw transcript remains private on the Pi |
 | Collector | one-shot proven; continuous unit disabled and config flag false |
+| Recorder | `hummer-drive.service` enabled and active — the thing that actually collects. Writes one CSV per wake period to `evidence/sessions/` |
+| Passive capture | `hummer-obd-passive` exists and was run once, 2026-09-04: **zero bytes in 30 s**. There is no passive data stream at this connector; see `docs/VALIDATION.md` |
 | Battery | PiSugar2 (IP5209) on I2C bus 1; `hummer-battery` enabled and active, shuts down below 3.40 V sustained |
 | Upload | disabled, endpoint empty |
-| Tests | 509 passed / 391 subtests under both test runners |
+| Tests | run the suite rather than reading a number here; it has gone stale in this table before |
 
 The final controlled reboot was also accepted: both SSH paths returned in about
 36 seconds, all required infrastructure/display/RFCOMM services were active,
@@ -109,7 +126,13 @@ ls -l /dev/rfcomm0
 ```
 
 Do not run a probe simply to discover state. First inspect existing private
-logs, SQLite sessions, and journals.
+logs, SQLite sessions, and journals. `hummer-obd-live` and `hummer-obd-analyze`
+read what the recorder already wrote and open no serial device, so they are safe
+to run at any time, including while the vehicle is being driven.
+
+**Only one process may own `/dev/rfcomm0`.** Anything that transmits needs
+`hummer-drive` stopped first, and the sessions pulled to a workstation before
+that. Data first.
 
 ## Safe next milestone
 

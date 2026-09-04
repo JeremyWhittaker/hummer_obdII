@@ -1048,20 +1048,25 @@ class TestWakeThreshold(unittest.TestCase):
 class TestTheWakeThresholdAgainstMeasuredStates(unittest.TestCase):
     """Both sides of the band, pinned to what was actually observed.
 
-    This threshold has been wrong twice. First at 13.2 V, which slept through a
-    12.6-mile commute. Then at 12.95 V, set 0.05 V above a state nobody had
-    watched: on 2026-09-04 the vehicle sat parked and awake at a steady 12.9 V
-    for over twenty minutes -- answering service 22 from five modules, 4 kW of
-    accessory load, 146 rows every one of which reads 12.9V -- and a restarted
-    recorder read that as asleep.
+    This threshold has been wrong twice, and the second time is the instructive
+    one. It was moved to 12.95 V on the argument that the bands do not overlap.
+    They do: 12.9 V has been observed in both states, hours apart --
 
-    Each measured state gets an assertion, so the next edit has to disagree with
-    a measurement rather than with a number.
+        16:10:48    12.9 V, nothing answered                    asleep
+        00:41-01:03 12.9 V, five modules answering, 146 rows     awake
+
+    -- so no threshold classifies 12.9 V correctly, and hunting for one is the
+    mistake itself. The recorder's real instrument is the dead-cycle check,
+    which ends a session when nothing answers: a measurement of the thing being
+    asked about rather than a proxy for it. The threshold only decides when to
+    *try*, so it belongs below the ambiguous region, where every ambiguous case
+    gets resolved by asking.
     """
 
+    #: (volts, must be classified asleep, what was observed)
     MEASURED = (
-        (12.7, True,  "asleep, observed"),
-        (12.9, False, "parked and awake, observed 2026-09-04 over 20 minutes"),
+        (12.7, True,  "asleep, and the only unambiguous sleeping reading"),
+        (12.9, False, "observed BOTH asleep and awake; must go to the ask"),
         (13.0, False, "driving, observed"),
         (13.1, False, "driving, observed"),
         (13.2, False, "arrived, DC-DC boosting"),
@@ -1073,9 +1078,19 @@ class TestTheWakeThresholdAgainstMeasuredStates(unittest.TestCase):
             with self.subTest(volts=volts, state=what):
                 self.assertEqual(volts < drive.WAKE_VOLTS, expect_asleep, what)
 
-    def test_the_threshold_sits_between_the_two_nearest_measurements(self):
-        self.assertGreater(drive.WAKE_VOLTS, 12.7, "would call a sleeping vehicle awake")
-        self.assertLess(drive.WAKE_VOLTS, 12.9, "would call an awake vehicle asleep")
+    def test_the_ambiguous_reading_is_resolved_by_asking_not_by_voltage(self):
+        # 12.9 V is genuinely both. Classifying it awake is not a claim that it
+        # is awake -- it is a decision to find out, because finding out is cheap
+        # and being wrong the other way costs a whole drive.
+        self.assertGreater(drive.WAKE_VOLTS, 12.7, "would poll a sleeping vehicle")
+        self.assertLess(drive.WAKE_VOLTS, 12.9, "would sleep through a drive")
+
+    def test_nothing_answering_is_what_actually_ends_a_session(self):
+        # The backstop the threshold now leans on. Without it, erring toward
+        # recording would mean polling a parked vehicle indefinitely.
+        self.assertGreaterEqual(drive.DEAD_CYCLES_BEFORE_EXIT, 1)
+        self.assertLessEqual(drive.DEAD_CYCLES_BEFORE_EXIT, 5,
+                             "a false wake has to stay cheap for 12.8 to be safe")
 
     def test_silence_is_still_not_evidence_of_sleep(self):
         # An unanswered ATRV read as zero ended a session that was recording a

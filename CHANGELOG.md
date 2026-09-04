@@ -827,15 +827,25 @@ discount.
   lower than driving because nothing is moving, and no measurement covered it.
   The threshold was then set 0.05 V above a state nobody had watched.
 
-  Now 12.8, splitting the two measured anchors -- 12.7 asleep, 12.9 awake -- with
-  0.1 V either side, one step of the resolution `ATRV` reports. That is thin, and
-  the asymmetry is what makes it acceptable: **a false wake costs about three
+  And the bands do not merely touch at 12.9 — **they overlap there.** The
+  journal has both, hours apart: at 16:10:48 the vehicle read 12.9 V with
+  *nothing answering*, genuinely asleep; from 00:41 to 01:03 it read 12.9 V with
+  five modules answering and 146 rows recorded, genuinely awake. So no threshold
+  classifies 12.9 V correctly, and hunting for one is the mistake — twice now.
+
+  The recorder already had the right instrument and it is not the voltmeter.
+  `record()` ends a session when **nothing answers** for three consecutive
+  cycles, which measures the thing actually being asked about; the 16:10:48 line
+  is that check firing, not the threshold. So the threshold's job is narrower
+  than it looks: it decides when to *try*, and answers decide whether the vehicle
+  is really there. It therefore belongs *below* the ambiguous region rather than
+  inside it, and the asymmetry settles where — **a false wake costs about three
   dead cycles and a handful of unanswered requests; a false sleep costs an entire
-  drive.** When the margin is this narrow, err toward recording. Every measured
-  state now has its own assertion, so the next edit has to disagree with a
-  measurement rather than with a number -- and three existing tests that used
-  12.8 or 12.9 as a stand-in for "asleep" now use 12.7, the only sleeping voltage
-  actually observed.
+  drive.** 12.8 sits above the only unambiguous sleeping reading and below the
+  ambiguous one, so every ambiguous case is resolved by asking rather than
+  guessing. Every measured state now has its own assertion, and three existing
+  tests that used 12.8 or 12.9 as a stand-in for "asleep" use 12.7, the only
+  unambiguous sleeping voltage observed.
 
 - **The session report keyed distance off the least reliable column it had.**
   `odometer_km` and `speed_kph` are standard OBD PIDs, and on 2026-09-03 they
