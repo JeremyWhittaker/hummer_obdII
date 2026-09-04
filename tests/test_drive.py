@@ -802,9 +802,60 @@ class TestCensusProvenPidsAreCollected(unittest.TestCase):
             f"the vehicle advertises these and the recorder ignores them: {missing}",
         )
 
-    def test_the_monitor_status_bitfield_is_deliberately_excluded(self):
-        # 01 is a bitfield, not a scalar, so it has no single column to land in.
+    def test_the_monitor_status_bitfield_is_not_in_the_scalar_list(self):
+        # 01 is four bytes of packed flags, not a scalar, so there is no single
+        # value for the STANDARD_PIDS loop to put in a column -- decode_pid
+        # correctly reports it as undecoded.  It is collected separately.
         self.assertNotIn("0101", [c for c, _ in drive.STANDARD_PIDS])
+        self.assertEqual(drive.MONITOR_STATUS_PID, "0101")
+
+    def test_the_bitfield_is_collected_even_so(self):
+        # Being the awkward shape is not a reason to leave a legislated,
+        # advertised signal on the table.  Two of its four bytes are worth a
+        # column each; the eleven readiness bits are not, at eight-second
+        # intervals, and the probe reports those when asked.
+        for column in drive.MONITOR_STATUS_COLUMNS:
+            with self.subTest(column=column):
+                self.assertIn(column, drive.COLUMNS)
+        self.assertEqual(drive.MONITOR_STATUS_COLUMNS, ("mil_on", "dtc_count"))
+
+    def test_the_bitfield_request_passes_the_unattended_gate(self):
+        from hummer_obd.safety import validate_command
+        self.assertEqual(validate_command(drive.MONITOR_STATUS_PID), "0101")
+
+    def test_a_lit_malfunction_lamp_reaches_the_row(self):
+        # 0x81 -> lamp on, one stored fault.  A lamp coming on *during* a drive,
+        # with the distance and speed either side of it, is what a recorder
+        # catches and a later scan cannot reconstruct.
+        class _WithMil(_Fake):
+            def send(self, command, timeout=None):
+                if command == "0101":
+                    self.sent.append(command)
+                    return Response(command=command,
+                                    data=b"7E8 06 41 01 81 07 65 00\r\r>",
+                                    elapsed_s=0.01)
+                return super().send(command, timeout)
+
+        session = record(_WithMil(), max_cycles=1, sleeper=lambda s: None,
+                         clock=_bounded_clock())
+        self.assertEqual(session.rows[0].get("mil_on"), 1)
+        self.assertEqual(session.rows[0].get("dtc_count"), 1)
+
+    def test_a_short_frame_leaves_the_columns_empty_rather_than_false(self):
+        # Two of the four bytes would decode into confident-looking flags about
+        # bytes that never arrived.  Absent is the honest answer.
+        class _Short(_Fake):
+            def send(self, command, timeout=None):
+                if command == "0101":
+                    self.sent.append(command)
+                    return Response(command=command, data=b"7E8 03 41 01 00\r\r>",
+                                    elapsed_s=0.01)
+                return super().send(command, timeout)
+
+        session = record(_Short(), max_cycles=1, sleeper=lambda s: None,
+                         clock=_bounded_clock())
+        self.assertIsNone(session.rows[0].get("mil_on"))
+        self.assertIsNone(session.rows[0].get("dtc_count"))
 
     def test_each_has_a_column(self):
         for _command, column in drive.STANDARD_PIDS:

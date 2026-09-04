@@ -53,7 +53,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable, Final, Optional
 
-from .decode import decode_pid, parse_reply
+from .decode import decode_monitor_status, decode_pid, parse_reply
 from .rawlog import RawLog
 from .safety import (
     validate_command,
@@ -314,6 +314,24 @@ STANDARD_PIDS: tuple[tuple[str, str], ...] = (
     ("0142", "module_voltage"),
 )
 
+#: Service 01 PID 01, the ninth thing module 17 advertises and the one the
+#: census-driven list above could not absorb.
+#:
+#: It is not a measurement.  It is four bytes of packed flags -- malfunction
+#: lamp, stored-fault count, and a readiness bit per emissions monitor -- so
+#: there is no single value to put in a column and ``decode_pid`` correctly
+#: reports it as undecoded.  ``decode.decode_monitor_status`` unpacks it
+#: properly, and two of its fields belong in a drive row: a malfunction lamp
+#: coming on *during* a drive, with the distance and speed either side of it,
+#: is the sort of thing a recorder exists to catch and a later scan cannot
+#: reconstruct.
+#:
+#: The readiness bits are deliberately not columns.  Eleven boolean columns
+#: that change across months, recorded every eight seconds, is the wrong shape
+#: for this file; ``hummer-obd-probe`` reports them when asked.
+MONITOR_STATUS_PID: str = "0101"
+MONITOR_STATUS_COLUMNS: tuple[str, ...] = ("mil_on", "dtc_count")
+
 #: One-time setup.  Protocol, priority and flow control do not change between
 #: groups, so they are paid for once per session rather than once per sample.
 SESSION_INIT: tuple[str, ...] = (
@@ -376,6 +394,7 @@ COLUMNS: tuple[str, ...] = (
     "wheel_fl_kph", "wheel_fr_kph", "wheel_rl_kph", "wheel_rr_kph",
     "brake_kpa", "steering_deg", "lateral_g", "longitudinal_g",
     "array_2b43",
+    "mil_on", "dtc_count",
 )
 
 
@@ -566,6 +585,22 @@ def record(
                         if decoded.value is not None:
                             row[column] = decoded.value
                     break
+            # PID 01 last, because it is the one that is not a scalar.  Only
+            # module 17 can answer: STANDARD_ADDRESS points at it physically,
+            # so this is that module's view of the lamp rather than a
+            # vehicle-wide one -- which is the only view available from a
+            # physically addressed request, and is worth saying.
+            monitor = parse_reply(
+                transport.send(
+                    validate_command(MONITOR_STATUS_PID), timeout=timeout
+                ).data
+            )
+            for status in decode_monitor_status(monitor):
+                if status.status != "ok":
+                    continue
+                row["mil_on"] = 1 if status.mil_on else 0
+                row["dtc_count"] = status.dtc_count
+                break
         except TransportError as exc:
             session.errors.append(f"standard: {exc}")
         try:

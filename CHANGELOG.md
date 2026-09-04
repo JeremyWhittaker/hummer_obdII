@@ -20,6 +20,33 @@ discount.
 
 ### Added
 
+- **The ninth thing module 17 advertises is now collected too.** The per-module
+  census had module `17` advertise nine service 01 PIDs; seven were wired in
+  when that was found, and `01` was left out because it is the awkward one --
+  four bytes of packed flags rather than a scalar, so `decode_pid` correctly
+  reports it as undecoded and there is no single value for the standard-PID
+  loop to put in a column.
+
+  Being the awkward shape is not a reason to leave a legislated, advertised
+  signal on the table. `decode.decode_monitor_status` already unpacked it
+  properly and nothing called it from the recorder. Two of its fields now have
+  columns: `mil_on` and `dtc_count`. **A malfunction lamp coming on *during* a
+  drive, with the distance and speed either side of it, is exactly what a
+  recorder catches and a later scan cannot reconstruct** — a scan tells you a
+  fault exists, not what the vehicle was doing when it appeared.
+
+  The eleven readiness bits deliberately do not become columns: booleans that
+  change across months, written every eight seconds, are the wrong shape for
+  this file, and `hummer-obd-probe` reports them when asked. A short frame
+  leaves both columns empty rather than writing `0`, because two of the four
+  bytes would decode into confident-looking flags about bytes that never
+  arrived — the one failure here that cannot be spotted afterwards from the row.
+
+  Only module `17` can answer: `STANDARD_ADDRESS` points at it physically, so
+  this is that module's view of the lamp and not a vehicle-wide one. That is
+  the only view a physically addressed request can give, and it is worth saying
+  rather than implying otherwise.
+
 - **`hummer_obd.confidence`: how much each identifier has actually been
   proven, as a table something can check.** The safety gate answers *may this be
   transmitted?* It cannot answer the question a reader of the telemetry actually

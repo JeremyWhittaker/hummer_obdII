@@ -238,6 +238,13 @@ def column_sources() -> dict[str, tuple[str, str]]:
         standard_where = "standard OBD"
     for request, column in drive.STANDARD_PIDS:
         sources[column] = (standard_where, request)
+    # PID 01 is not in STANDARD_PIDS because it is not a scalar -- four bytes
+    # of packed flags, two of which become columns.  Attributing them here
+    # rather than letting them fall through as "unknown source" is the whole
+    # reason this function reads the recorder's own tables instead of keeping
+    # a list beside them.
+    for column in drive.MONITOR_STATUS_COLUMNS:
+        sources[column] = (standard_where, drive.MONITOR_STATUS_PID)
     for group in drive.GROUPS:
         # 'ATSHDACBF1' -> the module byte is characters 6:8 ("CB").
         module = group.address[0][6:8]
