@@ -288,6 +288,64 @@ not damage from stopping the recorder or switching adapter protocols. Worth
 stating explicitly, because a night of interfering with the rig is exactly when
 a coincidence would be mistaken for a consequence.
 
+**Driving is the state where everything answers.** The table above is a
+per-module reading of one night. Measured a different way — the fraction of
+populated cells across the whole corpus, grouped by which service the column
+comes from — the picture is consistent and adds the state that was missing:
+
+| Vehicle state | standard service 01 | enhanced service 22 |
+|---|---|---|
+| moving | **100.0 %** (2,727 cells) | **100.0 %** (6,382 cells) |
+| charging | 37.3 % (3,378 cells) | 99.9 % (5,762 cells) |
+| parked and awake | 54.5 % (28,180 cells) | 85.1 % (57,398 cells) |
+
+So "the modules go quiet" is too broad a statement of it. What actually happens
+is that **service 01 is refused outside a run state while service 22 is not** —
+during a charge the legislated PIDs fall away completely while the enhanced
+reads hold at 99.9 %. Under way, both are perfect. A drive is the best
+telemetry state this vehicle offers, and a sparse charging session is normal
+rather than a fault.
+
+### The three 12 V readings are one rail with offsets, not a disagreement
+
+This project has had an open question about a ~6 % disagreement between its 12 V
+readings. There are three: `volts` (the adapter's own `ATRV`, measured at the
+OBD connector), `module_voltage` (legislated PID `0142` from module 17), and
+`dmc2_v` (`0x33E5`, the enhanced read). They differ by **stable offsets**:
+
+| Pair | n | Offset | sd |
+|---|---|---|---|
+| `volts` − `module_voltage` | 1,691 | +0.293 V | 0.059 |
+| `volts` − `dmc2_v` | 4,909 | +0.759 V | 0.062 |
+| `module_voltage` − `dmc2_v` | 1,691 | +0.454 V | 0.033 |
+
+The ordering `volts` > `module_voltage` > `dmc2_v` holds in **every** phase
+across 12.1–13.8 V and three vehicle states. The ~6 % figure was `volts` against
+`dmc2_v` while driving (12.94 vs 12.14) — a stable 0.76 V offset plus two 0.1 V
+quantisation steps, not a measurement conflict.
+
+**Use PID `0142`.** The resolutions differ structurally, and it is not a close
+call: `0x33E5` decodes as one byte ÷ 10, giving 0.1 V steps and 19 distinct
+values corpus-wide, while `0142` is two bytes ÷ 1000, giving 1 mV steps and 143
+distinct values. For any 12 V work the legislated PID is the instrument and the
+other two are indicators.
+
+That distinction mattered immediately. A first attempt here to test whether the
+offset grows with electrical load — the signature of harness IR drop — compared
+phases differing by about 80 mV using `volts`, whose quantum is 100 mV. The test
+could not have worked. Redone on `0142` alone:
+
+- **HVAC mode does not move the rail.** 13.539 / 13.537 / 13.527 V across max
+  A/C, max heat and max A/C again (n = 80 / 44 / 48), every step inside one
+  pooled standard deviation at 1 mV resolution. A clean null, properly powered.
+- **Driving drops it 0.92 V**, 6.8× the pooled sd — large and unambiguous.
+- **But it is decoupled from traction load.** Over the drive `0142` correlates
+  with pack current at only **+0.10** across a 905 A swing, and regen samples
+  differ from hard-draw samples by **0.008 V**, a tenth of a pooled sd —
+  measured *across a sign reversal*, which is the test elapsed time cannot fake.
+
+So the rail moves 1.2 V during a drive and traction is not what moves it.
+
 ### Onboard charger efficiency, measured twice
 
 The one quantity here that no amount of vehicle telemetry could produce. Pack DC

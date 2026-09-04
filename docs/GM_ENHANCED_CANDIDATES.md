@@ -243,7 +243,7 @@ confident-looking unit and nothing behind it.
 | `0x2AF1` | **1** | `CB` | parked, driving, charging | battery module temperature candidate -- meatpiHQ/wican-fw issue #884, BEV3 Bolt, UNMERGED, not BT1 |
 | `0x2AF5` | **4** | `CB` | parked, driving, charging | HV battery cell voltage average/minimum/maximum -- OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DACB, three 16-bit fields divided by 10000, volts |
 | `0x2B43` | **1** | `CB` | parked, driving, charging | HV battery state of charge, 8-bit -- OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DACB, byte * 100 / 255, percent |
-| `0x33E5` | **3** | `17`, `1D`, `1E` | parked, driving | drive motor control module battery voltage -- OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DA1D (this vehicle names 1D as DMC2-DriveMotorCtrl2), byte / 10, volts |
+| `0x33E5` | **3** | `17`, `1D`, `1E` | parked, driving, charging | drive motor control module battery voltage -- OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DA1D (this vehicle names 1D as DMC2-DriveMotorCtrl2), byte / 10, volts |
 | `0x40E5` | **2** | `40` | parked, driving, charging | battery coolant temperature 1 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
 | `0x40E6` | **2** | `40` | parked, driving, charging | battery coolant temperature 2 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
 | `0x4124` | **1** | `40` | parked, driving, charging | HV battery temperature B candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |

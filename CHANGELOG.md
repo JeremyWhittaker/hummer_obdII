@@ -20,6 +20,61 @@ discount.
 
 ### Added
 
+- **Driving is the state where everything answers.** Measured corpus-wide as the
+  fraction of populated cells by service: while moving, standard service 01 and
+  enhanced service 22 are both at **100.0 %** (2,727 and 6,382 cells). While
+  charging, service 01 falls to 37.3 % while service 22 holds 99.9 %. So the
+  earlier "modules go quiet" was too broad — what happens is that the legislated
+  PIDs are refused outside a run state while the enhanced reads are not. A
+  sparse charging session is normal, not a fault.
+
+### Changed
+
+- **The 12 V "disagreement" is withdrawn: it is one rail with stable offsets.**
+  `volts` (adapter `ATRV`), `module_voltage` (PID `0142`) and `dmc2_v`
+  (`0x33E5`) differ by +0.293, +0.759 and +0.454 V with standard deviations of
+  0.059, 0.062 and 0.033 V over 1,691–4,909 paired samples, ordered
+  `volts` > `module_voltage` > `dmc2_v` in every phase across 12.1–13.8 V. The
+  ~6 % figure was `volts` against `dmc2_v` while driving — a fixed 0.76 V offset
+  plus two 0.1 V quantisation steps.
+
+  The prior grading of `0x33E5` called the difference **multiplicative**, citing
+  "ratios hold to 0.53 % while offsets wander by 23 %" over 358 samples. That
+  reasoning is withdrawn on two grounds. It compares the relative spread of a
+  quantity whose mean is 0.29 V against one whose mean is 1.02, which favours
+  the ratio regardless of the truth; and the ratio's tightness is a
+  *consequence* of a stable offset, since `y = x + c` gives `y/x = 1 + c/x` and
+  so forces the ratio's sd to about `sd(c)/mean(x)` — which predicts 0.00447
+  against an observed 0.00460, agreeing to 2.8 %. Refitting each model by least
+  squares and comparing residuals in volts, additive wins every pair: 0.0591 vs
+  0.0599, 0.0617 vs 0.0665, 0.0330 vs 0.0412 V. Full linear fits give slopes
+  0.9985/0.9893/0.9739 with intercepts of +0.31/+0.90/+0.79 V, where a pure
+  scaling needs an intercept near zero.
+
+  Two caveats kept rather than smoothed over: the `0142`-vs-`33E5` ratio is 27 %
+  tighter than a pure offset predicts and that pair's slope is furthest from 1,
+  so a small real gain difference between those two modules is not excluded; and
+  both pairs involving `volts` sit near the 0.0289 V floor its 0.1 V
+  quantisation imposes. `0x33E5` stays at level 3 — which reading is correct
+  still needs a reference meter — but the difference is an offset between sense
+  points, not the ADC gain error previously claimed.
+
+- **PID `0142` is the 12 V instrument; the other two are indicators.** The
+  resolution gap is structural, not incidental: `0x33E5` decodes as one byte
+  ÷ 10, giving 0.1 V steps and 19 distinct values corpus-wide, while `0142` is
+  two bytes ÷ 1000, giving 1 mV steps and 143 distinct values.
+
+  This mattered at once. A first attempt to test whether the offset grows with
+  load — the signature of harness IR drop — compared phases differing by ~80 mV
+  using `volts`, whose quantum is 100 mV, so the test could not have worked and
+  is recorded as under-powered rather than as a falsification. Redone on `0142`
+  alone: HVAC mode does **not** move the rail (13.539 / 13.537 / 13.527 V across
+  A/C, heat, A/C again, n = 80/44/48, every step inside one pooled sd); driving
+  drops it 0.92 V at 6.8× pooled sd; but it is **decoupled from traction load**,
+  correlating with pack current at only +0.10 across a 905 A swing, with regen
+  and hard-draw samples differing by 0.008 V — a tenth of a pooled sd, measured
+  across a sign reversal that elapsed time cannot fake.
+
 - **The HVAC A-B-A ran, and it is the first experiment here that separates
   cause from elapsed time.** Every earlier thermal reading came from a single
   transition, which cannot tell a field responding to the change from a field
