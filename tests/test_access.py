@@ -389,6 +389,35 @@ class TestEveryDocumentsLinksResolve(unittest.TestCase):
                            "probably not matching")
 
 
+class TestThePublishedCapabilityReportCountsRatherThanAsserts(unittest.TestCase):
+    """A fixed string inside a *generated* report is the worst place for one.
+
+    `capabilities.py` published "GM/Ultium identifiers are unproven on this VIN"
+    in every capability report until 2026-09-04, by which point 31 of 35 had
+    answered and nine were cross-validated. Nothing noticed, because a generated
+    report looks like a measurement whether or not the sentence inside it is.
+    """
+
+    def test_the_counts_come_from_the_confidence_table(self):
+        from hummer_obd import capabilities
+        self.assertEqual(
+            capabilities._enhanced_proven(),
+            sum(1 for e in CONFIDENCE.values() if e.level >= 1))
+        self.assertEqual(
+            capabilities._enhanced_production(),
+            sum(1 for e in CONFIDENCE.values()
+                if e.level >= capabilities.PRODUCTION_MINIMUM))
+
+    def test_the_report_no_longer_claims_the_identifiers_are_unproven(self):
+        from hummer_obd import capabilities
+        source = open(capabilities.__file__, encoding="utf-8").read()
+        # Allowed in the comment explaining the fix, not in the emitted string.
+        emitted = [line for line in source.splitlines()
+                   if "unproven on this VIN" in line and not line.lstrip().startswith("#")]
+        self.assertEqual(emitted, [],
+                         "the capability report asserts identifiers are unproven")
+
+
 class TestItNeverTouchesTheVehicle(unittest.TestCase):
     """Checked against the module's imports, not against its prose.
 

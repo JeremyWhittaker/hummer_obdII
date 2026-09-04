@@ -123,7 +123,7 @@ remaining life) is not advertised; neither is `46` (ambient air temperature).
 | Pack voltage | Health and charge state of the traction battery | **Obtained on 2026-09-03** via `0x2885` at module `17`, and at `1D`/`1E` too. This row said otherwise for a day. Historical note follows: `0x33E5` reads ~13.1 V from each drive motor controller, which is the 12 V domain, not the pack |
 | Pack current / power | Draw while driving, rate while charging | **Obtained on 2026-09-03** via `0x2414` at module `17`; power is `pack_v × pack_a`, cross-checked against the energy field's slope. This row said otherwise for a day longer than the pack-voltage row above it, because the row above was corrected and this one was not |
 | Pack temperature | Thermal behaviour under load and fast charge | Partly: `0x0046` returns a temperature the vehicle holds, semantics not yet confirmed |
-| Cell balance / delta | The earliest visible sign of a failing module | **Obtained** — `0x2AF5` gives cell average, minimum and maximum; measured spread 4.9–5.3 mV |
+| Cell balance / delta | The earliest visible sign of a failing module | **Obtained** — `0x2AF5` gives cell average, minimum and maximum. ~~measured spread 4.9–5.3 mV~~ — that was one early session and covers only 17.7% of what has since been recorded. Across 4843 committed samples: **median 4.6 mV, 86.2% between 2 and 5 mV, tail to 15.4 mV** |
 | DC fast-charge state | Session progress and taper behaviour | `0x5401` responds but returns one byte where the source describes two; untested during an actual charge |
 | Remaining range | The vehicle's own estimate, logged over time | **Obtained** — `0x27C7` |
 

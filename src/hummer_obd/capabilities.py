@@ -51,6 +51,7 @@ from typing import Any, Optional
 from urllib.parse import urlsplit
 
 from . import __version__, safety
+from .confidence import CONFIDENCE, PRODUCTION_MINIMUM
 from .config import Config, load_config
 from .decode import mask_vin
 from .rawlog import iter_records
@@ -327,6 +328,16 @@ def _gate_check(command: str) -> GateCheck:
     except safety.UnsafeCommandError as exc:
         detail = str(exc)
     return GateCheck(command=command, accepted=False, detail=detail)
+
+
+def _enhanced_proven() -> int:
+    """How many enumerated identifiers this vehicle has actually answered."""
+    return sum(1 for e in CONFIDENCE.values() if e.level >= 1)
+
+
+def _enhanced_production() -> int:
+    """How many are cross-validated -- the bar for a telemetry reading."""
+    return sum(1 for e in CONFIDENCE.values() if e.level >= PRODUCTION_MINIMUM)
 
 
 def _safety_section() -> dict[str, Any]:
@@ -1038,9 +1049,18 @@ def _deferred_section(cfg: Config, services: dict[str, Any], gate: dict[str, Any
             capability="mode22_enhanced_pids",
             title="Mode 22 GM/Ultium enhanced PIDs",
             status="deferred",
-            reason=f"the live safety gate {'accepts' if mode22['accepted'] else 'refuses'} service 22; "
-                   "GM/Ultium identifiers are unproven on this VIN and enabling them is separate, "
-                   "supervised work.",
+            # This said "GM/Ultium identifiers are unproven on this VIN" until
+            # 2026-09-04, by which point 31 of 35 had answered and nine were
+            # cross-validated.  It was a fixed string in a *generated* report,
+            # which is the worst place for one: every capability report
+            # published it as though it were a measurement.  Counted from the
+            # confidence table instead, so it cannot drift again.
+            reason=f"the live safety gate {'accepts' if mode22['accepted'] else 'refuses'} service 22 "
+                   "for the unattended collector, which has not changed. "
+                   f"{_enhanced_proven()} of {len(CONFIDENCE)} enumerated "
+                   f"identifiers answer on this VIN and {_enhanced_production()} "
+                   "are cross-validated; reading them is a separate, supervised "
+                   "path (hummer-obd-enhanced) that no unattended process calls.",
         ),
         DeferredItem(
             capability="remote_commands",

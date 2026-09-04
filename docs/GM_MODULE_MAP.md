@@ -34,9 +34,21 @@ response   0x14 2A F1 <ecu>        e.g. 0x142AF1CB
 ```
 
 `ATSH` carries only the low three bytes, so the priority byte must be set
-separately with `ATCP14`. Without it the request leaves as `0x18DA…` and no
-module answers. Legislated OBD is the opposite: a functional broadcast at
-priority `0x18`, `ATCP18` + `ATSHDB33F1`.
+separately with `ATCP14`. Without it the request leaves as `0x18DA…`.
+
+~~and no module answers~~ — **that was wrong, and it is the error that hid
+module `40` for a day.** Priority is per-module. Module `CB` answers at *both*
+`0x14` and `0x18`; `28` answers only at `0x14`; `40` answers only at `0x18` and
+was written off as unreachable because everything was being asked at `0x14`. Set
+the priority because it decides which addressing you are using, not because
+omitting it guarantees silence. The measured matrix is in
+[CAN priority](CAN_PRIORITY.md).
+
+Legislated OBD used to be described here as the opposite — a functional
+broadcast at `ATCP18` + `ATSHDB33F1`. The recorder now addresses module `17`
+physically (`ATSHDA17F1`, `ATCRA18DAF117`) because the broadcast was answered
+first by module `28`'s refusal; `live.py` reads that addressing out of
+`drive.STANDARD_ADDRESS` rather than describing it.
 
 ## What the three drive motor controllers showed
 

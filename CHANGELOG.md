@@ -863,6 +863,41 @@ discount.
 
 ### Fixed
 
+- **Five false claims found by a fourteen-agent adversarial verification pass**,
+  each independently re-confirmed before being fixed. The pass inventoried every
+  dimension of the project's access surface and then attacked its own inventory;
+  most of its 58 refutations were agents correcting each other, which is the
+  design working. Five named defects in the repository survived that filter:
+
+  * **`README.md` and `docs/VALIDATION.md` published "509 tests / 391 subtests"
+    against a measured 836 / 2424** — a written count drifted by 327 tests. Both
+    now point at the command that produces the number, the same fix `HANDOFF.md`
+    got earlier today. A count in prose is a claim like any other.
+  * **`src/hummer_obd/enhanced.py` and `docs/GM_MODULE_MAP.md` both said that
+    without `ATCP14` "the module does not answer".** That is false for the very
+    module the sentence is about: `CB` answers at **both** priorities, which is
+    what the `bsm-cb-p18` profile was written to establish. It is also the exact
+    overgeneralisation that hid module `40` for a day — priority is per-module,
+    `28` answers only at `0x14` and `40` only at `0x18`. Set the priority
+    because it decides which addressing you are using, not because omitting it
+    guarantees silence.
+  * **`capabilities.py` published "GM/Ultium identifiers are unproven on this
+    VIN" in every generated capability report.** 31 of 35 answer and nine are
+    cross-validated. A fixed string inside a *generated* report is the worst
+    place for one, because the report looks like a measurement whether or not
+    the sentence inside it is. It now counts from `confidence.CONFIDENCE`, and a
+    test asserts the counts match and that the phrase is gone from the emitted
+    string.
+  * **`docs/PASSIVE_CAN_VALIDATION.md` quoted a cell spread of 4.9–5.3 mV.**
+    That was one early session and covers 17.7% of what has since been recorded.
+    Across 4843 committed samples: median 4.6 mV, 86.2% between 2 and 5 mV, tail
+    to 15.4 mV. Recomputed independently before changing it.
+
+  Worth recording what the pass did **not** find, because it is the more useful
+  signal: no defect in the safety gate, no gate that accepts something it should
+  refuse, no column claimed that is not collected, and no broken link. The
+  refutations were all in prose describing the code, never in the code.
+
 - **`0x2429` was decoded as volts, published, and it is not a voltage.** This is
   the most convincing wrong answer this project has produced, and the way it
   looked right is the part worth keeping.

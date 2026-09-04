@@ -115,8 +115,15 @@ class EnhancedProfile:
 #:
 #: ``ATCP14`` is load-bearing and easy to miss: ``ATSH`` carries only the low
 #: three bytes of a 29-bit identifier, so without the priority byte the request
-#: goes out as ``0x18DACBF1`` rather than ``0x14DACBF1`` and the module does not
-#: answer.
+#: goes out as ``0x18DACBF1`` rather than ``0x14DACBF1``.
+#:
+#: This used to end "and the module does not answer", which is **false for this
+#: module**.  Module ``CB`` answers at *both* priorities -- that is what the
+#: ``bsm-cb-p18`` profile was written to establish, and it did.  Priority is
+#: per-module: ``28`` answers only at ``0x14``, ``40`` only at ``0x18``, and
+#: most answer at both (docs/CAN_PRIORITY.md).  So set the priority because it
+#: decides *which addressing you are using*, not because omitting it guarantees
+#: silence.  The overgeneralisation is what hid module ``40`` for a day.
 BT1 = EnhancedProfile(
     key="bt1",
     description="GM BT1/BEV3 (Hummer EV, Silverado EV, Sierra EV, Lyriq, Blazer EV, ...)",

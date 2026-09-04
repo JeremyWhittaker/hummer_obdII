@@ -22,11 +22,13 @@ reference node.
 | Upload | disabled-by-default refusal, endpoint requirement, successful marking, failure preservation |
 | Integration | PTY-backed simulated ELM adapter; exact command transcript and no forbidden transmission |
 
-Latest result:
+Latest result — **the counts that used to sit here said 509 tests / 391
+subtests while the suite measured 836 / 2424.** A written count is a claim
+like any other and this one drifted by 327 tests. Run the command instead:
 
 ```text
-pytest:   509 passed
-unittest: 509 tests / 391 subtests passed
+pytest:   run it -- `PYTHONPATH=src python3 -m pytest -q`
+unittest: run it -- `PYTHONPATH=src python3 -m unittest discover -s tests -q`
 shell:    all repository shell scripts pass bash -n
 compile:  all Python modules compile
 ```
