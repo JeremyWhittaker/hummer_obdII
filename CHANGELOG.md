@@ -20,6 +20,34 @@ discount.
 
 ### Added
 
+- **Single-wire CAN on pin 1: researched, and declined.** With every framing on
+  pins 6 and 14 silent, the obvious thought was that we had been listening to
+  the wrong wire — GM historically carried locks, lights and remote fob on GMLAN
+  SW-CAN at 33.3 kbit/s on J1962 pin 1, and the MX+ supports it.
+
+  The vendor documentation is encouraging. `STP 61`–`64` select it; `STP`
+  explicitly *"does not actually open the communication channel"*; opening
+  SW-CAN sets the transceiver to **Normal**, not the High Voltage Wakeup mode,
+  which needs a separate `STCSWM 2` this project would never send; and the
+  STN21XX datasheet describes omitting the high-speed load circuit for
+  *"'flight recorder' type (monitoring only) applications"*.
+
+  **Declined anyway, for three reasons.** The best source found says Global B —
+  which covers this truck — does not carry LS-GMLAN on pin 1 at all, but a
+  secondary CAN-FD network. That makes pointing a 33.3 kbit/s single-wire
+  receiver at it precisely the unidentified-bus case
+  `docs/CAN_FD_EXPANSION.md` exists to forbid, and a positive reason to expect a
+  mismatch is worse than no information. And the safety conclusion is a *sound
+  derivation* from documented defaults rather than a vendor statement — no
+  sentence anywhere says "monitoring SW-CAN transmits nothing".
+
+  That last one decides it. `hummer-obd-passive` promises nothing reaches the
+  vehicle, and that promise is currently backed by a manifest of sixty-five
+  bytes of adapter configuration reconstructed from the transcript. **A promise
+  backed by an inference is a weaker thing wearing the same words.** Recorded in
+  `CAN_FD_EXPANSION.md` and as an `UNREACHABLE` entry, with what would change
+  it: GM service information for this VIN saying what pin 1 actually carries.
+
 - **The passive negative covered one protocol, not all of them.** Every capture
   before 2026-09-04 used `ATSP7` — 29-bit, 500 kbit/s — which is what this
   vehicle answers *diagnostics* on. Body traffic had no reason to share that

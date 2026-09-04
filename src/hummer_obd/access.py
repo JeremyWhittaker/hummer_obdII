@@ -476,6 +476,25 @@ UNREACHABLE: Final[tuple[Unreachable, ...]] = (
        "CAN_FD_EXPANSION.md, and is explicitly not authorised by this "
        "repository."),
 
+    _u("Single-wire CAN on J1962 pin 1 (GMLAN body traffic)", "hardware",
+       "Researched on 2026-09-04 after all four CAN framings on pins 6 and 14 "
+       "came back silent, and DECLINED. The adapter does support it -- STP 61-64, "
+       "33.3 kbit/s -- and the vendor manual says selecting a protocol does not "
+       "open the channel and that opening SW-CAN sets the transceiver to Normal "
+       "rather than the High Voltage Wakeup mode, which needs an explicit "
+       "STCSWM 2 this project would never send. It is declined anyway for three "
+       "reasons: the best source found says Global B does not carry LS-GMLAN on "
+       "pin 1 at all but a secondary CAN-FD network, which makes pointing a "
+       "33.3 kbit/s single-wire receiver at it exactly the unidentified-bus case "
+       "the CAN FD rule forbids; and the safety conclusion is a sound derivation "
+       "from documented defaults rather than a vendor statement, which is not "
+       "what a promise that nothing reaches the vehicle should rest on.",
+       "GM service information for this VIN identifying what pin 1 actually "
+       "carries. Note that if it is the secondary CAN-FD network, this adapter "
+       "implements classical CAN only and could not read it regardless.",
+       despite="All four classical CAN framings on pins 6 and 14 have been "
+               "listened to receive-only, and all four are silent."),
+
     _u("GPS or location", "hardware",
        "There is no GPS receiver on the node, and location lives in the "
        "OnStar/VCIM telematics domain rather than on any diagnostic path. No "

@@ -75,6 +75,65 @@ touch, and a negative closes the question permanently.
 
 ---
 
+## Pin 1 and single-wire CAN: researched, and declined
+
+After every CAN framing on pins 6 and 14 came back silent on 2026-09-04, the
+obvious next thought was that we had been listening to the wrong wire. GM
+historically carried body functions — locks, lights, remote fob — on **GMLAN
+single-wire CAN at 33.3 kbit/s on J1962 pin 1**, and the OBDLink MX+ supports
+it. That would explain the silence completely.
+
+It was researched properly rather than tried. **The answer is not to try it.**
+
+### What the vendor documentation does support
+
+From the *OBDLink Family Reference and Programming Manual*, Rev E:
+
+| Fact | Source |
+|---|---|
+| SW-CAN protocols are `STP 61`–`64`, all 33.3 kbit/s | FRPM §8.6 protocol table |
+| SW-CAN "is a single-wire transceiver connected to OBD port pin 1" | FRPM §8.6 |
+| The MX+ supports it | FRPM §3.1 device table; product page |
+| `STP` **does not open the channel** — "this command does not actually open the communication channel" | FRPM §8.6 |
+| Opening SW-CAN sets the transceiver to **Normal (mode 3)**, not High Voltage Wakeup (mode 2) | FRPM §8.8, `STCSWM` |
+| High Voltage Wakeup needs an explicit, separate `STCSWM 2` | FRPM §8.8 mode table |
+| The transceiver's high-speed load circuit "can be omitted for 'flight recorder' type (monitoring only) applications" | STN21XX datasheet §6.2.12 |
+
+So a purely passive SW-CAN listen appears to be exactly what the hardware is
+built for, and the wakeup capability is behind a command this project would
+never send.
+
+### Three reasons it is still declined
+
+**The platform probably does not have it.** The best source found — a technician
+forum, not GM — states that on Global B *"this PIN has a secondary CAN-FD
+network"* and that LS-GMLAN is not used on any VIP-architecture vehicle. Global
+B covers this truck. If that is right, pin 1 is not SW-CAN at all.
+
+**Which makes it exactly the case the rule at the top forbids.** Pointing a
+33.3 kbit/s single-wire receiver at a conductor whose function and bitrate are
+unidentified is the specific thing this document exists to prohibit. The
+strongest available evidence says it is *something else*, which is worse than no
+evidence: it is a positive reason to expect a mismatch.
+
+**The safety conclusion is inferred, not stated.** The research could find no
+vendor sentence saying "monitoring SW-CAN transmits nothing". It is a sound
+derivation from the documented default modes — and a derivation is not what this
+project's passive tool rests on. `hummer-obd-passive` promises that nothing
+reaches the vehicle, and that promise is currently backed by a manifest of
+sixty-five bytes of adapter configuration reconstructed from the transcript. A
+promise backed by an inference is a weaker thing wearing the same words.
+
+### What would change it
+
+GM service information for this VIN identifying what pin 1 actually carries.
+That is the same answer as everything else in this document, and it is why the
+[service information checklist](GM_SERVICE_INFORMATION.md) is the prerequisite
+rather than an optional extra.
+
+Also worth noting: even if pin 1 *were* the secondary CAN-FD network, the MX+
+implements classical CAN only and could not read it.
+
 ## The four options
 
 Specifications below are from vendor documentation as understood at the time of
