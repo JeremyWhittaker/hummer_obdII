@@ -20,6 +20,27 @@ discount.
 
 ### Added
 
+- **The passive path is closed.** Four receive-only captures — about four
+  minutes across parked, **charging**, and **fob-being-pressed** states —
+  returned **nothing from the vehicle**. The owner worked the lock, unlock and
+  other fob buttons through a three-minute window while the truck charged at
+  8 kW. `T:00 R:00` before and after every capture.
+
+  This answers the standing objection to the earlier zero-byte result, which was
+  taken parked and awake — the state most likely to be quiet — and said nothing
+  about event-triggered traffic. These were taken in the busiest state the
+  vehicle has been observed in, while a human actively operated it. **The
+  gateway forwards nothing unsolicited to pins 6 and 14.**
+
+  It does not mean the internal networks are quiet, that driving would be the
+  same, or that the fob messages do not exist — the doors plainly lock. They do
+  not cross the gateway. **Everything this project will ever obtain from this
+  vehicle must be asked for.**
+
+  Both tools stay in the tree: a negative that took four minutes to establish is
+  worth being able to re-run, and if a firmware update ever changes it the
+  tooling is already written.
+
 - **The thermal-limiting hypothesis was falsified within the hour, by the same
   charge that suggested it.** Over the charge's first four minutes, power
   correlated with `temp_f` at **+0.72** while both moved monotonically — the
@@ -1158,6 +1179,14 @@ discount.
 
 
 ### Fixed
+
+- **A capture that received nothing reported five bytes.** They were `STMA\r` —
+  the adapter echoing the tool's own stream command back despite `ATE0`,
+  observed once in four live captures. Bytes this tool transmitted are not bytes
+  the vehicle sent, and reading "captured 5 bytes" as traffic is exactly the
+  wrong conclusion to hand someone. The echo is now recognised, logged under its
+  own note so it is preserved rather than dropped, and excluded from the count.
+  A companion test proves real traffic arriving *after* an echo is still kept.
 
 - **A scripted edit asserted on a string whose line-wrapping had changed.** The
   same class of failure as the `states`-tuple corruption an hour earlier, caught

@@ -1181,3 +1181,54 @@ proof that it is present and speaking service 22 — better than a positive
 response would be, because it also shows the module parses the request rather
 than echoing it. Both modules are reachable and neither holds anything asked of
 them.
+
+
+## The passive path is closed, 2026-09-04
+
+Four receive-only captures, roughly four minutes of monitoring across three
+different vehicle states, returned **nothing from the vehicle**.
+
+| Capture | State | Received |
+|---|---|---|
+| 30 s, 00:41Z | parked and awake | **0 bytes** |
+| 30 s, 04:27Z | **charging**, 8 kW | **0 bytes** |
+| 60 s, 04:28Z | charging, **fob being pressed** | 0 bytes (5 bytes were the adapter echoing `STMA` back) |
+| 60 s, 04:29Z | charging, fob being pressed | **0 bytes** |
+| 60 s, 04:30Z | charging, fob being pressed | **0 bytes** |
+
+The owner pressed lock, unlock and other fob buttons repeatedly through the
+three-minute window. CAN error counters read `T:00 R:00` before and after every
+capture.
+
+### Why this settles it
+
+The earlier zero-byte result had a live objection: it was taken parked and
+awake, which is the state most likely to be quiet, and it said nothing about
+**event-triggered** traffic. That objection is now answered. These captures were
+taken while the vehicle was **charging** — the busiest state it has been
+observed in — and while a human was actively operating it from the fob, which is
+exactly the event a body-domain message would accompany.
+
+Nothing arrived. **The gateway forwards nothing unsolicited to pins 6 and 14.**
+
+### What it does not mean
+
+Not that the vehicle's internal networks are quiet — they are certainly not,
+behind the gateway. Not that no state whatever would produce traffic; driving
+was not tested. And not that the fob messages do not exist — they plainly do,
+the doors lock. They simply do not cross the gateway to the diagnostic
+connector.
+
+**Everything this project will ever obtain from this vehicle must be asked
+for.** `hummer-obd-passive` and `hummer-obd-passive-diff` stay in the tree
+because a negative that cost four minutes to establish is worth being able to
+re-run, and because the day a firmware update changes this, the tooling is
+already written.
+
+### One defect it exposed
+
+Capture 1 reported "captured 5 bytes". Those five bytes were `STMA\r` — the
+adapter echoing the tool's own stream command back despite `ATE0`. Bytes this
+tool transmitted are not bytes the vehicle sent, and a capture that received
+nothing must not report otherwise. The echo is now recognised, logged under its
+own note so it is preserved rather than dropped, and excluded from the count.

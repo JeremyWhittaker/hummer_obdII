@@ -385,6 +385,37 @@ class TestStreamingBehaviour(MonitorCase):
         self.assertTrue(self.joined("rx").endswith(b"K"))
         self.assertTrue(self.events("capture_read_failed"))
 
+    def test_the_adapters_echo_of_our_own_command_is_not_vehicle_data(self):
+        """A capture that received nothing must not report bytes.
+
+        Observed live on 2026-09-04: one of four captures echoed `STMA\r` back
+        despite `ATE0`, and the summary said "captured 5 bytes" -- which reads
+        as traffic from the vehicle and is the opposite of the truth. Bytes this
+        tool transmitted are not bytes the vehicle sent.
+        """
+        for command in MONITOR_COMMANDS:
+            self.transport.send(command, timeout=1.0)
+        self.fake.stream = (MONITOR_STREAM_COMMAND + "\r").encode()
+        self.clock.step = 0.01          # the echo is consumed a byte per pass
+        result = self.transport.capture(MONITOR_STREAM_COMMAND,
+                                        max_seconds=1.0, max_bytes=1000)
+        self.assertEqual(result.bytes_captured, 0,
+                         "our own command echoed back is not a capture")
+        # Preserved in the transcript, not silently dropped.
+        self.assertIn(b"STMA", self.joined("rx"))
+        notes = [r.get("note", "") for r in self.records("rx")]
+        self.assertTrue(any("echo" in n for n in notes))
+
+    def test_an_echo_followed_by_real_traffic_keeps_the_traffic(self):
+        for command in MONITOR_COMMANDS:
+            self.transport.send(command, timeout=1.0)
+        self.fake.stream = (MONITOR_STREAM_COMMAND + "\r").encode() + b"18DAF117 01 02\r"
+        self.clock.step = 0.01
+        result = self.transport.capture(MONITOR_STREAM_COMMAND,
+                                        max_seconds=1.0, max_bytes=1000)
+        self.assertGreater(result.bytes_captured, 0)
+        self.assertIn(b"18DAF117", self.joined("rx"))
+
     def test_the_adapter_prompt_after_stopping_is_recorded(self):
         result = self.run_capture()
         self.assertTrue(result.stop_acknowledged)

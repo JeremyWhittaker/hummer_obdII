@@ -211,6 +211,13 @@ class MonitorTransport(SerialTransport):
             self.rawlog.write_event("write_failed", {"error": str(exc)})
             raise TransportError(f"write failed: {exc}") from exc
 
+        # The adapter sometimes echoes the stream command back despite ATE0 --
+        # observed once in four captures on 2026-09-04, where it made a capture
+        # that received nothing from the vehicle report "5 bytes". Bytes this
+        # tool transmitted are not bytes the vehicle sent, and a capture whose
+        # entire content is its own command must read as empty. Recorded under
+        # its own note so it is preserved rather than silently dropped.
+        echo_expected = payload
         started = self._clock()
         deadline = started + max_seconds
         next_flush = started + flush_interval_s
@@ -244,6 +251,16 @@ class MonitorTransport(SerialTransport):
                 if chunk:
                     pending += chunk
                     total += len(chunk)
+                    if echo_expected and bytes(pending) == echo_expected[:len(pending)]:
+                        # Still matching our own command; not vehicle data.
+                        if bytes(pending) == echo_expected:
+                            self.rawlog.log_rx(bytes(pending),
+                                               note="stream command echo (not vehicle data)")
+                            total -= len(pending)
+                            pending = bytearray()
+                            echo_expected = b""
+                        continue
+                    echo_expected = b""
                 available = getattr(self._serial, "in_waiting", 0) or 0
                 if available:
                     more = self._serial.read(min(available, chunk_bytes))
