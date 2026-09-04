@@ -57,8 +57,8 @@ is right and is what this project is doing. Its status here:
 | **E** Dedicated GNSS | **Not started — needs hardware** | No GPS receiver on the node. Nothing in software gets around that |
 | **F** Uniden R8 BLE collector | **Not started — needs hardware access** | The e-paper display already *consumes* R8 state from a separate collector (`docs/R8_DISPLAY.md`); the collector itself does not exist here and needs the detector paired |
 | **G** OnStar command broker | **Deliberately not here** | Jeremy's explicit scope decision: this repository stays read-only. A cloud broker is a different trust domain — stored credentials, bidirectional by design — and belongs in its own repository, not wired into an unattended node |
-| **H** GM Service Information checklist | **Not written yet** | What to retrieve privately against the VIN before any internal-bus work is even evaluated. The hard rule it would serve is already stated in [CAN FD expansion](docs/CAN_FD_EXPANSION.md): never connect anything to an internal pair until service information or measured physical-layer evidence identifies that bus and its bitrate |
-| **I** MDI2 / GDS2 workflow | **Not written yet** | GM's own tool as a truth oracle for the 17 identifiers that answer but are stored raw, human-operated, on a separate machine. Potentially the fastest route left: sourcing has run dry ([the 2026-09-04 sweep](docs/SOURCING_2026-09-04.md)), and a labelled GDS2 parameter beside a byte-exact recording would settle several at once |
+| **H** GM Service Information checklist | **Written** | [GM Service Information](docs/GM_SERVICE_INFORMATION.md) — what to retrieve privately against the VIN before any internal-bus work is even evaluated, and explicitly *not* authorisation to tap anything. Serves the hard rule in [CAN FD expansion](docs/CAN_FD_EXPANSION.md) |
+| **I** MDI2 / GDS2 workflow | **Written** | [OEM diagnostic workflow](docs/OEM_DIAGNOSTIC_WORKFLOW.md) — GM's own tool as a truth oracle for the seventeen identifiers that answer but are stored raw. Potentially the fastest route left, since sourcing has run dry ([the 2026-09-04 sweep](docs/SOURCING_2026-09-04.md)). It answers the one-connector-two-tools problem with a measurement rather than a shrug: `0x4149` holds eight distinct values across 1570 samples and `0x2709` thirteen across 1155, so those survive a tool swap taking minutes, while `pack_a` does not and needs nothing from the exercise |
 | **J** Safety boundary unchanged | **Enforced and machine-checked** | Session changes, security access, writes, actuator control, routines, resets, replay and identifier sweeping are all refused by every gate, and `docs/ACCESS_MATRIX.md` shows each one refused rather than asserting it |
 
 ### What the zero-byte capture does to item A
@@ -88,7 +88,7 @@ for having been waited on.
 | **A DC fast charge** | Charge taper behaviour, and whether `0x5401` means anything at rates an AC charge cannot reach |
 | **A fault occurring** | Freeze-frame contents. Service 02 works and there is nothing to read: verified positively on 2026-09-04, `43 00` / `47 00` / `4A 00`, count zero from module `45` |
 | **Someone at the vehicle** | The event captures for item A |
-| **A GM Service Information subscription** | Any evaluation of an internal-bus tap. See `docs/GM_SERVICE_INFORMATION.md` |
+| **A GM Service Information subscription** | Any evaluation of an internal-bus tap. See [GM Service Information](docs/GM_SERVICE_INFORMATION.md) for the VIN-specific retrieval checklist |
 | **Continuous collector autostart** | Whether the vehicle still sleeps while a collector polls. Every sleep observed so far had polling stopped, which is the correct control and not the condition being gated |
 
 ## Deliberately out of scope

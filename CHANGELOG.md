@@ -20,6 +20,28 @@ discount.
 
 ### Added
 
+- **`docs/GM_SERVICE_INFORMATION.md` and `docs/OEM_DIAGNOSTIC_WORKFLOW.md`** —
+  the two hardware-prerequisite documents. The first is what to retrieve
+  privately against the VIN *before* an internal-bus tap can even be evaluated,
+  and states plainly that it is not authorisation to tap anything. The second
+  treats GM's own GDS2 as a truth oracle for the seventeen identifiers that
+  answer here but are stored raw — potentially the fastest route left, since
+  sourcing has run dry.
+
+  The second answers the awkward part with a measurement instead of a shrug. The
+  J1962 connector has one socket and both tools want it, so alternating sessions
+  only works for quantities that hold still across a swap — and which ones those
+  are is a measured question: `0x4149` holds **eight distinct values across 1570
+  samples** and `0x2709` **thirteen across 1155**, so both survive a swap taking
+  minutes, while `pack_a` is hopeless under alternation and needs nothing from
+  the exercise anyway.
+
+  Both cite real NHTSA-hosted GM bulletins, including **24-NA-015**, which
+  covers GDS2 charging-data displays for the HUMMER EV Pickup 2022–2025
+  specifically. Subscription pricing is recorded as **not established**:
+  `acdelcotds.com` returns HTTP 403 to automated fetch and the third-party
+  figures found were mutually inconsistent and visibly stale.
+
 - **`hummer-obd-experiment mark` and `hummer-obd-respond`: do something to the
   vehicle and find out which field noticed.** Seventeen recorded columns are raw
   payload bytes whose meaning is unclaimed, and correlating them against the
@@ -985,6 +1007,28 @@ discount.
 
 
 ### Fixed
+
+- **A link check that could not tell a committed file from a stray one.** Two
+  documents were written into `docs/` by a background process and left
+  untracked. Every link to them resolved — on this machine, against the working
+  tree — and would have 404'd for anyone who cloned the repository. The check
+  added specifically to catch broken links passed, because `os.path.exists`
+  answers a different question from "is this in the repository".
+
+  Every link target is now checked against `git ls-files`, and the new test was
+  verified to fire by pointing a real document at a real untracked file before
+  being trusted. Skipped rather than failed outside a git checkout, since a
+  tarball install has no index and that is not a defect.
+
+- **1,201 lines of documentation were committed without being read.** Commit
+  `b8edd1a` used `git add -A -- docs`, which swept in both files above while its
+  message described something else entirely. They have now been reviewed —
+  the part numbers are NHTSA bulletin IDs with working URLs rather than invented
+  GM parts, the prices are explicitly hedged as unestablished, and no connector,
+  pin, bus name or bitrate is asserted for this vehicle — but the review should
+  have preceded the commit, not followed it. `git add -A` over a directory a
+  background process can write to is the mistake; the path-scoped form is not
+  scoped enough when something else is also writing there.
 
 - **`ROADMAP.md` claimed two documents were written that did not exist**, and
   linked to both. Written and shipped within the same hour as the roadmap

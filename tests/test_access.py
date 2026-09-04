@@ -18,6 +18,7 @@ recorder's own column list can, and that is what these tests do:
 import ast
 import os
 import re
+import subprocess
 import unittest
 
 from hummer_obd import access, drive, safety
@@ -371,6 +372,52 @@ class TestEveryDocumentsLinksResolve(unittest.TestCase):
         found.append(os.path.join(_ROOT, "README.md"))
         found.append(os.path.join(_ROOT, "ROADMAP.md"))
         return found
+
+    @staticmethod
+    def tracked_files():
+        """Paths git actually has, or None if this is not a git checkout."""
+        try:
+            out = subprocess.run(["git", "-C", _ROOT, "ls-files"],
+                                 capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if out.returncode != 0:
+            return None
+        return {line.strip() for line in out.stdout.splitlines() if line.strip()}
+
+    def test_every_link_target_is_tracked_by_git_not_merely_present(self):
+        """Resolving against the working tree is not enough, and this is why.
+
+        Two documents were written into `docs/` by a background process and left
+        untracked. Every link to them resolved -- on this machine, against the
+        working tree -- and would have 404'd for anyone who cloned the
+        repository. The check that was supposed to catch exactly this passed,
+        because `os.path.exists` cannot tell a committed file from a stray one.
+
+        Skipped rather than failed outside a git checkout, since a tarball
+        install has no index to consult and that is not a defect.
+        """
+        tracked = self.tracked_files()
+        if tracked is None:
+            self.skipTest("not a git checkout")
+        self.assertIn("README.md", tracked, "git ls-files returned nothing usable")
+        for path in self.markdown_files():
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+            base = os.path.dirname(os.path.relpath(path, _ROOT))
+            for target in self.LINK.findall(text):
+                if target.startswith(("http://", "https://", "#", "mailto:")):
+                    continue
+                filepart = target.split("#", 1)[0]
+                if not filepart:
+                    continue
+                rel = os.path.normpath(os.path.join(base, filepart))
+                with self.subTest(doc=os.path.basename(path), target=rel):
+                    self.assertIn(
+                        rel, tracked,
+                        f"{os.path.basename(path)} links to {rel}, which exists "
+                        "here but is not committed -- it would 404 for anyone "
+                        "who cloned this repository")
 
     def test_every_relative_link_in_every_document_resolves(self):
         files = self.markdown_files()
