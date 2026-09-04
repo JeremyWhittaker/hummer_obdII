@@ -273,16 +273,20 @@ CONFIDENCE: Final[dict[str, Evidence]] = {
                      "ISO 14229-1 ECU hardware number; reachability probe, "
                      "7F 22 31 everywhere asked"),
     "2429": Evidence(
-        2, ("17",), ("parked",),
-        "nominal pack voltage. Allowlisted 2026-09-03 and reachable from no "
-        "profile at all until building this table found it; sent for the first "
-        "time on 2026-09-04 and answered 0x5806 = 22534. The source's /64 gives "
-        "352.09 V, which is 3.6676 V across the 96 cells this pack was "
-        "independently shown to have in series -- the textbook nominal for an "
-        "NMC cell. That is a structural corroboration of the divisor and not a "
-        "proof of it. What would make it a nominal rather than a coincidence is "
-        "holding still while the pack does not, and one reading in one state "
-        "cannot show that. It is now captured every cycle, which is what will"),
+        1, ("17",), ("parked", "driving"),
+        "the source calls this nominal (rated) pack voltage, /64. This project "
+        "believed that for about three hours on 2026-09-04 and it is wrong. "
+        "The first reading, 22534, divided by 64 gives 352.09 V -- which across "
+        "96 series cells is 3.6676 V, the textbook NMC nominal to four figures, "
+        "from a number nobody fitted. Extremely convincing, and one sample. "
+        "Across 405 samples it spans 18556-26588 raw with 108 distinct values, "
+        "and it moves WITH LOAD: r=+0.83 against pack current and HV power, "
+        "r=-0.67 against pack voltage, and nothing against state of charge "
+        "(-0.09) or energy (-0.08). It rests near 22350 and rises about 16.4 "
+        "counts per amp of discharge. A rated figure does not move and a "
+        "voltage does not rise with current. Stored raw, meaning unclaimed -- "
+        "the second identifier whose published label this vehicle contradicted, "
+        "after 0x5401"),
 }
 
 

@@ -136,7 +136,7 @@ They were never fitted to one another, yet they agree:
 |---|---|---|---|---|
 | Traction pack voltage | `0x2885` | `[B0:B1] / 100` | V | **measured** |
 | Traction pack current | `0x2414` | `signed16 / 20`, negative = charging | A | **measured** |
-| Nominal pack voltage | `0x2429` | `[B0:B1] / 64` | V | **read** |
+| Unknown, load-tracking | `0x2429` | none applied | — | **raw** |
 | Instantaneous HV power | derived | `pack_v * pack_a / 1000` | kW | **measured** |
 
 This was the project's single largest gap and it is now closed. Measured during
@@ -160,23 +160,44 @@ Both power figures are kept side by side in the recorder rather than averaged.
 Two independent routes to one quantity is what exposed the `0x5401` mislabel;
 disagreement between them is a signal worth seeing.
 
-### `0x2429`, and how it was nearly lost
+### `0x2429`, and the most convincing wrong answer this project has produced
 
 `0x2429` was allowlisted on 2026-09-03 and reachable from **no profile at all**,
 so nothing could ever transmit it — an identifier approved for use and then
-never used. Building `hummer_obd.confidence` is what found that, and it is the
-clearest argument for having built it.
+never used. Building `hummer_obd.confidence` is what found that.
 
 Sent for the first time on 2026-09-04, it answered `0x5806` = 22534. The
 source's `/64` gives **352.09 V**, which across the 96 cells this pack was
 [independently shown](PACK_ARCHITECTURE.md) to have in series is **3.6676 V per
-cell** — the textbook nominal for an NMC cell, and a figure nothing here fitted.
+cell** — the textbook nominal for an NMC cell, to four significant figures, from
+a number nobody had fitted.
 
-That is a structural corroboration of the divisor, not a proof of it, and the
-level says **read** rather than measured. What would settle it is the thing a
-*nominal* voltage must do: hold still while the pack does not. One reading in
-one state cannot show that, which is exactly why it is now captured every cycle
-alongside the measured pack voltage it should refuse to follow.
+**It was decoded as volts, published, and it is wrong.** Three hours later the
+recorder had 405 samples instead of one:
+
+| | |
+|---|---|
+| raw range | 18556 – 26588, **108 distinct values** |
+| vs pack current | **r = +0.83** |
+| vs HV power | **r = +0.83** |
+| vs pack voltage | **r = −0.67** |
+| vs state of charge | −0.09 |
+| vs energy remaining | −0.08 |
+| at rest | ≈ 22350, rising **~16.4 counts per amp** of discharge |
+
+A *rated* figure does not move at all, and a voltage does not rise with the
+current drawn from it. Whatever `0x2429` is, it tracks **load** — and it is now
+stored raw with no equation applied, exactly like `0x5401`, the other identifier
+whose published label this vehicle contradicted. The column is
+`field_2429_raw`, not `nominal_pack_v`, because a name is a claim too.
+
+**What made this one dangerous is that it was not a guess.** The 3.6676 V figure
+was a genuine structural coincidence: 96 series cells is independently
+established, and NMC nominal really is 3.67 V. Every part of the reasoning was
+sound except the part that mattered, which was the sample size. This is what
+[the confidence levels](../src/hummer_obd/confidence.py) mean by level 2 being
+the dangerous one — a plausible number with a confident unit beside it, and one
+observation behind it.
 
 ---
 

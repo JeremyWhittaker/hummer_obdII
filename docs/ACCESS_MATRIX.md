@@ -170,7 +170,7 @@ Every cell below is produced by putting that command to that gate and recording 
 | `coolant_2_raw` | body (module 40) | `0x40E6` | 0x18 | **1** answers here |
 | `pack_v` | pack power (module 17) | `0x2885` | 0x14 | **4** cross-validated in more than one state |
 | `pack_a` | pack power (module 17) | `0x2414` | 0x14 | **4** cross-validated in more than one state |
-| `nominal_pack_v` | pack power (module 17) | `0x2429` | 0x14 | **2** decoded |
+| `field_2429_raw` | pack power (module 17) | `0x2429` | 0x14 | **1** answers here |
 | `hv_power_kw` | computed by the recorder, not read from a module | `V x A` | — | — |
 | `dmc2_v` | drive motor controller (module 1D) | `0x33E5` | 0x14 | **3** cross-validated |
 | `wheel_fl_kph` | brake / chassis controller (module 28) | `0x4A7A` | 0x14 | **3** cross-validated |

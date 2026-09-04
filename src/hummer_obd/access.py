@@ -64,6 +64,8 @@ __all__ = [
     "Unreachable",
     "gate_matrix",
     "signal_rows",
+    "coverage",
+    "format_coverage",
     "render_matrix",
     "splice",
     "BEGIN_MARKER",
@@ -692,6 +694,77 @@ def splice(document: str) -> str:
     return document[:start] + render_matrix() + document[end + len(END_MARKER):]
 
 
+def coverage(directory: str) -> list[dict]:
+    """Per column: how much of the committed corpus actually carries it.
+
+    Deliberately **not** part of the generated document. It changes every time a
+    session is committed, and a generated block that goes stale on every drive
+    would train everyone to ignore `--check`. A reader who wants it runs
+    ``--coverage``; the document stays stable and the number stays current,
+    which is the right way round.
+
+    The distinction this exposes is one the matrix alone cannot: a column
+    present in every session and a column added yesterday look identical in a
+    table of names, and only one of them has enough history to conclude
+    anything from.
+    """
+    # Imported here so the generator does not depend on the analyzer.
+    import glob
+    import os
+
+    from .analyze import read_session, sane
+
+    rows: list[dict] = []
+    paths = sorted(glob.glob(os.path.join(directory, "drive-*.csv")))
+    for path in paths:
+        found, _warnings, _header = read_session(path)
+        rows.extend(r for r in found if sane(r))
+    total = len(rows)
+    out: list[dict] = []
+    for column in drive.COLUMNS:
+        values = [r[column] for r in rows
+                  if r.get(column) not in (None, "")]
+        numeric = [v for v in values if isinstance(v, (int, float))]
+        out.append({
+            "column": column,
+            "rows": len(values),
+            "of": total,
+            "pct": round(100.0 * len(values) / total, 1) if total else 0.0,
+            "distinct": len(set(map(str, values))),
+            "min": min(numeric) if numeric else None,
+            "max": max(numeric) if numeric else None,
+            "sessions": len(paths),
+        })
+    return out
+
+
+def format_coverage(rows: list[dict]) -> str:
+    out = ["", "corpus coverage -- what the committed sessions actually carry",
+           "=" * 78,
+           f"{'column':<24}{'rows':>8}{'of':>8}{'%':>7}{'distinct':>10}  range",
+           "-" * 78]
+    for r in rows:
+        span = ""
+        if r["min"] is not None:
+            span = f"{r['min']} .. {r['max']}"
+        elif r["distinct"]:
+            span = f"{r['distinct']} distinct values (text)"
+        flag = "  <- thin" if 0 < r["pct"] < 20 else ("  <- EMPTY" if not r["rows"] else "")
+        out.append(f"{r['column']:<24}{r['rows']:>8}{r['of']:>8}{r['pct']:>6.1f}%"
+                   f"{r['distinct']:>10}  {span}{flag}")
+    thin = [r["column"] for r in rows if 0 < r["pct"] < 20]
+    empty = [r["column"] for r in rows if not r["rows"]]
+    out += ["-" * 78,
+            "A column present in every session and one added yesterday look the",
+            "same in a table of names. Only one of them has enough history to",
+            "conclude anything from, which is what this view is for."]
+    if thin:
+        out.append(f"thin (<20% of rows): {', '.join(thin)}")
+    if empty:
+        out.append(f"EMPTY in every session: {', '.join(empty)}")
+    return "\n".join(out)
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Render the access matrix from the code that enforces it. "
@@ -705,7 +778,22 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help="write the matrix as JSON here")
     parser.add_argument("--print", dest="show", action="store_true",
                         help="print the rendered block instead of splicing")
+    parser.add_argument("--coverage", nargs="?", const="evidence/sessions",
+                        metavar="DIR",
+                        help="report how much of the committed corpus carries "
+                             "each column, and exit. Not part of the generated "
+                             "document: it changes with every session, and a "
+                             "block that goes stale on every drive would train "
+                             "everyone to ignore --check")
     args = parser.parse_args(argv)
+
+    if args.coverage:
+        rows = coverage(args.coverage)
+        if not any(r["of"] for r in rows):
+            print(f"no drive-*.csv found in {args.coverage}", file=sys.stderr)
+            return 2
+        print(format_coverage(rows))
+        return 0
 
     if args.json_path:
         with open(args.json_path, "w", encoding="utf-8") as handle:

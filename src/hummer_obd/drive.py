@@ -211,18 +211,28 @@ DECODERS: dict[str, Callable[[bytes], dict]] = {
     # confirmed while plugged in.
     "2885": lambda p: {"pack_v": round(_u16(p, 0) / 100, 2)} if len(p) >= 2 else {},
     "2414": lambda p: {"pack_a": round(_s16(p, 0) / 20, 2)} if len(p) >= 2 else {},
-    # Nominal pack voltage -- the rated figure, not a measurement, so a value
-    # that never moves is the expected result rather than a dead field.
+    # 0x2429.  The source calls it nominal (rated) pack voltage with a /64
+    # divisor, and this recorder decoded it as volts for about three hours.
     #
-    # Answered 0x5806 = 22534 on 2026-09-04, the first time it was ever sent:
-    # allowlisted a day earlier and reachable from no profile at all until the
-    # confidence table found it.  The source's /64 gives 352.09 V, which is
-    # 3.6676 V across the 96 cells this pack was independently shown to have in
-    # series -- the textbook nominal for an NMC cell.  That is a structural
-    # corroboration of the divisor and not yet a proof of it: what makes this a
-    # nominal rather than a coincidence is holding still while the pack does
-    # not, and one reading cannot show that.  Which is why it is captured.
-    "2429": lambda p: {"nominal_pack_v": round(_u16(p, 0) / 64, 2)} if len(p) >= 2 else {},
+    # That was wrong, and it is worth recording exactly how it looked right.
+    # The first and only reading was 22534: divided by 64 that is 352.09 V,
+    # which across the 96 cells this pack was independently shown to have in
+    # series is 3.6676 V -- the textbook nominal for an NMC cell, to four
+    # figures, from a number nobody had fitted.  It was extremely convincing
+    # and it was one sample.
+    #
+    # Across 405 samples it moves: 18556 to 26588 raw, 108 distinct values.  A
+    # *rated* figure does not move.  Worse, it moves with load -- r=+0.83
+    # against pack current and against HV power, r=-0.67 against pack voltage,
+    # and essentially nothing against state of charge (-0.09) or energy
+    # (-0.08).  It sits near 22350 at rest and rises about 16.4 counts per amp
+    # of discharge.  Whatever it is, it is not a constant and not a voltage.
+    #
+    # So it is stored raw, like 0x5401 before it -- the other identifier whose
+    # published label this vehicle contradicted.  `hummer-obd-decode` will
+    # correlate the raw windows automatically; a plausible number with a
+    # confident unit is the thing to avoid, not the thing to ship.
+    "2429": lambda p: {"field_2429_raw": p.hex().upper()} if p else {},
 }
 
 
@@ -401,7 +411,7 @@ COLUMNS: tuple[str, ...] = (
     "evse_current_raw", "group_v1_raw", "group_v2_raw", "group_v3_raw",
     "hv_temp_raw", "batt_temp_a_raw", "batt_temp_b_raw",
     "coolant_1_raw", "coolant_2_raw",
-    "pack_v", "pack_a", "nominal_pack_v", "hv_power_kw",
+    "pack_v", "pack_a", "field_2429_raw", "hv_power_kw",
     "dmc2_v",
     "wheel_fl_kph", "wheel_fr_kph", "wheel_rl_kph", "wheel_rr_kph",
     "brake_kpa", "steering_deg", "lateral_g", "longitudinal_g",

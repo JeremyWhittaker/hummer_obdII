@@ -863,6 +863,38 @@ discount.
 
 ### Fixed
 
+- **`0x2429` was decoded as volts, published, and it is not a voltage.** This is
+  the most convincing wrong answer this project has produced, and the way it
+  looked right is the part worth keeping.
+
+  The first and only reading was 22534. Divided by the source's 64 that is
+  **352.09 V**, which across the 96 cells this pack was independently shown to
+  have in series is **3.6676 V per cell** — the textbook nominal for an NMC
+  cell, to four significant figures, from a number nobody had fitted. The source
+  called it nominal pack voltage. Every step of that reasoning was sound except
+  the sample size.
+
+  Three hours later there were **405 samples**, and the field moves: 18556–26588
+  raw, 108 distinct values. Worse, it moves **with load** — `r = +0.83` against
+  pack current and against HV power, `r = −0.67` against pack voltage, and
+  essentially nothing against state of charge (−0.09) or energy (−0.08). It
+  rests near 22350 and rises about **16.4 counts per amp** of discharge. A rated
+  figure does not move at all, and a voltage does not rise with the current
+  drawn from it.
+
+  Now stored raw with no equation, exactly like `0x5401` — the other identifier
+  whose published label this vehicle contradicted. The column is
+  `field_2429_raw`, not `nominal_pack_v`, **because a name is a claim too**, and
+  `analyze._TEXT_COLUMNS` was updated in the same change because forgetting that
+  step has silently broken two columns before.
+
+  It was found by adding a `--coverage` view to `hummer-obd-access`, which
+  reports what fraction of the corpus carries each column and its value range.
+  A column asserted to be constant, showing 108 distinct values, is not
+  something a table of names can surface. Confidence level drops **2 → 1**, and
+  the catalog-parity test written this morning caught the documentation the
+  moment the level changed — which is what it is for.
+
 - **Fault codes were never actually read until 2026-09-04.** Every DTC check in
   this project's history returned `NO DATA`, and every one was recorded as "no
   fault codes". That is precisely the error the three-failure-shapes rule exists

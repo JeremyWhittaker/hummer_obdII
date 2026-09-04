@@ -666,7 +666,10 @@ DMCM_17_NOMINAL = _module_profile(
     "OBDb/Cadillac-LYRIQ PR #14 places 0x2429 at module 17. UNMERGED, 2025 "
     "Lyriq BEV3, not BT1. Allowlisted 2026-09-03 and never transmitted",
     (
-        ("222429", "nominal_pack_voltage_candidate", "LYRIQ PR #14, module 17"),
+        # Named for what the source calls it, not for what it is: 405 samples
+        # later it tracks load, not a rated voltage.  See confidence.py.
+        ("222429", "field_2429_source_calls_it_nominal_v",
+         "LYRIQ PR #14, module 17 -- label contradicted here"),
         ("222885", "pack_voltage_control", "proven here: positive control"),
         ("222414", "pack_current_control", "proven here: positive control"),
     ),
