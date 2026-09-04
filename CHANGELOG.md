@@ -46,12 +46,23 @@ discount.
   |---|---|
   | `energy_kwh` | rises continuously, 132.66 → 134.08 |
   | `range_mi` | steps — **three** distinct values |
-  | `soc_pct` | **frozen**: one distinct value, 69.943, throughout |
+  | `soc_pct` | held one value for 101 samples, then **stepped** to 70.343 |
 
-  State of charge did not move by a single count at a resolution of 1/655.35 %,
-  while the pack took on 0.74 % of its capacity. That is not a decode fault: the
-  myGMC app showed **70 %** at the same moment, so the vehicle is holding the
-  value. **Operationally: during a charge use energy, not state of charge.**
+  State of charge did not move by a single count at 1/655.35 % resolution while
+  the pack took on 0.74 % of its capacity — and then moved all at once. The step
+  also **under-reports**: 0.400 pp is 0.77 kWh against the 1.58 kWh actually
+  taken on in that interval, so it lags as well as steps.
+
+  Not a decode fault: the myGMC app showed **70 %** while the recorded value read
+  69.943, so the vehicle is holding it. **Operationally: during a charge use
+  energy, not state of charge** — it is a lagging step function.
+
+  *Corrected within the hour.* The first look called it "frozen", which twenty
+  more minutes disproved. The observation window was 101 samples and every one
+  of them was inside a single step; that is exactly long enough to mistake a
+  coarse step function for a dead field, and it is the same mistake shape as the
+  thermal correlation above — a window too short to contain the behaviour that
+  matters.
 
 - **A second outside measurement, and the decode chain checks out against it.**
   The app read **233 mi** against a recorded `range_mi` of **233.0** — exact —

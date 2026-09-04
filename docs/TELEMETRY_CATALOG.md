@@ -107,16 +107,22 @@ completely differently:
 |---|---|
 | `energy_kwh` `0x27AF` | rises continuously, **132.66 → 134.08 kWh** |
 | `range_mi` `0x27C7` | steps: **three distinct values**, 231.76 → 232.38 → 233.0 |
-| `soc_pct` `0x27C6` | **frozen. One distinct value, 69.943, across all 101 samples** |
+| `soc_pct` `0x27C6` | **steps coarsely.** Held 69.943 for the first 101 samples, then jumped to 70.343 in one move at 04:17:06 — a single 0.400 pp step in twenty minutes |
 
-The pack gained 1.42 kWh — about 0.74 % — and state of charge did not move by a
-single count, at a resolution of 1/655.35 %. This is not a decode problem: the
-myGMC app showed **70 %** at the same moment, so the vehicle itself is holding
-the value. A coulomb-counted energy figure updating while an OCV-settled state
-of charge waits is the ordinary way a BMS behaves.
+For twenty minutes the pack gained 1.42 kWh — about 0.74 % — and state of charge
+did not move by a single count at a resolution of 1/655.35 %. It then moved all
+at once, 69.943 → 70.343, and the step under-reports: 0.400 pp is 0.77 kWh
+against the 1.58 kWh actually taken on in that interval, so it lags as well as
+steps.
 
-**Operationally: during a charge, use `energy_kwh`. State of charge is not a
-live value.**
+This is not a decode problem. The myGMC app showed **70 %** while the recorded
+value read 69.943, so the vehicle itself is holding it. A continuously
+coulomb-counted energy figure alongside a state of charge that settles in coarse
+steps is ordinary BMS behaviour.
+
+**Operationally: during a charge, use `energy_kwh`. State of charge is a lagging
+step function, not a live value** — a first reading suggested it was frozen
+outright, and twenty more minutes showed it merely steps.
 
 The app also read **233 mi** against a recorded `range_mi` of **233.0** — exact
 — and 70 % against 69.943 %. That is a cross-check of the decoding against an
