@@ -652,6 +652,26 @@ DMCM_17_P18 = _p18_profile(
     ),
 )
 
+#: The identifier that was allowlisted and then unreachable.
+#:
+#: `0x2429` went into the gate on 2026-09-03 and into no profile at all, so
+#: nothing has ever transmitted it -- an identifier approved for use and then
+#: never used.  Building `confidence.py` found it, which is what that table is
+#: for.  Module 17 answers at priority 0x14 and is where the source places this
+#: identifier, so it is asked alongside the two that are proven there, giving
+#: the run a positive control: if `0x2885` and `0x2414` answer and `0x2429` does
+#: not, the negative is about the identifier rather than the addressing.
+DMCM_17_NOMINAL = _module_profile(
+    "dmc-17-nominal", "17", "the nominal pack voltage candidate, never yet sent",
+    "OBDb/Cadillac-LYRIQ PR #14 places 0x2429 at module 17. UNMERGED, 2025 "
+    "Lyriq BEV3, not BT1. Allowlisted 2026-09-03 and never transmitted",
+    (
+        ("222429", "nominal_pack_voltage_candidate", "LYRIQ PR #14, module 17"),
+        ("222885", "pack_voltage_control", "proven here: positive control"),
+        ("222414", "pack_current_control", "proven here: positive control"),
+    ),
+)
+
 CHASSIS_28_P18 = _p18_profile(
     "chassis-28-p18", "28", "brake system controller at 0x18",
     "identifiers proven at module 28 at priority 0x14, asked at 0x18 to test "
@@ -695,6 +715,7 @@ PROFILES: dict[str, EnhancedProfile] = {
     DMC_1E_P18.key: DMC_1E_P18,
     BSM_CB_P18.key: BSM_CB_P18,
     DMCM_17_P18.key: DMCM_17_P18,
+    DMCM_17_NOMINAL.key: DMCM_17_NOMINAL,
     CHASSIS_28_P18.key: CHASSIS_28_P18,
     DMC_1D_P18.key: DMC_1D_P18,
 }

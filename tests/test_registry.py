@@ -14,6 +14,7 @@ import unittest
 from pathlib import Path
 
 from hummer_obd import registry
+from hummer_obd.confidence import CONFIDENCE, Evidence
 from hummer_obd.safety import ENHANCED_READ_DIDS
 
 DOC = Path(__file__).resolve().parents[1] / "docs" / "GM_ENHANCED_CANDIDATES.md"
@@ -54,6 +55,18 @@ class TestRendering(unittest.TestCase):
                 head = " ".join(provenance.split())[:30]
                 self.assertIn(head, rendered)
 
+    def test_every_row_has_as_many_columns_as_the_header(self):
+        # A markdown table whose header and rows disagree renders as silent
+        # nonsense, not as an error, so nothing downstream would complain.
+        rendered = registry.render_registry().splitlines()
+        header = [line for line in rendered if line.startswith("| Identifier")][0]
+        expected = len(re.findall(r"(?<!\\)\|", header))
+        self.assertEqual(expected, len(registry.COLUMNS) + 1)
+        for line in rendered:
+            if line.startswith("| `0x"):
+                with self.subTest(row=line[:24]):
+                    self.assertEqual(len(re.findall(r"(?<!\\)\|", line)), expected)
+
     def test_identifiers_are_sorted_so_diffs_stay_readable(self):
         rows = [
             line for line in registry.render_registry().splitlines()
@@ -65,8 +78,13 @@ class TestRendering(unittest.TestCase):
         # Markdown tables are column-delimited by pipes, so an unescaped one in
         # a source URL or note would silently split a row into wrong columns.
         original = dict(ENHANCED_READ_DIDS)
+        original_confidence = dict(CONFIDENCE)
         try:
+            # The gate and the confidence table are a matched pair -- parity is
+            # asserted at import and by a test -- so a fake identifier has to go
+            # into both, exactly as a real one would.
             ENHANCED_READ_DIDS["FFFF"] = "source | with | pipes"
+            CONFIDENCE["FFFF"] = Evidence(0, (), ("never sent",), "fixture")
             row = [
                 line for line in registry.render_registry().splitlines()
                 if "`0xFFFF`" in line
@@ -76,10 +94,23 @@ class TestRendering(unittest.TestCase):
             # is the count of pipes *not* preceded by a backslash.
             delimiters = len(re.findall(r"(?<!\\)\|", row))
             self.assertEqual(
-                delimiters, 3,
+                delimiters, len(registry.COLUMNS) + 1,
                 f"an unescaped pipe split the row into extra columns: {row}",
             )
             self.assertIn(r"source \| with \| pipes", row)
+        finally:
+            ENHANCED_READ_DIDS.clear()
+            ENHANCED_READ_DIDS.update(original)
+            CONFIDENCE.clear()
+            CONFIDENCE.update(original_confidence)
+
+    def test_an_ungraded_identifier_is_refused_with_a_useful_message(self):
+        original = dict(ENHANCED_READ_DIDS)
+        try:
+            ENHANCED_READ_DIDS["FFFE"] = "allowlisted, never graded"
+            with self.assertRaises(KeyError) as caught:
+                registry.render_registry()
+            self.assertIn("confidence", str(caught.exception))
         finally:
             ENHANCED_READ_DIDS.clear()
             ENHANCED_READ_DIDS.update(original)

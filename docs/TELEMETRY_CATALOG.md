@@ -17,11 +17,21 @@ Link: ISO 15765-4, 29-bit CAN, 500 kbit/s.
 
 Each signal carries one, and they mean different things:
 
-| Level | Meaning |
-|---|---|
-| **measured** | Read from this VIN, decoded, and cross-checked against an independent quantity |
-| **read** | Read from this VIN and decodes to a plausible value, but nothing independent confirms the scaling |
-| **raw** | The module answers, the bytes are stored, the meaning is *not* claimed |
+| Level | `confidence.py` | Meaning |
+|---|---|---|
+| **measured** | 3 or 4 | Read from this VIN, decoded, and cross-checked against an independent quantity |
+| **read** | 2 | Read from this VIN and decodes to a plausible value, but nothing independent confirms the scaling |
+| **raw** | 1 | The module answers, the bytes are stored, the meaning is *not* claimed |
+
+The middle column is the machine-checkable version of the same judgement.
+`hummer_obd.confidence` holds one entry per allowlisted identifier, keyed
+identically to the safety gate and asserted equal to it, and it splits
+**measured** in two: level 3 is cross-validated, level 4 is cross-validated
+*and* re-derived in more than one vehicle state. Anything below 3 is not a
+telemetry reading whatever its column is called. The generated table in
+[GM enhanced candidates](GM_ENHANCED_CANDIDATES.md) carries the levels, and
+`tests/test_confidence.py` recomputes the level-3 claims from the committed
+sessions rather than trusting this table.
 
 A signal can be `raw` in two very different situations, and conflating them
 cost this project four identifiers. One is *recorded every cycle*, accumulating

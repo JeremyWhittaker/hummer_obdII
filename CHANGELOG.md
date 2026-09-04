@@ -20,6 +20,63 @@ discount.
 
 ### Added
 
+- **`hummer_obd.confidence`: how much each identifier has actually been
+  proven, as a table something can check.** The safety gate answers *may this be
+  transmitted?* It cannot answer the question a reader of the telemetry actually
+  has, which is *how much should I believe this number?* That answer lived in
+  prose, in three documents, maintained by hand -- which is precisely how the
+  identifier registry fell thirty-six commits behind the code. `registry.py` was
+  written to stop that; this is the same fix one layer up.
+
+  Five levels: **0** sourced only, **1** answers here with no meaning claimed,
+  **2** decoded with a stated scaling and nothing independent behind it, **3**
+  cross-validated against a second route, **4** cross-validated *and* re-derived
+  in more than one vehicle state. **Production telemetry starts at 3.** Level 2
+  is the dangerous one -- a plausible number with a confident-looking unit and
+  nothing behind it -- and the project has already published one: `0x5401`,
+  "charger DC power", which this vehicle contradicted. It is level 1 and a test
+  pins it there.
+
+  `ENHANCED_READ_DIDS` keeps its `dict[str, str]` type, so `enhanced.py`,
+  `registry.py` and their tests are untouched. Key parity is asserted at import
+  *and* by a test, so an identifier cannot exist in one table and not the other.
+  The generated registry now carries level, answering modules and observed
+  states, and the tier prose in `GM_ENHANCED_CANDIDATES.md` is demoted to
+  historical narrative that says so.
+
+  Of 35 identifiers: five at level 4, four at 3, five at 2, sixteen at 1, five at
+  0.
+
+- **Two level-3 claims that did not exist before, both measured from the
+  committed corpus.** `0x4A7A` wheel speed is now cross-validated against
+  legislated PID `010D` -- recorded in the same row, from a different module:
+  **r=+0.997 on each of the four corners over 670 moving samples spanning
+  1-130 km/h**, mean difference within 0.1 km/h of zero. A vendor scaling from an
+  unmerged BEV3 source, confirmed by the standard's own measurement.
+
+  `0x4C30` longitudinal acceleration is cross-validated against the derivative
+  of that same PID: r=+0.837 over 1683 samples, and -- the part that carries it
+  -- the magnitudes match, -2.71..+2.60 m/s2 from the speed derivative against
+  -3.00..+3.19 m/s2 from the field. The correlation is not higher because the
+  two are read seconds apart and a derivative over an eight-second cycle is a
+  smoothed accelerometer; that is a sampling limit, not a disagreement.
+
+  Both are asserted by `tests/test_confidence.py`, which **recomputes them from
+  the committed sessions** rather than trusting the docstring. A cross-validation
+  written in prose is a story; one a test recomputes is a measurement that will
+  say when it stops being true. `0x4C2F` lateral acceleration shares `0x4C30`'s
+  scaling and stays at level 2: a sibling being confirmed is suggestive and is
+  not evidence, because nothing here measures cornering independently.
+
+- **`0x2429` was allowlisted on 2026-09-03 and then reachable from no profile at
+  all**, so nothing could ever transmit it -- an identifier approved for use and
+  never used. Building the confidence table is what found it. It now has a
+  profile, `dmc-17-nominal`, which asks it at module `17` alongside the two
+  identifiers proven there as a positive control: if `0x2885` and `0x2414` answer
+  and `0x2429` does not, the negative is about the identifier rather than the
+  addressing. A test now asserts every allowlisted identifier is reachable from
+  some profile or some recorder group.
+
 - **The passive experiment was run, and it came back empty.** Thirty seconds at
   the diagnostic connector on 2026-09-04 (UTC), parked and awake at 380.6 V and
   75.4 % state of charge: **zero bytes received.** Sixty-five bytes transmitted,

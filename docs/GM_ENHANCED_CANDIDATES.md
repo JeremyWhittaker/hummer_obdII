@@ -213,47 +213,69 @@ Being listed here means *may be transmitted*, not *is known to work on
 this vehicle*. Results live in the tiers below and in
 [Probe, 2026-09-03](PROBE_2026-09-03.md).
 
-| Identifier | Provenance |
-|---|---|
-| `0x0046` | temperature -- meatpiHQ/wican-fw vehicle_profiles/gmc/sierra-ev.json (TMP_A), BT1 platform family |
-| `0x2414` | HV pack current candidate -- OBDb/Cadillac-LYRIQ PR #14, LYRIQ_HVBAT_A, signed 16-bit / 20 amps, negative = charging. Ships test vectors (0xFE39 -> -22.75 A, 0x0012 -> 0.9 A) which the formula reproduces exactly. UNMERGED, 2025 Lyriq BEV3, not BT1 |
-| `0x2429` | nominal battery voltage candidate -- OBDb/Cadillac-LYRIQ PR #14, module 17, UNMERGED, not BT1 |
-| `0x2709` | A/C compressor temperature candidate -- meatpiHQ/wican-fw issue #884, BEV3 Bolt, UNMERGED, not BT1 |
-| `0x27AF` | HV battery energy remaining -- meatpiHQ/wican-fw vehicle_profiles/gmc/sierra-ev.json (HV_CAPACITY_R). Sierra EV is BT1, the same platform family bt1.json groups with the Hummer EV |
-| `0x27B5` | thermal-management distance candidate -- meatpiHQ/wican-fw issue #884, BEV3 Bolt, UNMERGED, not BT1 |
-| `0x27BB` | thermal-management energy candidate -- meatpiHQ/wican-fw issue #884, BEV3 Bolt, UNMERGED, not BT1 |
-| `0x27BF` | charge-cycle regeneration-related field candidate -- meatpiHQ/wican-fw issue #884, BEV3 Bolt, UNMERGED, not BT1 |
-| `0x27C0` | distance since full charge -- meatpiHQ/wican-fw vehicle_profiles/gmc/sierra-ev.json (DIST_SINCE_FULL_CHARGE), BT1 platform family |
-| `0x27C6` | HV battery state of charge -- meatpiHQ/wican-fw vehicle_profiles/bt1/bt1.json, a profile whose car_model names the Hummer EV explicitly; independently attested in vehicle_profiles/gmc/sierra-ev.json |
-| `0x27C7` | remaining range -- meatpiHQ/wican-fw vehicle_profiles/gmc/sierra-ev.json (RANGE), BT1 platform family |
-| `0x2885` | HV traction pack voltage candidate -- meatpiHQ/wican-fw issue #884, DMCM1_BATTERY_PACK_VOLTAGE, [B4:B5]/100 volts, min 0 max 500. UNMERGED single-author report, 2027 Bolt BEV3, not BT1 |
-| `0x2AF1` | battery module temperature candidate -- meatpiHQ/wican-fw issue #884, BEV3 Bolt, UNMERGED, not BT1 |
-| `0x2AF5` | HV battery cell voltage average/minimum/maximum -- OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DACB, three 16-bit fields divided by 10000, volts |
-| `0x2B43` | HV battery state of charge, 8-bit -- OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DACB, byte * 100 / 255, percent |
-| `0x33E5` | drive motor control module battery voltage -- OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DA1D (this vehicle names 1D as DMC2-DriveMotorCtrl2), byte / 10, volts |
-| `0x40E5` | battery coolant temperature 1 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
-| `0x40E6` | battery coolant temperature 2 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
-| `0x4124` | HV battery temperature B candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
-| `0x4127` | HV battery temperature A candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
-| `0x4149` | EVSE advertised/pilot current candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
-| `0x416C` | HV battery group voltage 1 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
-| `0x416D` | HV battery group voltage 2 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
-| `0x416E` | HV battery group voltage 3 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
-| `0x434F` | HV battery temperature candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
-| `0x4A7A` | wheel speed, four corners -- OBDb/Cadillac-LYRIQ test fixture DA28.224A7A, one byte per wheel FL/FR/RL/RR, km/h |
-| `0x4A7C` | brake pressure -- OBDb/Cadillac-LYRIQ test fixture DA28.224A7C, (byte - 10) * 100, kPa |
-| `0x4C2D` | steering wheel angle -- OBDb/Cadillac-LYRIQ test fixture DA28.224C2D, signed 16-bit * 0.022, degrees |
-| `0x4C2F` | lateral acceleration -- OBDb/Cadillac-LYRIQ test fixture DA28.224C2F, signed 16-bit * 0.0015928, g |
-| `0x4C30` | longitudinal acceleration -- OBDb/Cadillac-LYRIQ test fixture DA28.224C30, signed 16-bit * 0.0015928, g |
-| `0x5401` | DC charger power -- meatpiHQ/wican-fw vehicle_profiles/gmc/sierra-ev.json (CHARGER_DC_PWR), BT1 platform family |
-| `0xF187` | ISO 14229-1 vehicleManufacturerSparePartNumber -- standard identification DID, used here to test reachability, not content |
-| `0xF188` | ISO 14229-1 vehicleManufacturerECUSoftwareNumber -- standard identification DID, used here to test reachability |
-| `0xF189` | ISO 14229-1 vehicleManufacturerECUSoftwareVersionNumber -- standard identification DID, used here to test reachability |
-| `0xF191` | ISO 14229-1 vehicleManufacturerECUHardwareNumber -- standard identification DID, used here to test reachability |
+The **level** column comes from `hummer_obd.confidence`, which is keyed
+identically to the gate:
+
+* **0** — sourced only
+* **1** — answers here
+* **2** — decoded
+* **3** — cross-validated **-- production telemetry starts here**
+* **4** — cross-validated in more than one state
+
+A level below 3 is not a telemetry reading, whatever its column
+is called. Level 2 is the dangerous one: a plausible number with a
+confident-looking unit and nothing behind it.
+
+| Identifier | Level | Answers at | Seen in | Provenance |
+|---|---|---|---|---|
+| `0x0046` | **2** | `CB` | parked, driving, charging | temperature -- meatpiHQ/wican-fw vehicle_profiles/gmc/sierra-ev.json (TMP_A), BT1 platform family |
+| `0x2414` | **4** | `17` | parked, driving, charging | HV pack current candidate -- OBDb/Cadillac-LYRIQ PR #14, LYRIQ_HVBAT_A, signed 16-bit / 20 amps, negative = charging. Ships test vectors (0xFE39 -> -22.75 A, 0x0012 -> 0.9 A) which the formula reproduces exactly. UNMERGED, 2025 Lyriq BEV3, not BT1 |
+| `0x2429` | **0** | — | never sent | nominal battery voltage candidate -- OBDb/Cadillac-LYRIQ PR #14 (LYRIQ_HVBAT_NOMINAL_V), hdr DA17, 16-bit / 64 volts, max 1023. The source calls it the constant rated pack voltage rather than a live measurement, so a value that does not move is the expected result and not a failed decode. UNMERGED, 2025 Lyriq BEV3, not BT1 |
+| `0x2709` | **1** | `CB` | parked, driving, charging | A/C compressor temperature candidate -- meatpiHQ/wican-fw issue #884, BEV3 Bolt, UNMERGED, not BT1 |
+| `0x27AF` | **4** | `CB` | parked, driving, charging | HV battery energy remaining -- meatpiHQ/wican-fw vehicle_profiles/gmc/sierra-ev.json (HV_CAPACITY_R). Sierra EV is BT1, the same platform family bt1.json groups with the Hummer EV |
+| `0x27B5` | **1** | `CB` | parked, driving, charging | thermal-management distance candidate -- meatpiHQ/wican-fw issue #884, BEV3 Bolt, UNMERGED, not BT1 |
+| `0x27BB` | **1** | `CB` | parked, driving, charging | thermal-management energy candidate -- meatpiHQ/wican-fw issue #884, BEV3 Bolt, UNMERGED, not BT1 |
+| `0x27BF` | **1** | `CB` | parked, driving, charging | charge-cycle regeneration-related field candidate -- meatpiHQ/wican-fw issue #884, BEV3 Bolt, UNMERGED, not BT1 |
+| `0x27C0` | **2** | `CB` | parked, driving, charging | distance since full charge -- meatpiHQ/wican-fw vehicle_profiles/gmc/sierra-ev.json (DIST_SINCE_FULL_CHARGE), BT1 platform family |
+| `0x27C6` | **4** | `CB` | parked, driving, charging | HV battery state of charge -- meatpiHQ/wican-fw vehicle_profiles/bt1/bt1.json, a profile whose car_model names the Hummer EV explicitly; independently attested in vehicle_profiles/gmc/sierra-ev.json |
+| `0x27C7` | **3** | `CB` | parked, driving, charging | remaining range -- meatpiHQ/wican-fw vehicle_profiles/gmc/sierra-ev.json (RANGE), BT1 platform family |
+| `0x2885` | **4** | `17`, `1D`, `1E` | parked, driving, charging | HV traction pack voltage candidate -- meatpiHQ/wican-fw issue #884, DMCM1_BATTERY_PACK_VOLTAGE, [B4:B5]/100 volts, min 0 max 500. UNMERGED single-author report, 2027 Bolt BEV3, not BT1 |
+| `0x2AF1` | **1** | `CB` | parked, driving, charging | battery module temperature candidate -- meatpiHQ/wican-fw issue #884, BEV3 Bolt, UNMERGED, not BT1 |
+| `0x2AF5` | **4** | `CB` | parked, driving, charging | HV battery cell voltage average/minimum/maximum -- OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DACB, three 16-bit fields divided by 10000, volts |
+| `0x2B43` | **1** | `CB` | parked, driving, charging | HV battery state of charge, 8-bit -- OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DACB, byte * 100 / 255, percent |
+| `0x33E5` | **3** | `17`, `1D`, `1E` | parked, driving | drive motor control module battery voltage -- OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DA1D (this vehicle names 1D as DMC2-DriveMotorCtrl2), byte / 10, volts |
+| `0x40E5` | **1** | `40` | parked, driving | battery coolant temperature 1 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
+| `0x40E6` | **1** | `40` | parked, driving | battery coolant temperature 2 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
+| `0x4124` | **1** | `40` | parked, driving | HV battery temperature B candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
+| `0x4127` | **1** | `40` | parked, driving | HV battery temperature A candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
+| `0x4149` | **1** | `40` | parked, driving | EVSE advertised/pilot current candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
+| `0x416C` | **1** | `40` | parked, driving | HV battery group voltage 1 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
+| `0x416D` | **1** | `40` | parked, driving | HV battery group voltage 2 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
+| `0x416E` | **1** | `40` | parked, driving | HV battery group voltage 3 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
+| `0x434F` | **1** | `40` | parked, driving | HV battery temperature candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
+| `0x4A7A` | **3** | `28` | parked, driving | wheel speed, four corners -- OBDb/Cadillac-LYRIQ test fixture DA28.224A7A, one byte per wheel FL/FR/RL/RR, km/h |
+| `0x4A7C` | **2** | `28` | parked, driving | brake pressure -- OBDb/Cadillac-LYRIQ test fixture DA28.224A7C, (byte - 10) * 100, kPa |
+| `0x4C2D` | **2** | `28` | parked, driving | steering wheel angle -- OBDb/Cadillac-LYRIQ test fixture DA28.224C2D, signed 16-bit * 0.022, degrees |
+| `0x4C2F` | **2** | `28` | parked, driving | lateral acceleration -- OBDb/Cadillac-LYRIQ test fixture DA28.224C2F, signed 16-bit * 0.0015928, g |
+| `0x4C30` | **3** | `28` | parked, driving | longitudinal acceleration -- OBDb/Cadillac-LYRIQ test fixture DA28.224C30, signed 16-bit * 0.0015928, g |
+| `0x5401` | **1** | `CB` | parked, driving, charging | DC charger power -- meatpiHQ/wican-fw vehicle_profiles/gmc/sierra-ev.json (CHARGER_DC_PWR), BT1 platform family |
+| `0xF187` | **0** | — | probe only | ISO 14229-1 vehicleManufacturerSparePartNumber -- standard identification DID, used here to test reachability, not content |
+| `0xF188` | **0** | — | probe only | ISO 14229-1 vehicleManufacturerECUSoftwareNumber -- standard identification DID, used here to test reachability |
+| `0xF189` | **0** | — | probe only | ISO 14229-1 vehicleManufacturerECUSoftwareVersionNumber -- standard identification DID, used here to test reachability |
+| `0xF191` | **0** | — | probe only | ISO 14229-1 vehicleManufacturerECUHardwareNumber -- standard identification DID, used here to test reachability |
 
 <!-- END GENERATED IDENTIFIER REGISTRY -->
 
 ## Candidate identifiers
+
+> **The tiers below are historical narrative; the `Level` column above is the
+> answer.** The tiers were written as identifiers were tried and they record
+> *when* and *how* each one was proven, which is worth keeping. What they cannot
+> do is stay current: they are prose, and prose is what fell thirty-six commits
+> behind the code the first time. The generated table is rendered from
+> `hummer_obd.confidence`, which is keyed to the safety gate and asserted equal
+> to it, and a test recomputes its level-3 cross-validations from the committed
+> sessions. When a tier heading and a `Level` cell disagree, the cell is right.
 
 ### Tier 1 — proven on this VIN
 

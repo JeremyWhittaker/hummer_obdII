@@ -452,8 +452,12 @@ ENHANCED_READ_DIDS: Final[dict[str, str]] = {
              "PR #14, module 40, UNMERGED, not BT1"),
     "40E6": ("battery coolant temperature 2 candidate -- OBDb/Cadillac-LYRIQ "
              "PR #14, module 40, UNMERGED, not BT1"),
-    "2429": ("nominal battery voltage candidate -- OBDb/Cadillac-LYRIQ PR #14, "
-             "module 17, UNMERGED, not BT1"),
+    "2429": ("nominal battery voltage candidate -- OBDb/Cadillac-LYRIQ PR #14 "
+             "(LYRIQ_HVBAT_NOMINAL_V), hdr DA17, 16-bit / 64 volts, max 1023. "
+             "The source calls it the constant rated pack voltage rather than a "
+             "live measurement, so a value that does not move is the expected "
+             "result and not a failed decode. UNMERGED, 2025 Lyriq BEV3, "
+             "not BT1"),
     "33E5": (
         "drive motor control module battery voltage -- "
         "OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DA1D "

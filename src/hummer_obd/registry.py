@@ -21,12 +21,20 @@ hand-written, because that is the part worth writing by hand.
 
 from __future__ import annotations
 
+from .confidence import CONFIDENCE, LEVEL_NAMES, PRODUCTION_MINIMUM
 from .safety import ENHANCED_READ_DIDS
 
-__all__ = ["BEGIN_MARKER", "END_MARKER", "render_registry", "splice"]
+__all__ = ["BEGIN_MARKER", "END_MARKER", "COLUMNS", "render_registry", "splice"]
 
 BEGIN_MARKER = "<!-- BEGIN GENERATED IDENTIFIER REGISTRY -->"
 END_MARKER = "<!-- END GENERATED IDENTIFIER REGISTRY -->"
+
+#: The table's columns, named once.  A markdown table whose header and rows
+#: disagree on column count renders as silent nonsense rather than an error,
+#: so both are built from this and a test counts against it.
+COLUMNS: tuple[str, ...] = (
+    "Identifier", "Level", "Answers at", "Seen in", "Provenance",
+)
 
 
 def _first_sentence(text: str) -> str:
@@ -50,11 +58,40 @@ def render_registry() -> str:
         "this vehicle*. Results live in the tiers below and in",
         "[Probe, 2026-09-03](PROBE_2026-09-03.md).",
         "",
-        "| Identifier | Provenance |",
-        "|---|---|",
+        "The **level** column comes from `hummer_obd.confidence`, which is keyed",
+        "identically to the gate:",
+        "",
     ]
+    for level in sorted(LEVEL_NAMES):
+        mark = " **-- production telemetry starts here**" if level == PRODUCTION_MINIMUM else ""
+        lines.append(f"* **{level}** — {LEVEL_NAMES[level]}{mark}")
+    lines.extend([
+        "",
+        "A level below "
+        f"{PRODUCTION_MINIMUM} is not a telemetry reading, whatever its column",
+        "is called. Level 2 is the dangerous one: a plausible number with a",
+        "confident-looking unit and nothing behind it.",
+        "",
+        "| " + " | ".join(COLUMNS) + " |",
+        "|" + "---|" * len(COLUMNS),
+    ])
     for did in sorted(ENHANCED_READ_DIDS):
-        lines.append(f"| `0x{did}` | {_first_sentence(ENHANCED_READ_DIDS[did])} |")
+        if did not in CONFIDENCE:
+            # confidence.py asserts key parity at import, so reaching this
+            # means someone mutated the gate at runtime.  Say which identifier
+            # and what to do about it rather than raising a bare KeyError from
+            # a dict lookup two frames down.
+            raise KeyError(
+                f"0x{did} is in the safety gate with no entry in "
+                "hummer_obd.confidence.CONFIDENCE; an identifier that may be "
+                "transmitted must also record what is known about it"
+            )
+        ev = CONFIDENCE[did]
+        answers = ", ".join(f"`{m}`" for m in ev.answers_at) or "—"
+        states = ", ".join(ev.states)
+        lines.append(
+            f"| `0x{did}` | **{ev.level}** | {answers} | {states} | "
+            f"{_first_sentence(ENHANCED_READ_DIDS[did])} |")
     lines.extend(["", END_MARKER])
     return "\n".join(lines)
 
