@@ -69,10 +69,21 @@ KM_PER_MILE: float = 1.609344
 _TEXT_COLUMNS = frozenset({
     "utc", "array_2b43", "array_2af1", "charger_5401_raw", "cell_extra_raw",
     "evse_current_raw", "group_v1_raw", "group_v2_raw", "group_v3_raw",
-    "hv_temp_raw", "batt_temp_a_raw", "batt_temp_b_raw",
+    "hv_temp_raw", "field_4127_raw", "field_4124_raw",
     "coolant_1_raw", "coolant_2_raw",
     "regen_field_raw", "thermal_energy_raw", "thermal_distance_raw",
     "compressor_temp_raw", "field_2429_raw",
+    # Retired column names, kept because the CSVs that used them are still on
+    # disk and still the evidence behind published findings.  A renamed hex
+    # column that drops out of this set does not go missing -- it goes through
+    # _number(), which strips trailing letters and then calls float(), and
+    # comes back a plausible wrong number that nothing downstream can flag:
+    #   "00EA" -> 0.0            (the real value is 234)
+    #   "0259" -> 259.0          (601, the hex read as decimal)
+    #   "03E8" -> 300000000.0    ("3E8" is valid scientific notation)
+    # The 0x2429 rename escaped this only because no session had ever been
+    # written under its old name.  0x4127 and 0x4124 had 25.
+    "batt_temp_a_raw", "batt_temp_b_raw",
 })
 
 #: A sample period more than this multiple of the median is treated as a gap
@@ -689,9 +700,14 @@ _CHARGING_AMPS: float = -1.0
 #: state that moves them, so their *range* across a charge is the measurement
 #: that will eventually decode them -- see docs/PACK_ARCHITECTURE.md.
 _UNPROVEN_ON_CHARGE: tuple[str, ...] = (
-    "evse_current_raw", "hv_temp_raw", "batt_temp_a_raw", "batt_temp_b_raw",
+    "evse_current_raw", "hv_temp_raw", "field_4127_raw", "field_4124_raw",
     "coolant_1_raw", "coolant_2_raw", "array_2af1",
     "thermal_energy_raw", "thermal_distance_raw", "compressor_temp_raw",
+    # Both eras of header, for the same reason _TEXT_COLUMNS carries both: the
+    # only charge this project has recorded end to end was written under the
+    # old names, and dropping them here would quietly empty the charge report
+    # of the two fields rather than reporting that they did not move.
+    "batt_temp_a_raw", "batt_temp_b_raw",
 )
 
 

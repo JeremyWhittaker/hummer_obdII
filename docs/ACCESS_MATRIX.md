@@ -156,7 +156,7 @@ Every cell below is produced by putting that command to that gate and recording 
 | `dist_since_clear_km` | standard OBD, asked of module 17 | `0131` | 0x18 | — |
 | `module_voltage` | standard OBD, asked of module 17 | `0142` | 0x18 | — |
 | `regen_field_raw` | battery manager (module CB) | `0x27BF` | 0x14 | **1** answers here |
-| `thermal_energy_raw` | battery manager (module CB) | `0x27BB` | 0x14 | **1** answers here |
+| `thermal_energy_raw` | battery manager (module CB) | `0x27BB` | 0x14 | **2** decoded |
 | `thermal_distance_raw` | battery manager (module CB) | `0x27B5` | 0x14 | **1** answers here |
 | `compressor_temp_raw` | battery manager (module CB) | `0x2709` | 0x14 | **1** answers here |
 | `evse_current_raw` | body (module 40) | `0x4149` | 0x18 | **1** answers here |
@@ -164,10 +164,10 @@ Every cell below is produced by putting that command to that gate and recording 
 | `group_v2_raw` | body (module 40) | `0x416D` | 0x18 | **1** answers here |
 | `group_v3_raw` | body (module 40) | `0x416E` | 0x18 | **1** answers here |
 | `hv_temp_raw` | body (module 40) | `0x434F` | 0x18 | **1** answers here |
-| `batt_temp_a_raw` | body (module 40) | `0x4127` | 0x18 | **1** answers here |
-| `batt_temp_b_raw` | body (module 40) | `0x4124` | 0x18 | **1** answers here |
-| `coolant_1_raw` | body (module 40) | `0x40E5` | 0x18 | **1** answers here |
-| `coolant_2_raw` | body (module 40) | `0x40E6` | 0x18 | **1** answers here |
+| `field_4127_raw` | body (module 40) | `0x4127` | 0x18 | **2** decoded |
+| `field_4124_raw` | body (module 40) | `0x4124` | 0x18 | **1** answers here |
+| `coolant_1_raw` | body (module 40) | `0x40E5` | 0x18 | **2** decoded |
+| `coolant_2_raw` | body (module 40) | `0x40E6` | 0x18 | **2** decoded |
 | `pack_v` | pack power (module 17) | `0x2885` | 0x14 | **4** cross-validated in more than one state |
 | `pack_a` | pack power (module 17) | `0x2414` | 0x14 | **4** cross-validated in more than one state |
 | `field_2429_raw` | pack power (module 17) | `0x2429` | 0x14 | **1** answers here |

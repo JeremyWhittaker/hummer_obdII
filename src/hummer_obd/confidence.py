@@ -97,6 +97,31 @@ class Evidence:
 _CB = ("CB",)
 _PACK = ("17", "1D", "1E")
 
+#: The shared preamble for every field graded by the 2026-09-04 HVAC A-B-A run.
+#: It is a constant rather than repeated prose so the phase boundaries can never
+#: drift between entries -- six fields were graded off this one experiment, and
+#: six hand-copied timestamps is six chances to mistype one.
+#:
+#: The A-B-A shape is the whole point.  Three earlier attempts to read HVAC
+#: fields used a single transition, and a single transition cannot tell a mode
+#: response from a field that was simply going to rise anyway: 0x27BB rose
+#: during A/C, rose again during heat, and would have been published as an A/C
+#: response had the second A/C phase not shown it climbing straight through the
+#: reversal.  Returning to the first condition is what makes the difference
+#: observable.
+ABA = (
+    "The 2026-09-04 A-B-A experiment (cold soak 15:19-15:34, A/C max "
+    "15:34-15:49, heat max 15:49-15:58, A/C max 15:58-16:07:53; owner "
+    "operated the controls and reported each switch, phases marked via "
+    "hummer-obd-experiment) is what settles this. Three single transitions "
+    "cannot separate mode from elapsed time; only the return to A/C can. "
+    "The second A/C phase ends at first wheel motion, 16:07:53Z, when the "
+    "owner drove to work -- an unbounded window would quietly become a "
+    "driving window and stop being an A/C phase at all. Figures below are "
+    "per-phase over 99/80/44/48 samples and EXCLUDE the switch minutes "
+    "themselves, so a transient at a transition falls in a gap, not a phase. "
+)
+
 #: Keyed identically to :data:`hummer_obd.safety.ENHANCED_READ_DIDS`.  A test
 #: asserts the key sets match, so adding to the gate without recording what is
 #: known about the addition fails the suite.
@@ -230,24 +255,46 @@ CONFIDENCE: Final[dict[str, Evidence]] = {
         "which is most of why this is 2 and not 3"),
     "27BF": Evidence(1, _CB, ("parked", "driving", "charging"),
                      "regeneration-related candidate; answers, stored raw"),
-    "27BB": Evidence(1, _CB, ("parked", "driving", "charging"),
-                     "thermal-management energy candidate; answers, stored raw"),
+    "27BB": Evidence(2, _CB, ("parked", "driving", "charging"),
+                     "thermal-management energy candidate, and the A-B-A "
+                     "supports the energy half of that name. " + ABA + "This "
+                     "field runs 0 through the cold soak, then 10 to 60 "
+                     "across the first A/C phase, 70 to 110 across heat, and "
+                     "120 to 150 across the second A/C phase: monotonically "
+                     "non-decreasing across a mode REVERSAL, in steps of 10, "
+                     "starting from zero. That is what an accumulator does "
+                     "and what no temperature or mode state can do. The "
+                     "practical consequence matters more than the label: "
+                     "this field must never be read as responding to HVAC "
+                     "mode. It rose during A/C and rose during heat because "
+                     "it integrates, and reading its A/C rise as an A/C "
+                     "response is exactly the elapsed-time error this "
+                     "experiment was built to catch. No scaling is claimed; "
+                     "the units of the step are unknown"),
     "27B5": Evidence(1, _CB, ("parked", "driving", "charging"),
                      "thermal-management distance candidate; answers, stored raw"),
     "2709": Evidence(1, _CB, ("parked", "driving", "charging"),
-                     "A/C compressor temperature candidate. Moved monotonically through the 2026-09-04 charge while "
-                     "the pack warmed 16.2 F, which is consistent with a thermal "
-                     "quantity. No scaling follows: a least-squares fit against "
-                     "temp_f lands on 1/1.3 C per count and no designer picks "
-                     "that. Over a monotonic ramp any two rising quantities fit "
-                     "a line, so a believable slope means a round divisor that "
-                     "holds across a SECOND charge warming at a different "
-                     "rate. The same charge demonstrated the hazard "
-                     "directly: over its first four minutes charge power "
-                     "correlated with temp_f at +0.72, and over the full "
-                     "twenty minutes including the recovery at -0.028, "
-                     "with the hardest and slowest charge rates occurring "
-                     "at the SAME 107.6 F"),
+                     "A/C compressor temperature candidate. " + ABA + "Before "
+                     "looking at the result this project recorded the "
+                     "prediction that, if this is genuinely A/C compressor "
+                     "temperature, it should rise under A/C and not under "
+                     "heat. It does not discriminate: 101-104 cold, 106-110 "
+                     "under A/C, 107-112 under heat, 110-112 under A/C again. "
+                     "The heat and A/C bands overlap almost entirely, so this "
+                     "field cannot say which mode is running, and that is the "
+                     "narrow thing the experiment establishes. It rises "
+                     "across the run and then turns over slightly in the last "
+                     "phase (112 down to 110), so it is not a clean "
+                     "accumulator either. The prediction is what failed, and "
+                     "it is not clear the label did: GM's Ultium vehicles are "
+                     "marketed with heat-pump and waste-heat-recovery thermal "
+                     "systems, and if the compressor runs in heat mode too "
+                     "then warming in both modes is exactly what a compressor "
+                     "temperature should do. That is an unresolved "
+                     "alternative, not a conclusion -- it has not been sourced "
+                     "for this VIN. Still no scaling: a least-squares fit "
+                     "against temp_f lands on 1/1.3 C per count and no "
+                     "designer picks that"),
     "4149": Evidence(
         1, ("40",), ("parked", "driving"),
         "EVSE advertised current candidate, and a lesson in checking WHEN a "
@@ -283,58 +330,84 @@ CONFIDENCE: Final[dict[str, Evidence]] = {
                      "measures does is not measuring it -- still applies to "
                      "that window, and says less than it first appeared to. Reads 0x46 "
                      "throughout"),
-    "4127": Evidence(1, ("40",), ("parked", "driving", "charging"),
-                     "battery temperature A candidate. Across 52 charging samples on 2026-09-04 the pack warmed "
-                     "16.2 F and this field DID NOT MOVE -- one distinct value "
-                     "throughout. That was written up as evidence against the "
-                     "source's label. The morning after weakens it: the field "
-                     "DOES take other values in other states, so it is not "
-                     "dead, it simply held still through a charge. The rule -- "
-                     "a field that does not move while the thing it allegedly "
-                     "measures does is not measuring it -- still applies to "
-                     "that window, and says less than it first appeared to. Reads 0x0418 "
-                     "throughout"),
+    "4127": Evidence(2, ("40",), ("parked", "driving", "charging"),
+                     "candidate labelled battery temperature A by the source. "
+                     "It is NOT a temperature. " + ABA + "It holds ONE value "
+                     "per phase: 234 across all 99 cold-soak samples and all "
+                     "80 of the first A/C phase, then exactly 601 across all "
+                     "44 heat samples, then 234 again. Not a range per phase "
+                     "-- a single constant, stepping on the edges the owner "
+                     "commanded, at 15:50:02 and back at 15:59:23, each "
+                     "within one poll of the switch. No pack temperature is "
+                     "constant to the count for 179 samples and then moves "
+                     "367 in one poll and back inside nine minutes. "
+                     "Corpus-wide it takes 234, 238, 242, 246, 261, 429, 601 "
+                     "and 1048, and 1048 occurs in 410 samples of which every "
+                     "one has negative pack current -- it appears only while "
+                     "charging. So it is a thermal-mode or heat-request state "
+                     "word. This supersedes the earlier "
+                     "held-still-through-a-charge argument, which was true "
+                     "but far weaker: a field holding still is ambiguous, a "
+                     "field that moves on a commanded edge and returns is "
+                     "not. No scaling is claimed and none is applied. It is 2 "
+                     "and not 3 because this is ONE heat cycle; a second one "
+                     "on a different day, reproducing 601, is what would "
+                     "make it 3"),
     "4124": Evidence(1, ("40",), ("parked", "driving", "charging"),
-                     "battery temperature B candidate. Across 52 charging samples on 2026-09-04 the pack warmed "
-                     "16.2 F and this field DID NOT MOVE -- one distinct value "
-                     "throughout. That was written up as evidence against the "
-                     "source's label. The morning after weakens it: the field "
-                     "DOES take other values in other states, so it is not "
-                     "dead, it simply held still through a charge. The rule -- "
-                     "a field that does not move while the thing it allegedly "
-                     "measures does is not measuring it -- still applies to "
-                     "that window, and says less than it first appeared to. It reads 0x0000 "
-                     "throughout, which is not a temperature in any scaling"),
-    "40E5": Evidence(1, ("40",), ("parked", "driving", "charging"),
-                     "battery coolant temperature 1 candidate. Moved monotonically through the 2026-09-04 charge while "
-                     "the pack warmed 16.2 F, which is consistent with a thermal "
-                     "quantity. No scaling follows: a least-squares fit against "
-                     "temp_f lands on 1/17.2 C per count and no designer picks "
-                     "that. Over a monotonic ramp any two rising quantities fit "
-                     "a line, so a believable slope means a round divisor that "
-                     "holds across a SECOND charge warming at a different "
-                     "rate. The same charge demonstrated the hazard "
-                     "directly: over its first four minutes charge power "
-                     "correlated with temp_f at +0.72, and over the full "
-                     "twenty minutes including the recovery at -0.028, "
-                     "with the hardest and slowest charge rates occurring "
-                     "at the SAME 107.6 F"),
-    "40E6": Evidence(1, ("40",), ("parked", "driving", "charging"),
-                     "battery coolant temperature 2 candidate. Its charging "
-                     "values are DISJOINT from every one of 566 parked samples. "
-                     "Moved monotonically through the 2026-09-04 charge while "
-                     "the pack warmed 16.2 F, which is consistent with a thermal "
-                     "quantity. No scaling follows: a least-squares fit against "
-                     "temp_f lands on 1/5.7 C per count and no designer picks "
-                     "that. Over a monotonic ramp any two rising quantities fit "
-                     "a line, so a believable slope means a round divisor that "
-                     "holds across a SECOND charge warming at a different "
-                     "rate. The same charge demonstrated the hazard "
-                     "directly: over its first four minutes charge power "
-                     "correlated with temp_f at +0.72, and over the full "
-                     "twenty minutes including the recovery at -0.028, "
-                     "with the hardest and slowest charge rates occurring "
-                     "at the SAME 107.6 F"),
+                     "candidate labelled battery temperature B by the source. "
+                     "It is NOT a temperature. " + ABA + "It reads exactly "
+                     "1000 in every one of the 271 samples across all four "
+                     "phases -- one distinct value per phase, and the same "
+                     "value in all of them -- so it carries no thermal "
+                     "magnitude and does not distinguish A/C from heat. It "
+                     "leaves 1000 only in brief transients AT the switches, "
+                     "which is why they fall in the gaps between phases and "
+                     "not inside any of them: 418 at 15:34:20 back to 1000 "
+                     "by 15:34:28 (A/C on, an eight-second excursion), and "
+                     "910 at 15:50:12 back to 1000 by 15:50:51 (heat on). It "
+                     "also read 0x0000 for the whole 2026-09-04 charge, which "
+                     "is not a temperature in any scaling. Kept at 1 "
+                     "deliberately: the negative finding is solid, but two "
+                     "transients are far too thin to publish a positive "
+                     "reading of what the dip means"),
+    "40E5": Evidence(2, ("40",), ("parked", "driving", "charging"),
+                     "battery coolant temperature 1 candidate, and the only "
+                     "continuous field here that responds to HVAC mode "
+                     "reversibly. " + ABA + "It holds flat at 860 through "
+                     "the cold soak, ramps 890 to 980 across the first A/C "
+                     "phase, jumps to 1125-1170 under heat, and comes back "
+                     "to 980-985 under A/C again -- returning to where the "
+                     "first A/C phase ended rather than continuing to climb. "
+                     "A field that goes up with heat, comes back down when "
+                     "heat stops, and lands on its own earlier value is "
+                     "tracking the thermal system's state, not the clock. "
+                     "That is a real mode response and it is the strongest "
+                     "result of the experiment for a non-state field. Still "
+                     "no scaling is claimed: a least-squares fit against "
+                     "temp_f lands on 1/17.2 C per count and no designer "
+                     "picks that, and this experiment constrains the field's "
+                     "BEHAVIOUR without constraining its units at all. 2 not "
+                     "3 for the same reason as 0x4127 -- one heat cycle"),
+    "40E6": Evidence(2, ("40",), ("parked", "driving", "charging"),
+                     "battery coolant temperature 2 candidate. It responds to "
+                     "HVAC being on, but carries no mode information. " + ABA +
+                     "Across the 99 cold-soak samples it runs 696-808 and is "
+                     "still drifting; from A/C on it drops into 437-505 and "
+                     "every later phase stays in that neighbourhood -- 485-516 "
+                     "under heat, 353-524 under A/C again. The separation at "
+                     "HVAC-on is real: the coldest cold-soak sample, 696, is "
+                     "well above the warmest A/C sample, 505. The "
+                     "heat-versus-A/C difference is not -- those two bands "
+                     "overlap, so this field cannot tell the modes apart. An "
+                     "earlier draft of this entry quoted 806-808 for the cold "
+                     "soak and 484-524 for the second A/C phase; both came "
+                     "from truncated windows (the last four minutes of the "
+                     "soak, and 23 of the 48 available A/C samples) and are "
+                     "corrected here. Its charging values are also DISJOINT "
+                     "from every one of 566 parked samples, which is a second "
+                     "independent state separation. No scaling is claimed: a "
+                     "least-squares fit against temp_f lands on 1/5.7 C per "
+                     "count and no designer picks that"),
 
     # -- level 0: allowlisted, never answered here -------------------------
     #

@@ -1123,8 +1123,8 @@ class TestBodyModuleColumns(unittest.TestCase):
 
     def test_all_nine_have_columns(self):
         for column in ("evse_current_raw", "group_v1_raw", "group_v2_raw",
-                       "group_v3_raw", "hv_temp_raw", "batt_temp_a_raw",
-                       "batt_temp_b_raw", "coolant_1_raw", "coolant_2_raw"):
+                       "group_v3_raw", "hv_temp_raw", "field_4127_raw",
+                       "field_4124_raw", "coolant_1_raw", "coolant_2_raw"):
             with self.subTest(column=column):
                 self.assertIn(column, drive.COLUMNS)
 

@@ -5,10 +5,13 @@ whole hours, so a wrong integral shows up as a wrong round number rather than
 as a plausible one.
 """
 
+import csv
 import json
 import os
+import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 from hummer_obd import analyze
 from hummer_obd.analyze import (
@@ -18,6 +21,8 @@ from hummer_obd.analyze import (
     read_session,
 )
 from hummer_obd.drive import COLUMNS
+
+REPO = Path(__file__).resolve().parents[1]
 
 
 def _rows(samples):
@@ -116,6 +121,54 @@ class TestHexColumnsAreNotParsedAsNumbers(unittest.TestCase):
         # alone and float() then rejects the whole string.
         self.assertIsNone(analyze._number("760FB817"))
         self.assertIn("cell_extra_raw", analyze._TEXT_COLUMNS)
+
+    def test_no_committed_session_holds_hex_in_a_column_read_as_a_number(self):
+        """The two fixtures above are hand-picked; this asks the corpus.
+
+        Renaming a hex column and updating only the recorder leaves every
+        session already on disk carrying the OLD header, which is no longer in
+        the text set and so goes to ``_number()``.  That does not raise and it
+        does not yield ``None`` -- the unit-suffix stripper chews the value down
+        to whatever leading digits it has and ``float()`` accepts the result::
+
+            "00EA" -> 0.0             the real value is 234
+            "0259" -> 259.0           601, the hex digits read as decimal
+            "03E8" -> 300000000.0     "3E8" parses as scientific notation
+
+        Nothing downstream can tell those from readings.  This is the third
+        time this shape has bitten the project (``cell_extra_raw``, then
+        ``0x4127``/``0x4124``), so it is checked against the real corpus rather
+        than against a fixture that has to be remembered.
+
+        A hex letter is the discriminator: a genuine numeric column such as
+        ``brake_kpa`` never contains one, while a raw payload column reliably
+        does.  A payload that happened to be all digits corpus-wide would slip
+        through, which is why this supplements the round-trip test above
+        instead of replacing it.
+        """
+        tracked = subprocess.run(
+            ["git", "ls-files", "evidence/sessions/*.csv"],
+            cwd=REPO, capture_output=True, text=True, check=True,
+        ).stdout.split()
+        if not tracked:
+            self.skipTest("no committed sessions to check")
+        offenders: dict[str, str] = {}
+        for name in tracked:
+            with open(REPO / name, newline="", encoding="utf-8") as handle:
+                for row in csv.DictReader(handle):
+                    for column, value in row.items():
+                        if column in analyze._TEXT_COLUMNS or not value:
+                            continue
+                        text = value.strip()
+                        if any(c in "ABCDEFabcdef" for c in text) and text.isalnum():
+                            offenders.setdefault(column, f"{name}: {text!r}")
+        self.assertEqual(
+            offenders, {},
+            "these columns hold hex in committed sessions but are read as "
+            f"numbers, so they decode to silent nonsense: {offenders}. Add "
+            "the column name to analyze._TEXT_COLUMNS -- and if it is a "
+            "retired name, keep it there alongside the new one.",
+        )
 
 
 class TestDistanceSourcePreference(unittest.TestCase):

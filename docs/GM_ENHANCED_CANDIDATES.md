@@ -234,7 +234,7 @@ confident-looking unit and nothing behind it.
 | `0x2709` | **1** | `CB` | parked, driving, charging | A/C compressor temperature candidate -- meatpiHQ/wican-fw issue #884, BEV3 Bolt, UNMERGED, not BT1 |
 | `0x27AF` | **4** | `CB` | parked, driving, charging | HV battery energy remaining -- meatpiHQ/wican-fw vehicle_profiles/gmc/sierra-ev.json (HV_CAPACITY_R). Sierra EV is BT1, the same platform family bt1.json groups with the Hummer EV |
 | `0x27B5` | **1** | `CB` | parked, driving, charging | thermal-management distance candidate -- meatpiHQ/wican-fw issue #884, BEV3 Bolt, UNMERGED, not BT1 |
-| `0x27BB` | **1** | `CB` | parked, driving, charging | thermal-management energy candidate -- meatpiHQ/wican-fw issue #884, BEV3 Bolt, UNMERGED, not BT1 |
+| `0x27BB` | **2** | `CB` | parked, driving, charging | thermal-management energy candidate -- meatpiHQ/wican-fw issue #884, BEV3 Bolt, UNMERGED, not BT1 |
 | `0x27BF` | **1** | `CB` | parked, driving, charging | charge-cycle regeneration-related field candidate -- meatpiHQ/wican-fw issue #884, BEV3 Bolt, UNMERGED, not BT1 |
 | `0x27C0` | **2** | `CB` | parked, driving, charging | distance since full charge -- meatpiHQ/wican-fw vehicle_profiles/gmc/sierra-ev.json (DIST_SINCE_FULL_CHARGE), BT1 platform family |
 | `0x27C6` | **4** | `CB` | parked, driving, charging | HV battery state of charge -- meatpiHQ/wican-fw vehicle_profiles/bt1/bt1.json, a profile whose car_model names the Hummer EV explicitly; independently attested in vehicle_profiles/gmc/sierra-ev.json |
@@ -244,10 +244,10 @@ confident-looking unit and nothing behind it.
 | `0x2AF5` | **4** | `CB` | parked, driving, charging | HV battery cell voltage average/minimum/maximum -- OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DACB, three 16-bit fields divided by 10000, volts |
 | `0x2B43` | **1** | `CB` | parked, driving, charging | HV battery state of charge, 8-bit -- OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DACB, byte * 100 / 255, percent |
 | `0x33E5` | **3** | `17`, `1D`, `1E` | parked, driving | drive motor control module battery voltage -- OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DA1D (this vehicle names 1D as DMC2-DriveMotorCtrl2), byte / 10, volts |
-| `0x40E5` | **1** | `40` | parked, driving, charging | battery coolant temperature 1 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
-| `0x40E6` | **1** | `40` | parked, driving, charging | battery coolant temperature 2 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
+| `0x40E5` | **2** | `40` | parked, driving, charging | battery coolant temperature 1 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
+| `0x40E6` | **2** | `40` | parked, driving, charging | battery coolant temperature 2 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
 | `0x4124` | **1** | `40` | parked, driving, charging | HV battery temperature B candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
-| `0x4127` | **1** | `40` | parked, driving, charging | HV battery temperature A candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
+| `0x4127` | **2** | `40` | parked, driving, charging | HV battery temperature A candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
 | `0x4149` | **1** | `40` | parked, driving | EVSE advertised/pilot current candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
 | `0x416C` | **1** | `40` | parked, driving | HV battery group voltage 1 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
 | `0x416D` | **1** | `40` | parked, driving | HV battery group voltage 2 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |

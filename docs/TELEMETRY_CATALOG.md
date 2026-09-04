@@ -67,7 +67,7 @@ asserts it, so the distinction cannot quietly reappear.
 | 24-element array | `0x2AF1` | none applied | — | **raw** |
 | `0x2AF5` trailing bytes | `0x2AF5` | `[B6:B9]`, none applied | — | **raw** |
 | Regeneration field | `0x27BF` | none applied | — | **raw** |
-| Thermal-management energy | `0x27BB` | none applied | — | **raw** |
+| Thermal-management energy | `0x27BB` | none applied | — | **read** |
 | Thermal-management distance | `0x27B5` | none applied | — | **raw** |
 | A/C compressor temperature | `0x2709` | none applied | — | **raw** |
 
@@ -142,6 +142,82 @@ they are all near-multiples of **0.1 pp** (mean residual 1.1 % of a step). So
 the field's resolution is a tenth of a percentage point, and while charging the
 vehicle chooses to advance it four tenths at a time.
 
+### The HVAC A-B-A: the first experiment that separates cause from elapsed time
+
+Every thermal reading before this one was taken across a **single** transition —
+a charge starting, a night cooling down, an A/C switch being thrown. A single
+transition cannot distinguish a field that responds to the change from a field
+that was going to move anyway, because in both cases the field moves and time
+passes. The project got this wrong twice: a thermal-limiting hypothesis that
+showed +0.72 over four minutes and −0.028 over a hundred samples, and a `0x4149`
+"match" whose value predated the charger by 124 minutes.
+
+So this run returns to the starting condition. On 2026-09-04 the owner operated
+the controls and reported each switch, parked in a garage at roughly 84 °F:
+
+| Phase | Window (UTC) | Samples |
+|---|---|---|
+| Cold soak, HVAC off | 15:19 – 15:34 | 99 |
+| **A** — max A/C | 15:34 – 15:49 | 80 |
+| **B** — max heat | 15:49 – 15:58 | 44 |
+| **A** — max A/C again | 15:58 – 16:07:53 | 48 |
+
+The second A/C phase ends at first wheel motion, when the owner drove to work.
+The switch minutes themselves are excluded from every phase, so a transient *at*
+a transition falls in a gap rather than contaminating a phase.
+
+| Field | cold | A/C | heat | A/C again | Reads as |
+|---|---|---|---|---|---|
+| `field_4127_raw` | 234 | 234 | **601** | 234 | **heat state** |
+| `coolant_1_raw` | 860 | 890→980 | **1125–1170** | 980–985 | **mode, reversible** |
+| `coolant_2_raw` | 696–808 | 437–505 | 485–516 | 353–524 | HVAC on/off only |
+| `compressor_temp_raw` | 101–104 | 106–110 | 107–112 | 110–112 | no mode information |
+| `thermal_energy_raw` | 0 | 10→60 | 70→110 | 120→150 | **accumulator** |
+| `field_4124_raw` | 1000 | 1000 | 1000 | 1000 | transients only |
+
+**`0x4127` is a heat-request state, not a battery temperature.** It holds a
+single constant value per phase: 234 across all 99 cold-soak samples and all 80
+of the first A/C phase, exactly 601 across all 44 heat samples, then 234 again.
+It steps at 15:50:02 and returns at 15:59:23 — each within one poll of a switch
+the owner threw. No pack temperature is constant to the count for 179 samples,
+then moves 367 in one poll, then comes back inside nine minutes. Corpus-wide,
+its value 1048 appears in 410 samples of which **every one** has negative pack
+current: it is reached only while charging.
+
+**`0x27BB` is an accumulator, and this is the finding that justifies the whole
+design.** It rose during A/C and would have been published as an A/C response.
+It rose again during heat. Then it kept rising straight through the reversal —
+0, then 10→60, 70→110, 120→150, monotonically non-decreasing in steps of 10
+from a zero start. It integrates. It was never responding to anything, and only
+the return to A/C makes that visible. **It must never be read as a mode
+indicator.**
+
+**`0x40E5` is the one continuous field that genuinely tracks mode.** Flat at 860
+cold, ramping to 980 under A/C, jumping to 1125–1170 under heat, and returning
+to 980–985 under A/C — landing back on the value the first A/C phase ended at
+rather than continuing to climb. Up with heat, down when heat stops, back to its
+own earlier value: that is a state response, not a clock.
+
+**A prediction that failed, and a label that may not have.** Before looking at
+the result this project recorded: *if `0x2709` is genuinely A/C compressor
+temperature, it should rise with A/C and not with heat.* It does not
+discriminate — the A/C and heat bands overlap almost entirely. But GM's Ultium
+vehicles are marketed with heat-pump and waste-heat-recovery thermal systems,
+and if the compressor runs in heat mode too then warming in both modes is
+exactly what a compressor temperature should do. That alternative has **not**
+been sourced for this VIN, so it is recorded as unresolved. What the experiment
+does establish is narrower and still useful: the field carries no
+A/C-versus-heat information and cannot be used to infer which mode is running.
+
+**What none of this decodes.** No scaling is claimed for any field above. The
+experiment constrains *behaviour* — what responds to what — and says nothing
+about units. `0x4127` at 601 is not 601 of anything.
+
+**What would raise these to level 3.** One heat cycle is one heat cycle. A
+second, on a different day, reproducing 601 in `0x4127` and the return in
+`0x40E5`, is the missing evidence. A genuinely cold morning would separately
+settle whether `coolant_1_raw`'s 0.0591 °C/count is really 1/16.
+
 ### The cold soak: the best thermal experiment yet, and it decodes nothing
 
 An overnight cool-down gave the first comparison between two genuinely different
@@ -153,16 +229,16 @@ thermal **states** rather than a monotonic ramp — 72 samples at 95.0 °F again
 | `coolant_1_raw` | 860.0 | 931.7 | **+71.7** | 0.0591 |
 | `coolant_2_raw` | 766.1 | 713.7 | **−52.4** | −0.0808 |
 | `hv_temp_raw` | 70.0 | 51.7 | −18.3 | −0.2314 |
-| `batt_temp_a_raw` | 234.0 | 1048.0 | +814.0 | 0.0052 |
-| `batt_temp_b_raw` | 1000.0 | 0.0 | −1000.0 | −0.0042 |
+| `field_4127_raw` | 234.0 | 1048.0 | +814.0 | 0.0052 |
+| `field_4124_raw` | 1000.0 | 0.0 | −1000.0 | −0.0042 |
 | `compressor_temp_raw` | 103.1 | 110.3 | +7.2 | 0.5875 |
 
 **What this rules out.**
 
-`batt_temp_a_raw` and `batt_temp_b_raw` are **not continuous temperatures**.
-Across the entire corpus they take **five** and **four** distinct values — 234,
-238, 242, 429, 1048 and 0, 418, 910, 1000 — and in this comparison each simply
-switches between two of them. They are also anti-correlated: when one is low the
+`field_4127_raw` and `field_4124_raw` are **not continuous temperatures**.
+Across the entire corpus — 6,949 rows — they take **eight** and **four**
+distinct values: 234, 238, 242, 246, 261, 429, 601, 1048 and 0, 418, 910, 1000.
+In this comparison each simply switches between two of them. They are also anti-correlated: when one is low the
 other is high. A quantity that occupies four values in two days of driving and
 charging is a state or an index, whatever its source calls it.
 
@@ -487,10 +563,10 @@ priority](CAN_PRIORITY.md).
 | Battery group voltage 2 | `0x416D` | none applied | — | **raw** |
 | Battery group voltage 3 | `0x416E` | none applied | — | **raw** |
 | HV battery temperature | `0x434F` | none applied | — | **raw** |
-| Battery temperature A | `0x4127` | none applied | — | **raw** |
+| Battery temperature A | `0x4127` | none applied | — | **read** |
 | Battery temperature B | `0x4124` | none applied | — | **raw** |
-| Battery coolant temperature 1 | `0x40E5` | none applied | — | **raw** |
-| Battery coolant temperature 2 | `0x40E6` | none applied | — | **raw** |
+| Battery coolant temperature 1 | `0x40E5` | none applied | — | **read** |
+| Battery coolant temperature 2 | `0x40E6` | none applied | — | **read** |
 
 Every one is **raw**, and the reasons are specific rather than cautious:
 `0x416D` and `0x416E` returned identical values, `0x416C` read 2589 and then

@@ -20,6 +20,70 @@ discount.
 
 ### Added
 
+- **The HVAC A-B-A ran, and it is the first experiment here that separates
+  cause from elapsed time.** Every earlier thermal reading came from a single
+  transition, which cannot tell a field responding to the change from a field
+  that was going to move anyway. This one returns to the starting condition:
+  cold soak, max A/C, max heat, max A/C again, parked, owner operating the
+  controls and reporting each switch. It changes four gradings.
+
+  - `0x4127` — retired the name `batt_temp_a_raw` for `field_4127_raw`. It is
+    **not a temperature**: it holds one constant value per phase (234 across
+    179 consecutive cold-and-A/C samples, exactly 601 across all 44 heat
+    samples, then 234 again), steps within one poll of each switch the owner
+    threw, and returns to the value it left. Corpus-wide its value 1048 occurs
+    in 410 samples of which every one has negative pack current — it is reached
+    only while charging. Graded a heat-request state, level 1 to 2.
+  - `0x27BB` — proven an **accumulator**, and this is what justifies the
+    design. It rose during A/C and would have been published as an A/C
+    response; it then climbed straight through the reversal, 0 → 10-60 →
+    70-110 → 120-150, monotonically in steps of 10. It integrates. It must
+    never be read as a mode indicator. Level 1 to 2.
+  - `0x40E5` — the only continuous field that genuinely tracks mode, and it
+    does so reversibly: flat at 860 cold, 890→980 under A/C, 1125-1170 under
+    heat, back to 980-985 under A/C. Level 1 to 2.
+  - `0x40E6` — responds to HVAC on/off but its heat and A/C bands overlap, so
+    it carries no mode information. Level 1 to 2.
+  - `0x4124` — retired the name `batt_temp_b_raw` for `field_4124_raw`. Reads
+    exactly 1000 in all 271 samples across all four phases, leaving it only in
+    transients at the switches themselves. Deliberately **kept at level 1**:
+    the negative finding is solid, two transients are too thin for a positive
+    one.
+
+- **A prediction was recorded before the result and it failed.** *If `0x2709`
+  is genuinely A/C compressor temperature, it should rise with A/C and not with
+  heat.* It does not discriminate. But GM's Ultium vehicles are marketed with
+  heat-pump and waste-heat-recovery systems, and if the compressor runs in heat
+  mode too then warming in both modes is what a compressor temperature should
+  do. That alternative is **not sourced for this VIN** and is recorded as
+  unresolved rather than resolved either way. The narrow thing established is
+  that the field cannot say which mode is running.
+
+### Fixed
+
+- **A column rename silently corrupted every session already on disk.**
+  Renaming a hex column and updating only the recorder left 25 committed CSVs
+  carrying the old header, which was no longer in `analyze._TEXT_COLUMNS` and
+  so went to `_number()`. That neither raises nor returns `None` — it strips
+  trailing letters and calls `float()`, yielding a plausible wrong number that
+  nothing downstream can flag: `"00EA"` → `0.0` where the value is 234,
+  `"0259"` → `259.0` where it is 601, and `"03E8"` → `300000000.0` because
+  `3E8` is valid scientific notation. `_TEXT_COLUMNS` and
+  `_UNPROVEN_ON_CHARGE` now carry both eras of header.
+
+  This is the third time this shape has bitten the project, after
+  `cell_extra_raw`, so it is now checked against the **real corpus** rather
+  than a fixture: a new test scans every committed session for a column that
+  holds hex letters while being read as a number. Verified to fail when the
+  aliases are removed. The `0x2429` rename escaped this only because no session
+  had ever been written under its old name.
+
+- Corrected two figures published earlier in this run from truncated windows.
+  `0x40E6`'s cold soak is 696-808 across 99 samples, not 806-808 from the last
+  four minutes; its second A/C phase is 353-524 across 48 samples, not 484-524
+  from the first 23. `0x27BB`'s last phase reaches 150, not 140. The separation
+  each was cited for still holds; the numbers did not.
+
 - **The cold soak ran, and the thermal fields still do not decode — but the
   negatives are much sharper.** First comparison between two genuinely different
   thermal *states* rather than a monotonic ramp: 72 samples at 95.0 °F against
