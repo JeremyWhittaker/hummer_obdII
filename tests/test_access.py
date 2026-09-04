@@ -246,6 +246,68 @@ class TestTheDocumentMatchesTheCode(unittest.TestCase):
                          access.splice(access.splice(document)))
 
 
+class TestTheHubDocumentsLinksResolve(unittest.TestCase):
+    """This page's whole job is pointing at other pages.
+
+    A hub document with a broken link is worse than no hub document: it sends a
+    reader somewhere that does not exist and looks authoritative doing it. There
+    was no link check anywhere in this repository before this one.
+    """
+
+    LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+
+    @classmethod
+    def setUpClass(cls):
+        with open(_DOC, encoding="utf-8") as handle:
+            cls.text = handle.read()
+
+    @staticmethod
+    def anchor(heading):
+        """GitHub's slug: lowercase, punctuation dropped, spaces to hyphens."""
+        slug = heading.strip().lower()
+        slug = "".join(c for c in slug if c.isalnum() or c in " -_")
+        return slug.replace(" ", "-")
+
+    def headings(self, text):
+        return {self.anchor(line.lstrip("#").strip())
+                for line in text.splitlines() if line.startswith("#")}
+
+    def test_every_relative_link_points_at_a_file_that_exists(self):
+        targets = [t for t in self.LINK.findall(self.text)
+                   if not t.startswith(("http://", "https://", "#"))]
+        self.assertGreater(len(targets), 5, "the link pattern stopped matching")
+        for target in targets:
+            path = target.split("#", 1)[0]
+            with self.subTest(target=target):
+                self.assertTrue(
+                    os.path.exists(os.path.join(os.path.dirname(_DOC), path)),
+                    f"{path} does not exist")
+
+    def test_every_anchor_resolves_to_a_real_heading(self):
+        own = self.headings(self.text)
+        checked = 0
+        for target in self.LINK.findall(self.text):
+            if target.startswith(("http://", "https://")):
+                continue
+            path, _, anchor = target.partition("#")
+            if not anchor:
+                continue
+            if path:
+                full = os.path.join(os.path.dirname(_DOC), path)
+                if not os.path.exists(full):
+                    continue  # covered by the test above
+                with open(full, encoding="utf-8") as handle:
+                    available = self.headings(handle.read())
+            else:
+                available = own
+            checked += 1
+            with self.subTest(target=target):
+                self.assertIn(anchor, available,
+                              f"no heading in {path or 'this page'} yields "
+                              f"anchor '{anchor}'")
+        self.assertGreater(checked, 1, "no anchor links were actually checked")
+
+
 class TestItNeverTouchesTheVehicle(unittest.TestCase):
     """Checked against the module's imports, not against its prose.
 

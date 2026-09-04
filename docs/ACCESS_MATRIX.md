@@ -264,7 +264,86 @@ identifiers.
 
 ---
 
-## 6. Where the reasoning lives
+## 6. Verifying against the actual vehicle
+
+Everything above is checkable offline. Confirming that the *truck* behaves as
+recorded needs the truck, and the order below is not advisory — each step exists
+because skipping it has cost something.
+
+**Before anything.** Only one process may own `/dev/rfcomm0`. `hummer-drive`
+owns it whenever the vehicle is awake, so anything that transmits requires
+stopping the recorder first.
+
+```bash
+# 1. Is the node alive and is the vehicle awake?
+ssh <node> 'systemctl is-active hummer-drive; journalctl -u hummer-drive -n 3 --no-pager'
+
+# 2. DATA FIRST. Pull the sessions before stopping anything. A session lost to
+#    a probe is not recoverable; a probe deferred by ten minutes costs nothing.
+rsync -a <node>:~/hummer-obd/evidence/sessions/ evidence/sessions/
+
+# 3. Stop the recorder. This needs no password: scripts/enable_service_control.sh
+#    installs a visudo-validated drop-in for these exact command strings.
+ssh <node> 'sudo -n /usr/bin/systemctl stop hummer-drive'
+
+# 4. Record the baseline you will compare against.
+ssh <node> 'cd ~/hummer-obd && PYTHONPATH=src python3 -m hummer_obd.probe --commands 03 07 0A'
+
+# 5. Do the one thing you stopped the recorder for.
+#    Supervised enhanced reads:
+ssh <node> 'cd ~/hummer-obd && PYTHONPATH=src python3 -m hummer_obd.enhanced --profile <key> --confirm'
+#    Or a passive capture (transmits only adapter configuration):
+ssh <node> 'cd ~/hummer-obd && PYTHONPATH=src python3 -m hummer_obd.monitor --confirm --seconds 30'
+
+# 6. Same baseline again. It must be unchanged.
+ssh <node> 'cd ~/hummer-obd && PYTHONPATH=src python3 -m hummer_obd.probe --commands 03 07 0A'
+
+# 7. Restart, and confirm rows actually resume. "active (running)" is not
+#    evidence: the recorder once sat active for two hours writing blank rows.
+ssh <node> 'sudo -n /usr/bin/systemctl start hummer-drive'
+ssh <node> 'sleep 25; journalctl -u hummer-drive -n 3 --no-pager'
+```
+
+**Never while the vehicle is moving.** Step 3 ends a live drive session. Wait
+for the truck to be stationary; a drive is worth more than an hour of your time.
+
+**Abort immediately, mid-run, on any of these.** Pull the adapter first and ask
+questions afterwards:
+
+* `ATCS` shows a transmit error counter off zero;
+* the adapter reports a bus-off, bus error or wiring-fault condition;
+* the driver information centre shows any new message;
+* any vehicle behaviour changes — lighting, HVAC, drive readiness, doors;
+* a capture hits its byte bound before its time bound, which means the
+  assumptions behind the bound were wrong and the bound is what saved it.
+
+**What a negative looks like when it is working.** A passive capture that
+returns **zero bytes exits 0**. That is the documented result, not a failure to
+retry, and re-running it at a different length proves nothing. Likewise `NO
+DATA` from an identifier is not evidence about the identifier — see
+[section 4](#4-the-three-ways-a-request-fails).
+
+### Reading the evidence afterwards
+
+```bash
+# The transmission record, byte for byte, before anything parsed it.
+PYTHONPATH=src python3 scripts/review_raw_log.py logs/raw/<transcript>.jsonl
+
+# What a completed session shows.
+PYTHONPATH=src python3 -m hummer_obd.analyze --dir evidence/sessions
+PYTHONPATH=src python3 -m hummer_obd.analyze --dir evidence/sessions --trend
+
+# Every sensor and how long since each answered.
+PYTHONPATH=src python3 -m hummer_obd.live --dir evidence/sessions
+```
+
+`hummer-obd-live` and `hummer-obd-analyze` read files the recorder already
+wrote and open no serial device, so they are safe at any time — including while
+driving.
+
+---
+
+## 7. Where the reasoning lives
 
 This page is deliberately thin on argument. Each area's evidence and its
 history are elsewhere, and those documents are the ones to read before changing
