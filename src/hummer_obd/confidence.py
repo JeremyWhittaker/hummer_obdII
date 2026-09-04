@@ -393,11 +393,41 @@ CONFIDENCE: Final[dict[str, Evidence]] = {
         "plugged in at all, and it read 384 the morning after unplugging. Two "
         "loose clusters, no relation to a connected EVSE that this data "
         "supports. Stored raw, level 1, and the divisor is not claimed"),
-    "416C": Evidence(
-        1, ("40",), ("parked", "driving"),
-        "battery group voltage 1 candidate. Read 2589 then 2593 a minute apart, "
-        "so it moves; 0x416D and 0x416E returned identical values to each other, "
-        "which a genuine per-group voltage would be unlikely to do"),
+    "416C": Evidence(2, ("40",), ("parked", "driving", "charging"),
+                     "the source calls this battery group voltage 1. It is "
+                     "NOT a voltage of any group of this pack: across 2737 "
+                     "paired samples it correlates with measured pack voltage "
+                     "at +0.088, and the ratio between them spans 0.00 to "
+                     "6.93. A per-group voltage has to track the pack it is "
+                     "part of. Its two siblings undercut the label further -- "
+                     "0x416D and 0x416E take only SIX distinct values each "
+                     "corpus-wide and are effectively constant, which no live "
+                     "voltage is. "
+                     "What it does track is HVAC. " + ABA + "Across the "
+                     "phases it reads a single value, 999, through all 99 "
+                     "cold-soak samples; 2048-2544 across max A/C (60 "
+                     "distinct); 664-794 across max heat (18 distinct); and "
+                     "1789-2379 on the return to A/C. Cooling drives it UP and "
+                     "heating drives it DOWN, with the quiescent value between "
+                     "them -- the shape of a bidirectional actuator or valve "
+                     "command rather than a temperature. The return to the "
+                     "A/C band on the second A/C phase is what separates this "
+                     "from elapsed time. "
+                     "DO NOT read 999 as an HVAC-off signature. It held for "
+                     "every sample of that one cold soak, but corpus-wide it "
+                     "is only 119 of 2829 samples (4.2%), 878 is commoner at "
+                     "286, and no session takes it as its only value. That is "
+                     "the same shape as the 0x4127 = 1048 error published and "
+                     "withdrawn on 2026-09-04 -- a value that fits one context "
+                     "perfectly because the corpus for it was all one context. "
+                     "What is established is the mode RESPONSE, not a lookup "
+                     "from value to state. "
+                     "324 distinct values over 0-2644, so it has the "
+                     "granularity to carry a setpoint, but no setpoint test "
+                     "has been run: every HVAC phase so far was at maximum, "
+                     "where demand and setpoint are indistinguishable. No "
+                     "scaling is claimed. 2 and not 3: one A-B-A, one vehicle, "
+                     "and the units are unknown"),
     "416D": Evidence(1, ("40",), ("parked", "driving"),
                      "battery group voltage 2 candidate; identical to 0x416E "
                      "when read, stored raw"),

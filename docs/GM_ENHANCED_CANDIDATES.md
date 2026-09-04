@@ -249,7 +249,7 @@ confident-looking unit and nothing behind it.
 | `0x4124` | **1** | `40` | parked, driving, charging | HV battery temperature B candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
 | `0x4127` | **2** | `40` | parked, driving, charging | HV battery temperature A candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
 | `0x4149` | **1** | `40` | parked, driving | EVSE advertised/pilot current candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
-| `0x416C` | **1** | `40` | parked, driving | HV battery group voltage 1 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
+| `0x416C` | **2** | `40` | parked, driving, charging | HV battery group voltage 1 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
 | `0x416D` | **1** | `40` | parked, driving | HV battery group voltage 2 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
 | `0x416E` | **1** | `40` | parked, driving | HV battery group voltage 3 candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |
 | `0x434F` | **1** | `40` | parked, driving, charging | HV battery temperature candidate -- OBDb/Cadillac-LYRIQ PR #14, module 40, UNMERGED, not BT1 |

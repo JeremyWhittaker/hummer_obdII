@@ -160,7 +160,7 @@ Every cell below is produced by putting that command to that gate and recording 
 | `thermal_distance_raw` | battery manager (module CB) | `0x27B5` | 0x14 | **1** answers here |
 | `compressor_temp_raw` | battery manager (module CB) | `0x2709` | 0x14 | **1** answers here |
 | `evse_current_raw` | body (module 40) | `0x4149` | 0x18 | **1** answers here |
-| `group_v1_raw` | body (module 40) | `0x416C` | 0x18 | **1** answers here |
+| `group_v1_raw` | body (module 40) | `0x416C` | 0x18 | **2** decoded |
 | `group_v2_raw` | body (module 40) | `0x416D` | 0x18 | **1** answers here |
 | `group_v3_raw` | body (module 40) | `0x416E` | 0x18 | **1** answers here |
 | `hv_temp_raw` | body (module 40) | `0x434F` | 0x18 | **1** answers here |

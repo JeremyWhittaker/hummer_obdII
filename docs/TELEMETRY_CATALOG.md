@@ -756,7 +756,7 @@ priority](CAN_PRIORITY.md).
 | Signal | Identifier | Scaling | Unit | Level |
 |---|---|---|---|---|
 | EVSE advertised current | `0x4149` | none applied | — | **raw** |
-| Battery group voltage 1 | `0x416C` | none applied | — | **raw** |
+| Battery group voltage 1 | `0x416C` | none applied | — | **read** |
 | Battery group voltage 2 | `0x416D` | none applied | — | **raw** |
 | Battery group voltage 3 | `0x416E` | none applied | — | **raw** |
 | HV battery temperature | `0x434F` | none applied | — | **raw** |

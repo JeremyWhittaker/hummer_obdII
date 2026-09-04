@@ -20,6 +20,32 @@ discount.
 
 ### Added
 
+- **`0x416C` is an HVAC field, not a battery group voltage.** The source's
+  label is falsified: across 2,737 paired samples it correlates with measured
+  pack voltage at **+0.088**, and their ratio spans 0.00 to 6.93. A per-group
+  voltage has to track the pack it belongs to. Its siblings `0x416D` and
+  `0x416E` take only **six** distinct values each corpus-wide and are
+  effectively constant, which no live voltage is.
+
+  What it does track is HVAC mode, reversibly: 999 through all 99 cold-soak
+  samples, 2048–2544 across max A/C, 664–794 across max heat, and 1789–2379 on
+  the return to A/C. Cooling drives it up, heating drives it down, with the
+  quiescent value between them — the shape of a bidirectional actuator command
+  rather than a temperature. The return to the A/C band is what separates it
+  from elapsed time. Level 1 to 2; no scaling claimed.
+
+  **Recorded explicitly: 999 is not an HVAC-off signature.** It held for every
+  sample of that one cold soak, but corpus-wide it is 119 of 2,829 samples
+  (4.2 %), 878 is commoner at 286, and no session takes it as its only value.
+  That is the same shape as the `0x4127 = 1048` error published and withdrawn
+  earlier the same day — a value that fits one context perfectly because the
+  corpus for it was all one context. The mode *response* is established; a
+  lookup from value to state is not.
+
+  It has 324 distinct values over 0–2644, so it has the granularity to carry a
+  temperature setpoint. Whether it does is **untested**: every HVAC phase so far
+  was at maximum, where demand and setpoint are indistinguishable.
+
 - **`hummer-obd-live` now opens with a derived block** -- what the raw columns
   mean, not just whether they answered. Computed live from the session in
   progress: pack V/A/kW, cells in series, SoC with the implied pack capacity,
