@@ -32,6 +32,7 @@ hummer-obd-live = "hummer_obd.live:main"
 hummer-obd-discover = "hummer_obd.discover:main"
 hummer-obd-decode = "hummer_obd.decode_fields:main"
 hummer-obd-passive = "hummer_obd.monitor:main"
+hummer-obd-access = "hummer_obd.access:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

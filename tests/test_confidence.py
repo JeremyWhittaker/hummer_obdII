@@ -153,6 +153,36 @@ class TestTheLevelThreeClaimsAreRederived(unittest.TestCase):
                 self.assertLess(abs(mean_diff), 1.0,
                                 f"{corner} has drifted from 010D by {mean_diff} kph")
 
+    def test_no_claimed_temperature_span_exceeds_the_real_one(self):
+        """Asymmetric on purpose: under-claiming is safe, over-claiming is not.
+
+        The "5.4 degrees Fahrenheit" figure was written once and repeated in
+        four places, and by the time anyone looked the corpus spanned 23.4 --
+        the constraint had loosened four-fold with nothing noticing. The fix is
+        not to pin the number, which would fail every time a session is added.
+        It is to make the code unable to claim more evidence than exists.
+        """
+        temps = [r["temp_f"] for r in self.rows
+                 if isinstance(r.get("temp_f"), (int, float))]
+        self.assertGreater(len(temps), 100)
+        corpus_span = max(temps) - min(temps)
+
+        with_2af1 = [r["temp_f"] for r in self.rows
+                     if r.get("array_2af1") not in (None, "")
+                     and isinstance(r.get("temp_f"), (int, float))]
+        field_span = (max(with_2af1) - min(with_2af1)) if with_2af1 else 0.0
+
+        basis = CONFIDENCE["0046"].basis
+        claimed = [float(m) for m in re.findall(r"(\d+\.\d+) F", basis)]
+        self.assertTrue(claimed, "the basis quotes no span at all")
+        for value in claimed:
+            with self.subTest(claimed=value):
+                self.assertLessEqual(
+                    value, corpus_span + 0.05,
+                    f"confidence.py claims a {value} F span; the corpus has "
+                    f"{corpus_span:.1f} F. Never claim more evidence than exists.")
+        self.assertLessEqual(field_span, corpus_span + 0.05)
+
     def test_longitudinal_acceleration_still_matches_the_speed_derivative(self):
         # Weaker by construction than the wheel-speed check and asserted as
         # such: the two quantities are read seconds apart, and a derivative over

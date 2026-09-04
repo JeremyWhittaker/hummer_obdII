@@ -25,10 +25,13 @@ correlation run against module 40 gave +0.55 against pack voltage, which was
 almost entirely those rows; filtered, the real figure was different and the
 conclusion changed.
 
-**It reports the range of the thing being correlated against.** Every
-temperature correlation in the corpus rests on 5.4 degrees Fahrenheit of spread.
-A correlation quoted without its span invites a reader to believe a scaling has
-been established when what has been established is a direction.
+**It reports the range of the thing being correlated against.** This started as
+a note that every temperature correlation rested on 5.4 degrees Fahrenheit of
+spread. By 2026-09-04 the corpus spanned 23.4 -- and the thermal identifiers'
+own rows still covered only 9.0, because they were added part-way through, which
+is precisely the kind of thing a per-field span makes visible and a corpus-wide
+one hides. A correlation quoted without its span invites a reader to believe a
+scaling has been established when what has been established is a direction.
 
 **It reports constant fields rather than skipping them.** ``hv_temp_raw`` held
 at 70 across 264 samples; two of ``0x2AF5``'s four unknown bytes held through a

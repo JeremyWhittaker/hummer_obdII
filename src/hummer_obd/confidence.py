@@ -162,8 +162,11 @@ CONFIDENCE: Final[dict[str, Evidence]] = {
         2, _CB, ("parked", "driving", "charging"),
         "a temperature the vehicle holds. 0x2AF1's array lands within 1.5-2.0 C "
         "of it under one candidate scaling, which is one sample at one "
-        "temperature and therefore not a confirmation. The whole corpus spans "
-        "5.4 F, which is not enough spread to establish any scaling"),
+        "temperature and therefore not a confirmation. The corpus spans 23.4 F "
+        "as of 2026-09-04 -- it said 5.4 F when this was written, and the "
+        "figure had quadrupled without anything noticing -- but 0x2AF1's own "
+        "rows still cover only 9.0 F of that, and across those the strongest "
+        "correlation any byte window reaches against temp_f is +0.69"),
     "4A7A": Evidence(
         3, ("28",), ("parked", "driving"),
         "wheel speed, four corners. Cross-validated against legislated PID "

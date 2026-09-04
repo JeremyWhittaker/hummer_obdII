@@ -20,6 +20,60 @@ discount.
 
 ### Added
 
+- **`docs/ACCESS_MATRIX.md` and `hummer-obd-access`: one page that says what
+  this node can and cannot reach, and how to check every line of it.** Twenty
+  documents describe this project and not one answered the question a new reader
+  or a new agent actually arrives with. Each is organised by *how something was
+  discovered* -- a probe on a date, a research note, a sourcing sweep -- which is
+  the right shape for preserving an argument and the wrong shape for looking
+  something up. The answer to "can we read pack current" was spread across four
+  files, and two of them said no.
+
+  Most of the page is **generated from the code that enforces it**, following
+  the pattern `registry.py` and `confidence.py` already established:
+
+  * **What may be transmitted** is a matrix of 45 representative commands
+    against **all five gates** -- there are five, not four, and which gate a
+    caller was built with *is* the safety model. Every cell is produced by
+    putting that command to that gate and recording the answer. Nothing is
+    asserted. A test requires every one of the 22 forbidden services to have a
+    row, so the matrix cannot silently omit one.
+  * **What is collected** is all 53 columns with module, identifier, CAN
+    priority and confidence level, composed from `live.column_sources()` and
+    `confidence.CONFIDENCE` rather than restated.
+  * **What cannot be reached** is 27 entries, hand-written because it needs
+    judgement -- but written as *data*, with a reason drawn from five distinct
+    categories that are routinely conflated: **forbidden** / **unsourced** /
+    **hardware** / **measured** / **scope**. Each says concretely what would
+    change it.
+
+  The point of that last table being data is a test: no entry may name a column
+  the recorder actually writes. `docs/CAPABILITIES.md` claimed pack voltage was
+  unavailable while `pack_v` was in `drive.COLUMNS`, two hundred lines above its
+  own correction. A sentence cannot notice that; a table checked against the
+  recorder can.
+
+  Rather than ban an unreachable entry from citing an identifier the vehicle
+  *does* answer, the test requires it to fill in a `despite` field. "We record
+  `0x2AF1`'s twenty-four values and cannot say what they mean" is the honest and
+  useful sentence, and a rule that forbade it would push authors toward vaguer
+  prose rather than clearer.
+
+- **Three defects the new tests found on their first run.** A gate probe that
+  *is* a carriage-return-separated command batch -- a real injection the gate
+  must refuse -- split its own markdown table row in half when written raw, and
+  made the document fail its own idempotency check. Same class as the unescaped
+  pipe this project shipped once before; control characters are now rendered as
+  their source escapes. The "never touches the vehicle" check, copied from
+  `test_decode_fields.py`, false-positived on the word `SerialTransport`
+  appearing in a *docstring*; it now reads the import graph with `ast`, which is
+  the thing actually being asserted, and a companion test points it at
+  `collector.py` to prove it still fires. And asserting that every `validate_*`
+  callable appears as a matrix column immediately surfaced a sixth one,
+  `validate_all`, which is a batch wrapper rather than a policy -- excluded
+  explicitly and then given its own test, because a permissive `validate_all`
+  would be invisible in the matrix and reachable from the probe.
+
 - **The 12 V disagreement's own discriminator was run, and it came back against
   the standing explanation.** `PACK_ARCHITECTURE.md` proposed that `ATRV`,
   `0142` and `0x33E5` differ because they are one measurement at each of three
@@ -808,6 +862,31 @@ discount.
 
 
 ### Fixed
+
+- **"5.4 degrees Fahrenheit" was repeated in four places and had quadrupled.**
+  It was the corpus-wide temperature span when written, and it was the stated
+  reason no thermal field could be decoded. By 2026-09-04 the corpus spanned
+  **23.4 F** (91.4-114.8) -- the constraint had loosened more than four-fold and
+  nothing noticed, because a figure in prose has no way to notice.
+
+  The correction is narrower than "it was wrong", which is why it is worth
+  stating precisely: **5.4 F is still exactly right about `0x2709` and
+  `0x27BB`**, whose 749 rows do span only that. The module-40 thermal
+  identifiers cover **9.0 F** across their 1131 rows, and `0x2AF1` the same,
+  because all of them were added part-way through the corpus. Only the
+  *corpus-wide* claim was stale, and the per-field spans are the ones that
+  matter -- exactly what `decode_fields.py` reports per correlation and what a
+  corpus-wide figure hides.
+
+  Re-running the decode against the wider corpus: the best any byte window of
+  `batt_temp_a_raw` reaches against `temp_f` is **+0.69 over 1131 samples and
+  9.0 F**. A direction, not a scaling. Nothing was promoted. What these fields
+  need is a cold morning, not another source.
+
+  The guard added is deliberately asymmetric rather than pinning the number,
+  which would fail every time a session is committed: a test now asserts that
+  **no span claimed in code exceeds the span the corpus actually has.**
+  Under-claiming evidence is safe; over-claiming is the failure that matters.
 
 - **Six false documentation claims, found by an audit run against the same
   day's work.** Three were made hours earlier by the change that introduced
