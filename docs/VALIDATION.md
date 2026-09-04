@@ -1283,7 +1283,7 @@ unlock continuously:
 |---|---|---|
 | `ATSP7` | 29-bit, 500 kbit/s | **0 bytes** in 45.1 s (control) |
 | `ATSP6` | 11-bit, 500 kbit/s | **0 bytes** in 45.1 s |
-| `ATSP9` | 29-bit, 250 kbit/s | **did not run** — see below |
+| `ATSP9` | 29-bit, 250 kbit/s | **0 bytes** in 45.1 s — on a retest, see below |
 | `ATSP8` | 11-bit, 250 kbit/s | **0 bytes** in 45.1 s |
 
 `ATCS` read `T:00 R:00` after every window that ran.
@@ -1305,10 +1305,30 @@ next opening it, **not** the adapter refusing the protocol. The tool behaved
 correctly: it logged the empty partial, recorded the failure and exited rather
 than reporting a capture that never started.
 
-**It is recorded as untested, not as silent.** A run that did not happen is not
-evidence, and the whole point of keeping `NO DATA` separate from a formed
-refusal is that the same discipline applies to this project's own tooling.
-`ATSP9` remains the one framing never listened to.
+It was recorded as untested rather than silent, because a run that did not
+happen is not evidence — the same discipline that keeps `NO DATA` separate from
+a formed refusal, applied to this project's own tooling.
+
+**It was then re-run and it is silent too.** `05:14:07Z`, 45.1 s, owner still
+pressing unlock, `T:00 R:00` before and after: **0 bytes**. The retry was built
+into the run, so a second link glitch would have been caught rather than
+reported as a result.
+
+### So pins 6 and 14 are finished
+
+All four common CAN framings on the diagnostic pair have now been listened to,
+receive-only, with a person operating the vehicle from the fob a metre away:
+
+| Protocol | Framing | Bytes from the vehicle |
+|---|---|---|
+| `ATSP6` | 11-bit, 500 kbit/s | **0** |
+| `ATSP7` | 29-bit, 500 kbit/s | **0** |
+| `ATSP8` | 11-bit, 250 kbit/s | **0** |
+| `ATSP9` | 29-bit, 250 kbit/s | **0** |
+
+**Nothing unsolicited crosses the gateway to this connector, on any framing it
+speaks.** That is as complete as the question gets without moving to a different
+wire.
 
 ### What this does and does not narrow
 

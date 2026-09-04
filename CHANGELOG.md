@@ -31,13 +31,20 @@ discount.
   **0 bytes**. `T:00 R:00` after every one. **Three framings silent instead of
   one** — a wider negative, obtained in three minutes.
 
-  `ATSP9` (29-bit/250k) **did not run**, and is recorded as untested rather than
-  silent. It failed on `ATZ`, before any protocol was selected, with a Bluetooth
-  RFCOMM error between one capture closing the port and the next opening it. The
-  tool logged the empty partial, recorded the failure and exited rather than
-  reporting a capture that never started. **A run that did not happen is not
-  evidence** — the same rule that keeps `NO DATA` distinct from a formed
-  refusal, applied to this project's own tooling.
+  `ATSP9` (29-bit/250k) **did not run** on the first pass and was recorded as
+  untested rather than silent. It failed on `ATZ`, before any protocol was
+  selected, with a Bluetooth RFCOMM error between one capture closing the port
+  and the next opening it. The tool logged the empty partial, recorded the
+  failure and exited rather than reporting a capture that never started. **A run
+  that did not happen is not evidence** — the same rule that keeps `NO DATA`
+  distinct from a formed refusal, applied to this project's own tooling.
+
+  **It was re-run rather than assumed**, with the owner still pressing, and came
+  back **0 bytes** in 45.1 s with a retry built in so a second glitch could not
+  be mistaken for a result. **All four framings on pins 6 and 14 are now
+  measured silent** — 11- and 29-bit, at 250k and 500k. Nothing unsolicited
+  crosses the gateway to this connector on any framing it speaks. That closes
+  the question as far as this pair of wires can take it.
 
   What none of it touches: **single-wire CAN on J1962 pin 1**. GM historically
   carried locks, lights and remote fob on GMLAN SW-CAN at 33.3 kbit/s, a
