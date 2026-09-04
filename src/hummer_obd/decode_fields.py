@@ -46,29 +46,17 @@ import glob
 import json
 import os
 import sys
-from typing import Callable, Optional
+from typing import Optional
 
-from .analyze import array_values, correlate, field_windows, read_session
+from .analyze import (
+    array_values,
+    correlate,
+    field_windows,
+    read_session,
+    sane,
+)
 
-__all__ = ["SANITY_FILTERS", "collect", "rank", "format_findings", "main"]
-
-#: Rows that fail one of these are dropped before anything is correlated.
-#:
-#: A vehicle waking or going to sleep reports values that are not measurements
-#: of anything: a pack voltage of 1.0 V, zeros across fields that were answering
-#: a second earlier.  Correlating through those transitions produced a +0.55
-#: that was pure artefact, so the filter is not a nicety -- it is the difference
-#: between a finding and a mistake.  Each is stated as "what a plausible reading
-#: looks like", never as a range chosen to make a number come out.
-SANITY_FILTERS: dict[str, Callable[[float], bool]] = {
-    # The pack is nominally ~400 V; anything under 300 is a module answering
-    # mid-transition rather than a pack that has actually sagged that far.
-    "pack_v": lambda v: v >= 300.0,
-    # A plausible battery temperature in Fahrenheit.
-    "temp_f": lambda v: -40.0 <= v <= 200.0,
-    # State of charge is a percentage.
-    "soc_pct": lambda v: 0.0 < v <= 100.0,
-}
+__all__ = ["collect", "rank", "format_findings", "main"]
 
 #: Columns worth correlating *against*: things this vehicle reports directly and
 #: whose decoding is already cross-validated.
@@ -82,15 +70,6 @@ _TARGETS: tuple[str, ...] = (
 def _numeric(row: dict, key: str) -> Optional[float]:
     value = row.get(key)
     return value if isinstance(value, (int, float)) else None
-
-
-def sane(row: dict) -> bool:
-    """Whether a row looks like measurements rather than a transition."""
-    for key, ok in SANITY_FILTERS.items():
-        value = _numeric(row, key)
-        if value is not None and not ok(value):
-            return False
-    return True
 
 
 def collect(rows: list[dict], columns: list[str]) -> dict:

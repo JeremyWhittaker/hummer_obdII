@@ -44,6 +44,29 @@ discount.
   record every cycle as raw columns, and a test asserts that **nothing proven at
   `CB` is left uncaptured**, so this cannot recur silently.
 
+- **A charge session is reported as a charge, not as a strange drive.**
+  `analyze` detects charging from sustained negative pack current — a vehicle
+  can sit still without charging, and the sign of the current is what says which
+  way energy is moving — and reports energy added, SoC gained, duration, peak
+  current, cell-spread drift and charge power by **both** independent routes.
+  It also reports how far each unproven raw field moved, because that is the
+  whole reason to record a charge: a field seen in one state cannot be decoded
+  from that state.
+
+- **`--trend`: what changes between sessions, which is where degradation
+  lives.** Every other tool here reads a single session, and cell spread
+  widening over months — the earliest sign of a pack going bad — is invisible
+  inside any one of them. The output states plainly that rows are not
+  like-for-like, since spread widens with load and temperature and these
+  sessions were recorded at different states of charge.
+
+  It found something on its first run: one session measured **91.4 cells in
+  series** against every other session's 96.0. That was not degradation, it was
+  a wake edge — twenty-four transitional rows dragging the ratio down. The fix
+  moved the sanity filter from `decode_fields` into `analyze` (the import
+  direction only allows one of those) and applied it before comparing, after
+  which the session reads **96.0196**.
+
 - **`hummer-obd-decode`: the project can now re-derive its own findings — and
   the first thing it did was disprove one.** Every published correlation lived
   only as prose in a code comment, computed ad hoc in a shell; there was no

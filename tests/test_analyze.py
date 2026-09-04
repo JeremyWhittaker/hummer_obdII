@@ -221,6 +221,130 @@ class TestEnergyAndEfficiency(unittest.TestCase):
         self.assertNotIn("efficiency_mi_per_kwh", report["energy"])
 
 
+class TestChargeSessions(unittest.TestCase):
+    """A charge is a different event from a drive.
+
+    Reporting distance and miles-per-kWh for a stationary vehicle taking energy
+    in produces arithmetic that is fine and physics that is meaningless.
+    """
+
+    CHARGE = _rows([
+        (0, {"pack_a": -20.0, "energy_kwh": 100.0, "soc_pct": 50.0,
+             "hv_power_kw": -8.0, "cell_spread_mv": 3.0, "pack_v": 390.0}),
+        (1800, {"pack_a": -21.0, "energy_kwh": 104.0, "soc_pct": 52.0,
+                "hv_power_kw": -8.2, "cell_spread_mv": 3.2, "pack_v": 391.0}),
+        (3600, {"pack_a": -20.5, "energy_kwh": 108.0, "soc_pct": 54.0,
+                "hv_power_kw": -8.1, "cell_spread_mv": 3.4, "pack_v": 392.0}),
+    ])
+
+    def test_a_charge_is_detected_from_current_not_from_speed(self):
+        # A vehicle can sit still without charging; the sign of the current is
+        # what says which way energy is moving.
+        self.assertTrue(analyze.is_charging(self.CHARGE))
+        self.assertFalse(analyze.is_charging(
+            _rows([(0, {"pack_a": 50.0}), (10, {"pack_a": 100.0})])))
+
+    def test_noise_either_side_of_zero_is_not_a_charge(self):
+        parked = _rows([(0, {"pack_a": -0.2}), (10, {"pack_a": 0.3}),
+                        (20, {"pack_a": -0.5})])
+        self.assertFalse(analyze.is_charging(parked))
+
+    def test_it_reports_what_a_charge_actually_shows(self):
+        charge = analyze_session(self.CHARGE)["charge"]
+        self.assertAlmostEqual(charge["energy_added_kwh"], 8.0, places=2)
+        self.assertAlmostEqual(charge["soc_gained_pct"], 4.0, places=2)
+        self.assertAlmostEqual(charge["duration_h"], 1.0, places=3)
+        self.assertAlmostEqual(charge["mean_charge_kw_from_current"], 8.1, delta=0.2)
+
+    def test_both_independent_power_routes_are_reported(self):
+        # Two routes to one quantity is what caught a mislabelled identifier
+        # earlier in this project; a charge report keeps both.
+        rows = [dict(r) for r in self.CHARGE]
+        for r in rows:
+            r["power_kw"] = 8.0
+        charge = analyze_session(rows)["charge"]
+        self.assertIn("mean_charge_kw_from_current", charge)
+        self.assertIn("mean_charge_kw_from_energy_slope", charge)
+        self.assertIn("mean_charge_kw_from_energy_added", charge)
+
+    def test_a_drive_gets_no_charge_section(self):
+        drive = _rows([(0, {"pack_a": 50.0, "speed_kph": 60.0}),
+                       (10, {"pack_a": 80.0, "speed_kph": 70.0})])
+        self.assertNotIn("charge", analyze_session(drive))
+
+    def test_it_reports_how_far_the_unproven_fields_moved(self):
+        # The whole reason to record a charge: a field seen in one state cannot
+        # be decoded from that state.
+        rows = [dict(r) for r in self.CHARGE]
+        for r, hexval in zip(rows, ("46", "50", "5A")):
+            r["hv_temp_raw"] = hexval
+        report = analyze_session(rows)
+        moved = report["unproven_field_ranges"]["hv_temp_raw"]
+        self.assertEqual(moved["span"], 0x5A - 0x46)
+        self.assertIn("what will decode it", format_report(report))
+
+
+class TestSanityFilter(unittest.TestCase):
+    """Transitional rows are not measurements."""
+
+    def test_an_impossible_pack_voltage_is_rejected(self):
+        # Observed live as the vehicle woke.
+        self.assertFalse(analyze.sane({"pack_v": 1.0}))
+        self.assertTrue(analyze.sane({"pack_v": 382.0}))
+
+    def test_an_absent_column_is_not_implausible(self):
+        self.assertTrue(analyze.sane({"soc_pct": 80.0}))
+
+    def test_impossible_cell_and_temperature_readings_are_rejected(self):
+        self.assertFalse(analyze.sane({"cell_avg_v": 0.0}))
+        self.assertFalse(analyze.sane({"temp_f": 9999.0}))
+
+
+class TestTrendAcrossSessions(unittest.TestCase):
+    """The thing most worth watching cannot be seen inside one session."""
+
+    def _session(self, name, spread, soc, energy):
+        return (name, _rows([
+            (0, {"cell_spread_mv": spread, "soc_pct": soc,
+                 "energy_kwh": energy, "pack_v": 390.0, "cell_avg_v": 4.06,
+                 "temp_f": 100.0}),
+            (10, {"cell_spread_mv": spread, "soc_pct": soc,
+                  "energy_kwh": energy, "pack_v": 390.0, "cell_avg_v": 4.06,
+                  "temp_f": 100.0}),
+        ]))
+
+    def test_one_row_per_session(self):
+        rows = analyze.trend([self._session("a", 2.0, 80.0, 155.0),
+                              self._session("b", 5.0, 60.0, 116.0)])
+        self.assertEqual([r["session"] for r in rows], ["a", "b"])
+        self.assertEqual(rows[0]["cell_spread_mean_mv"], 2.0)
+        self.assertEqual(rows[1]["cell_spread_mean_mv"], 5.0)
+
+    def test_transitional_rows_are_dropped_before_comparing(self):
+        # One session read 91.4 cells in series against every other session's
+        # 96.0, purely because it spanned a wake edge.
+        name, rows = self._session("wake", 3.0, 80.0, 155.0)
+        rows = rows + [{"utc": "x", "elapsed_s": 20.0, "pack_v": 1.0,
+                        "cell_avg_v": 4.06, "cell_spread_mv": 3.0}]
+        summary = analyze.trend([(name, rows)])[0]
+        self.assertAlmostEqual(summary["series_cells"], 96.06, delta=0.2)
+
+    def test_the_output_says_the_rows_are_not_like_for_like(self):
+        # Cell spread widens with load and temperature, so two sessions at
+        # different conditions cannot be compared directly.
+        text = analyze.format_trend(
+            analyze.trend([self._session("a", 2.0, 80.0, 155.0)]))
+        self.assertIn("not like-for-like", text)
+        self.assertIn("direction", text)
+
+    def test_an_empty_session_is_skipped_not_crashed(self):
+        self.assertEqual(analyze.trend([("empty", [])]), [])
+
+    def test_the_cli_requires_a_directory_for_trend(self):
+        with self.assertRaises(SystemExit):
+            analyze.main(["--trend", "--quiet"])
+
+
 class TestDecoderCrossChecks(unittest.TestCase):
     """Ratios between decoded fields test the decoders, not the drive.
 

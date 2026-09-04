@@ -39,10 +39,15 @@ import json
 import statistics
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 __all__ = [
     "KM_PER_MILE",
+    "SANITY_FILTERS",
+    "sane",
+    "is_charging",
+    "trend",
+    "format_trend",
     "read_session",
     "analyze",
     "array_values",
@@ -206,6 +211,37 @@ def correlate(xs: list[float], ys: list[float]) -> Optional[float]:
         return statistics.correlation(xs, ys)
     except statistics.StatisticsError:
         return None
+
+
+#: Rows failing any of these are transitional, not measurements.
+#:
+#: A vehicle waking or going to sleep reports values that are not readings of
+#: anything: a pack voltage of 1.0 V, zeros across fields that were answering a
+#: second earlier.  Left in, they do real damage -- they turned a module-40
+#: correlation into a +0.55 that was pure artefact, and they drag a session's
+#: measured series-cell count from 96.0 down to 91.4.  Each filter states what a
+#: plausible reading looks like, never a range picked to make a number come out.
+SANITY_FILTERS: dict[str, Callable[[float], bool]] = {
+    # Nominally ~400 V; under 300 is a module answering mid-transition rather
+    # than a pack that has genuinely sagged that far.
+    "pack_v": lambda v: v >= 300.0,
+    "temp_f": lambda v: -40.0 <= v <= 200.0,
+    "soc_pct": lambda v: 0.0 < v <= 100.0,
+    "cell_avg_v": lambda v: 2.0 <= v <= 5.0,
+}
+
+
+def sane(row: dict) -> bool:
+    """Whether a row looks like measurements rather than a transition.
+
+    A column that is absent is not implausible -- only a present, impossible
+    value disqualifies a row.
+    """
+    for key, ok in SANITY_FILTERS.items():
+        value = row.get(key)
+        if isinstance(value, (int, float)) and not ok(value):
+            return False
+    return True
 
 
 def _series(rows: list[dict], key: str) -> list[float]:
@@ -611,6 +647,14 @@ def analyze(rows: list[dict], *, path: str = "", expected_period_s: Optional[flo
                 "magnitude; one of pack current or the energy slope is not "
                 "what it is labelled"
             )
+    # A charge is a different event from a drive, and reporting one as the
+    # other produces arithmetic that is fine and physics that is nonsense.
+    if is_charging(rows):
+        report["charge"] = _charge_report(rows)
+        moved = _unproven_ranges(rows)
+        if moved:
+            report["unproven_field_ranges"] = moved
+
     checks = _cross_checks(rows)
     if checks:
         report["cross_checks"] = checks
@@ -629,6 +673,172 @@ def analyze(rows: list[dict], *, path: str = "", expected_period_s: Optional[flo
 
     report["warnings"] = warnings
     return report
+
+
+#: Pack current below this, sustained, means the pack is being filled rather
+#: than emptied.  One ampere of noise either side of zero is not a charge.
+_CHARGING_AMPS: float = -1.0
+
+#: Thermal and charging fields whose scaling is unproven.  A charge is the one
+#: state that moves them, so their *range* across a charge is the measurement
+#: that will eventually decode them -- see docs/PACK_ARCHITECTURE.md.
+_UNPROVEN_ON_CHARGE: tuple[str, ...] = (
+    "evse_current_raw", "hv_temp_raw", "batt_temp_a_raw", "batt_temp_b_raw",
+    "coolant_1_raw", "coolant_2_raw", "array_2af1",
+    "thermal_energy_raw", "thermal_distance_raw", "compressor_temp_raw",
+)
+
+
+def is_charging(rows: list[dict]) -> bool:
+    """Whether this session is a charge rather than a drive.
+
+    Decided from pack current rather than from speed: a vehicle can sit still
+    without charging, and the sign of the current is what actually says which
+    direction energy is moving.
+    """
+    amps = _series(rows, "pack_a")
+    if not amps:
+        return False
+    return sum(1 for a in amps if a < _CHARGING_AMPS) > len(amps) / 2
+
+
+def _charge_report(rows: list[dict]) -> dict:
+    """What a charge session shows, which is not what a drive shows.
+
+    Reporting distance and miles-per-kWh for a stationary vehicle taking energy
+    in produces numbers that are arithmetically fine and physically meaningless.
+    """
+    e_start, e_end = _first_last(rows, "energy_kwh")
+    soc_start, soc_end = _first_last(rows, "soc_pct")
+    hv = _series(rows, "hv_power_kw")
+    amps = _series(rows, "pack_a")
+    spread = _series(rows, "cell_spread_mv")
+    elapsed = _series(rows, "elapsed_s")
+    hours = ((elapsed[-1] - elapsed[0]) / 3600.0) if len(elapsed) >= 2 else 0.0
+
+    # hv_power_kw is positive while discharging, so charging is its negative
+    # excursions; the slope column carries the opposite convention.
+    charge_kw = [-v for v in hv if v < 0]
+    report = {
+        "energy_start_kwh": e_start,
+        "energy_end_kwh": e_end,
+        "energy_added_kwh": _round(e_end - e_start, 3)
+        if (e_start is not None and e_end is not None) else None,
+        "soc_start_pct": soc_start,
+        "soc_end_pct": soc_end,
+        "soc_gained_pct": _round(soc_end - soc_start, 3)
+        if (soc_start is not None and soc_end is not None) else None,
+        "duration_h": _round(hours, 3),
+        "mean_charge_kw_from_current": _round(_mean(charge_kw), 2),
+        "peak_charge_kw_from_current": _round(max(charge_kw), 2) if charge_kw else None,
+        "peak_charge_amps": _round(-min(amps), 2) if amps else None,
+        "cell_spread_start_mv": spread[0] if spread else None,
+        "cell_spread_end_mv": spread[-1] if spread else None,
+    }
+    # The independent second route, normalised to positive-is-charging.
+    slope = [v for v in _series(rows, "power_kw") if v > 0]
+    if slope:
+        report["mean_charge_kw_from_energy_slope"] = _round(_mean(slope), 2)
+    if report.get("energy_added_kwh") and hours > 0:
+        report["mean_charge_kw_from_energy_added"] = _round(
+            report["energy_added_kwh"] / hours, 2)
+    return report
+
+
+def _unproven_ranges(rows: list[dict]) -> dict:
+    """How far each unproven raw field moved.
+
+    This is the point of recording a charge. A field seen in one state cannot
+    be decoded from that state; what it does across tens of degrees can be.
+    """
+    moved: dict = {}
+    for column in _UNPROVEN_ON_CHARGE:
+        values: list[int] = []
+        for row in rows:
+            raw = array_values(row.get(column))
+            if raw:
+                values.extend(raw)
+        if not values:
+            continue
+        moved[column] = {
+            "min": min(values), "max": max(values),
+            "span": max(values) - min(values),
+            "distinct": len(set(values)),
+        }
+    return moved
+
+
+def trend(sessions: list[tuple[str, list[dict]]]) -> list[dict]:
+    """One summary row per session, for comparing sessions against each other.
+
+    Every other tool here reads a single session, and the thing most worth
+    watching cannot be seen in one. Cell spread widening over months is the
+    earliest sign of a pack degrading; within any single drive it is noise.
+    """
+    out: list[dict] = []
+    for name, all_rows in sessions:
+        # Drop transitions before comparing sessions: one session's measured
+        # series-cell count read 91.4 against every other session's 96.0 purely
+        # because it spanned a wake edge.
+        rows = [r for r in all_rows if sane(r)]
+        if not rows:
+            continue
+        spread = _series(rows, "cell_spread_mv")
+        temps = _series(rows, "temp_f")
+        socs = _series(rows, "soc_pct")
+        capacity = _ratio(rows, "energy_kwh", "soc_pct", scale=0.01)
+        series = _ratio(rows, "pack_v", "cell_avg_v")
+        # Widest departure of any one module value from its peers, which is
+        # what a single bad module looks like before anything else shows it.
+        drift = 0
+        for row in rows:
+            values = array_values(row.get("array_2b43"))
+            if values and len(values) > 2:
+                block = values[2:]
+                middle = sorted(block)[len(block) // 2]
+                drift = max(drift, max(abs(v - middle) for v in block))
+        out.append({
+            "session": name,
+            "rows": len(rows),
+            "charging": is_charging(rows),
+            "cell_spread_mean_mv": _round(_mean(spread), 2),
+            "cell_spread_max_mv": max(spread) if spread else None,
+            "implied_pack_kwh": capacity["mean"] if capacity else None,
+            "series_cells": series["mean"] if series else None,
+            "soc_range_pct": _round(max(socs) - min(socs), 2) if socs else None,
+            "temp_f_mean": _round(_mean(temps), 1),
+            "max_module_drift": drift or None,
+        })
+    return out
+
+
+def format_trend(rows: list[dict]) -> str:
+    """The trend as a table, with the caveat that makes it readable honestly."""
+    out: list[str] = []
+    out.append("=" * 78)
+    out.append("ACROSS SESSIONS -- what changes between them, not within one")
+    out.append("=" * 78)
+    out.append("")
+    out.append(f"  {'session':<22} {'rows':>5} {'spread':>7} {'kWh':>8} "
+               f"{'cells':>6} {'temp':>6} {'drift':>6}")
+    for r in rows:
+        mark = " chg" if r["charging"] else ""
+        out.append(
+            f"  {r['session'][:22]:<22} {r['rows']:>5} "
+            f"{str(r['cell_spread_mean_mv'] or '-'):>7} "
+            f"{str(r['implied_pack_kwh'] or '-'):>8} "
+            f"{str(r['series_cells'] or '-'):>6} "
+            f"{str(r['temp_f_mean'] or '-'):>6} "
+            f"{str(r['max_module_drift'] or '-'):>6}{mark}"
+        )
+    out.append("")
+    out.append("Read this as a trend, not a comparison. Cell spread widens with")
+    out.append("load and with temperature, and these sessions were recorded at")
+    out.append("different states of charge and different temperatures, so two")
+    out.append("rows are not like-for-like. What matters is the direction over")
+    out.append("many sessions at similar conditions -- a spread that grows while")
+    out.append("temperature and load do not is the signal worth acting on.")
+    return "\n".join(out)
 
 
 def _line(label: str, value, unit: str = "") -> str:
@@ -691,6 +901,30 @@ def format_report(report: dict) -> str:
             if key in block:
                 out.append(_line(key.replace("_", " "), block[key]))
 
+    charge = report.get("charge")
+    if charge:
+        out.append("")
+        out.append("CHARGE SESSION  (pack current is negative: energy going in)")
+        for key in ("energy_start_kwh", "energy_end_kwh", "energy_added_kwh",
+                    "soc_start_pct", "soc_end_pct", "soc_gained_pct",
+                    "duration_h", "mean_charge_kw_from_current",
+                    "mean_charge_kw_from_energy_slope",
+                    "mean_charge_kw_from_energy_added",
+                    "peak_charge_kw_from_current", "peak_charge_amps",
+                    "cell_spread_start_mv", "cell_spread_end_mv"):
+            if key in charge:
+                out.append(_line(key.replace("_", " "), charge[key]))
+
+    moved = report.get("unproven_field_ranges")
+    if moved:
+        out.append("")
+        out.append("unproven fields, and how far this charge moved them")
+        out.append("  (a field seen in one state cannot be decoded from it;")
+        out.append("   what it does across a charge is what will decode it)")
+        for column, stats in sorted(moved.items(), key=lambda kv: -kv[1]["span"]):
+            out.append(f"  {column:<22} {stats['min']:>5} .. {stats['max']:<5} "
+                       f"span {stats['span']:<5} {stats['distinct']} distinct")
+
     checks = report.get("cross_checks")
     if checks:
         out.append("")
@@ -751,7 +985,35 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     parser.add_argument("--json", dest="json_path", help="also write the report as JSON here")
     parser.add_argument("--quiet", action="store_true", help="suppress the text report")
+    parser.add_argument(
+        "--trend", action="store_true",
+        help="summarise every session in --dir against the others instead of "
+             "reporting one in detail",
+    )
     args = parser.parse_args(argv)
+
+    if args.trend:
+        if not args.dir:
+            parser.error("--trend needs --dir")
+        sessions = []
+        for path in sorted(Path(args.dir).glob("drive-*.csv")):
+            try:
+                rows, _warnings, _header = read_session(path)
+            except OSError as exc:
+                print(f"WARNING: skipping {path}: {exc}", file=sys.stderr)
+                continue
+            sessions.append((path.name, rows))
+        if not sessions:
+            print(f"no drive-*.csv in {args.dir}", file=sys.stderr)
+            return 2
+        summary = trend(sessions)
+        if args.json_path:
+            Path(args.json_path).write_text(
+                json.dumps(summary, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8")
+        if not args.quiet:
+            print(format_trend(summary))
+        return 0
 
     target: Optional[Path] = None
     if args.session:

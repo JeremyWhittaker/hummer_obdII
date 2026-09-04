@@ -146,7 +146,7 @@ The right-hand column is the one that matters operationally.
 | Command | What it does | Touches the vehicle? |
 |---|---|---|
 | `hummer-obd-capabilities` | Sanitized report of a node's live state | **no** |
-| `hummer-obd-analyze` | Reads a recorded session back | **no** |
+| `hummer-obd-analyze` | Reads a session back; `--trend` compares them all | **no** |
 | `hummer-obd-live` | Every sensor and how long since it answered | **no** |
 | `hummer-obd-decode` | Correlates undecoded raw fields against measured quantities | **no** |
 | `hummer-obd-export` | Local export of stored telemetry | **no** |
