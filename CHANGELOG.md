@@ -947,6 +947,17 @@ discount.
 
 ### Fixed
 
+- **`ROADMAP.md` claimed two documents were written that did not exist**, and
+  linked to both. Written and shipped within the same hour as the roadmap
+  itself, in a table whose entire purpose is saying honestly what is and is not
+  done — which is the failure mode the table was built to prevent.
+
+  The link checker added earlier the same day did not catch it, because it
+  covered `docs/` and `README.md` and the roadmap is neither. **A link checker
+  that covers `docs/` but not the roadmap pointing at `docs/` is checking the
+  wrong half**; it now covers `ROADMAP.md` too. Both rows corrected to
+  "not written yet", with what each would be for stated in place of the link.
+
 - **Five false claims found by a fourteen-agent adversarial verification pass**,
   each independently re-confirmed before being fixed. The pass inventoried every
   dimension of the project's access surface and then attacked its own inventory;

@@ -359,9 +359,17 @@ class TestEveryDocumentsLinksResolve(unittest.TestCase):
     LINK = re.compile(r'\[[^\]]+\]\(([^)\s]+)')
 
     def markdown_files(self):
+        """Every doc, plus the two top-level files that link into docs/.
+
+        ROADMAP.md was added after this test existed and immediately shipped two
+        links to files that had not been written yet -- claimed as done in the
+        same table. A link checker that covers docs/ but not the roadmap that
+        points at docs/ is checking the wrong half.
+        """
         found = [os.path.join(self.DOCS, n) for n in sorted(os.listdir(self.DOCS))
                  if n.endswith(".md")]
         found.append(os.path.join(_ROOT, "README.md"))
+        found.append(os.path.join(_ROOT, "ROADMAP.md"))
         return found
 
     def test_every_relative_link_in_every_document_resolves(self):
