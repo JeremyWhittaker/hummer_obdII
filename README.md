@@ -20,6 +20,17 @@ endorsed by General Motors, GMC, OBD Solutions, or Waveshare.
 > identifiers are not guessed. Read [the safety model](docs/SAFETY.md) before
 > connecting it to any vehicle.
 
+> [!TIP]
+> **Looking for what this can and cannot read? Start with
+> [the access matrix](docs/ACCESS_MATRIX.md).** It is the one page organised by
+> what is true now rather than by how it was found: every signal with its
+> module, identifier, CAN priority and evidence level; every command class
+> against all five safety gates; and 27 things that are out of reach, each with
+> the *kind* of "no" it is and what would change it. Most of it is generated
+> from the code that enforces it, and every claim carries a command that checks
+> it — `PYTHONPATH=src python3 -m hummer_obd.access --check` fails if the page
+> has drifted.
+
 ![Simulated 250x122 e-paper status screen](docs/assets/status-display.png)
 
 ## What this project demonstrates

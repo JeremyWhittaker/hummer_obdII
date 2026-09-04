@@ -4,6 +4,13 @@ This is the durable starting point for the next human or coding agent. Read
 [Safety](SAFETY.md) first, then check this file against the live node before
 making a change.
 
+**For "what can this thing actually read?", go to
+[the access matrix](ACCESS_MATRIX.md) rather than to any prose in this file.**
+It is generated from the code, it covers what is *not* reachable as carefully as
+what is, and every row carries a command that verifies it. This file describes
+how to operate the node; that one describes what the node can see, and the two
+have drifted from each other before.
+
 ## Mission
 
 Maintain a small, read-only Hummer EV telemetry node without expanding vehicle
