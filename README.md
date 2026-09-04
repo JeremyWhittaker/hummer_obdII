@@ -140,7 +140,7 @@ traffic to the vehicle.
 
 ### Every command
 
-Twelve are installed; the list is `[project.scripts]` in `pyproject.toml`.
+Fourteen are installed; the list is `[project.scripts]` in `pyproject.toml`.
 The right-hand column is the one that matters operationally.
 
 | Command | What it does | Touches the vehicle? |
@@ -156,6 +156,7 @@ The right-hand column is the one that matters operationally.
 | `hummer-obd-discover` | Per-module support census, J1979 bitmaps only | yes — no vendor identifier |
 | `hummer-obd-enhanced` | Supervised enhanced reads, one exact profile | yes — enumerated identifiers |
 | `hummer-obd-voltage` | 12 V watch that provably transmits nothing | yes — `ATRV` only |
+| `hummer-obd-passive` | Listens at the connector; the adapter does not even acknowledge | yes — adapter setup only, no request |
 | `hummer-obd-display` | Renders the e-paper status page | no |
 | `hummer-obd-recover` | Re-binds an already bonded adapter | no |
 

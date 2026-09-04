@@ -94,7 +94,18 @@ GATE_REFUSE_SAMPLES = (
     "1101",      # ECUReset
     "3E00",      # TesterPresent
     "010D;04",   # a read request with a clear-DTC smuggled behind it
-    "ATMA",      # monitor-all: passive, but not on the allowlist
+    # The monitor commands.  These are *passive* -- they receive rather than
+    # request -- and they are still refused here, because this is the gate the
+    # unattended collector runs behind.  ``hummer-obd-passive`` reaches them
+    # through two separate gates of its own (safety.py), so if a future edit
+    # ever widens the collector's allowlist to include one, a published
+    # capability report flips it from refused to accepted in plain sight.
+    "ATMA",      # monitor all
+    "STM",       # STN monitor
+    "STMA",      # STN monitor all
+    "STCMM0",    # CAN monitoring mode: receive only, no acknowledgements
+    "STCMM1",    # CAN monitoring mode: normal node (acknowledges -- transmits)
+    "STCMM2",    # CAN monitoring mode: receive all, no acknowledgements
 )
 
 

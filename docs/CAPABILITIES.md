@@ -337,7 +337,7 @@ Each of these is a deliberate boundary, not an oversight.
 | **DTC clearing (Mode 04)** | Permanently forbidden. Not a configuration option |
 | **Actuator/control tests (Mode 08)** | Permanently forbidden |
 | **UDS write/control/security/reset/routine** | Permanently forbidden |
-| **Passive CAN monitoring** (`ATMA` / `STM`) | Receive-only and genuinely interesting, but not on the allowlist. Would need the full five-part change-control process in [SAFETY.md](SAFETY.md) |
+| **Passive CAN monitoring during unattended collection** | Every monitor command — `ATMA`, `STM`, `STMA`, `STCMM0/1/2` — is still refused by `validate_command`, the gate the collector uses, and by the supervised gate. All six are put to the *live* gate in `GATE_REFUSE_SAMPLES`, so a weakened allowlist would show up in this report as an accepted command. ~~Not on the allowlist at all~~ — since 2026-09-03 there is a **supervised** path, `hummer-obd-passive`, behind two separate gates of its own; the collector still cannot reach it, and `hasattr(SerialTransport, "capture")` is `False` |
 | **Continuous collector autostart** | Gated on the power/sleep result, not on software. See section 6 |
 | **Raw transcript upload** | Rejected at config load. Raw logs can contain an unmasked VIN and never leave the Pi |
 | **Any upload at all, today** | `upload.enabled = false` and the endpoint is empty. The uploader refuses to start |

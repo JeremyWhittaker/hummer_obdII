@@ -287,6 +287,42 @@ sudo systemctl start hummer-drive
 
 Pull the sessions to a workstation **before** stopping it. Data first.
 
+### Listening without asking (`hummer-obd-passive`)
+
+Every other tool here asks a question. This one asks nothing: it puts the
+adapter into receive-only CAN monitoring — where it does not even assert the
+acknowledgement bit that a normal CAN node puts on every frame it hears — and
+records whatever arrives. It answers a different question from the rest of the
+project: not *what will a module tell me if I ask*, but *is anything being said
+at all*.
+
+```bash
+hummer-obd-passive                      # dry run: prints the exact command list
+hummer-obd-passive --confirm --seconds 30 --label "parked, awake"
+```
+
+The dry run transmits nothing and does not open the serial device. It needs the
+recorder stopped, like anything else that owns `/dev/rfcomm0`, and the sessions
+pulled first.
+
+**A capture of zero bytes exits 0 and is the expected result.** It is not a
+failure to retry, and retrying it at a different length proves nothing. It says
+the gateway forwards little or nothing unsolicited to this connector — which is
+what [PASSIVE_CAN_VALIDATION.md](PASSIVE_CAN_VALIDATION.md) predicted, and which
+is worth more as a measured fact about this truck than as an inference from
+other people's vehicles.
+
+**If bytes do arrive, do not read the count as bus load.** The link is ASCII
+over Bluetooth at 115200 baud; it caps at a few hundred frames per second
+against a bus carrying thousands. The capture is lossy by construction and the
+loss is not recorded anywhere.
+
+Stop the capture and pull the adapter if `ATCS` — recorded automatically either
+side of every capture — shows a transmit error counter off zero, if the driver
+information centre shows any new message, or if any vehicle behaviour changes.
+The full stop list is in
+[PASSIVE_CAN_VALIDATION.md](PASSIVE_CAN_VALIDATION.md#rollback-and-stop-conditions).
+
 ### When it looks stuck
 
 | Symptom | Cause | What to do |

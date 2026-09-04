@@ -489,8 +489,18 @@ send" until it has been through the same review.
 Deliberately **not** added, despite appearing in research output:
 * **`OBDb/GMC` priority-14 identifiers.** There are 198 of them, but every one
   targets module `11`, which is not among the eight modules this vehicle names.
-* **`0x2885` pack voltage** and **`0x8334`**, reported against Bolt platforms.
-  Sources disagree on scaling and neither is BT1.
+* **`0x8334`**, reported against Bolt platforms. Sources disagree on scaling
+  and it is not BT1. Still excluded.
+
+> **`0x2885` was listed here too, and that was wrong.** It was added, it was
+> sent, and on 2026-09-03 it answered from modules `17`, `1D` and `1E` with a
+> pack voltage that cross-validates against the pack energy and state-of-charge
+> route to better than a percent — the reading the commit history calls "the
+> project's largest gap, closed". This line told a reader to distrust the
+> project's headline result for as long as it stood. The lesson is not about
+> `0x2885`: an exclusion list is a claim like any other, and nothing was
+> re-reading it when the claim stopped being true. Its row is in the generated
+> table above.
 
 **A lesson from `0x27C7`.** An earlier version of this project used `0x27C7` in
 its tests as the example of a fictional identifier "a sweep would try next",

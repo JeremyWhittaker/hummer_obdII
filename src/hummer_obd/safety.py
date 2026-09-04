@@ -33,6 +33,10 @@ __all__ = [
     "ALLOWED_OBD_MODES",
     "FORBIDDEN_SERVICES",
     "ENHANCED_READ_DIDS",
+    "MONITOR_CAN_MODE",
+    "MONITOR_STREAM_COMMAND",
+    "validate_monitor_setup_command",
+    "validate_monitor_stream_command",
     "normalize",
     "validate_command",
     "validate_enhanced_command",
@@ -465,6 +469,88 @@ assert "22" not in ALLOWED_OBD_MODES, (
     "service 22 must never be in the unattended allowlist; "
     "enhanced reads go through validate_enhanced_command()"
 )
+
+
+#: Receive-only CAN monitoring: the adapter listens and does not acknowledge.
+#:
+#: The vendor's *OBDLink Family Reference and Programming Manual* documents
+#: ``STCMM`` modes as 0 = receive only with no CAN ACKs, 1 = normal node *with*
+#: ACKs, 2 = receive all frames including errors, no ACKs.  On CAN a listening
+#: node normally asserts a dominant bit in every frame's ACK slot; that is a
+#: transmission, short and unaddressed and invisible in any frame log, and it
+#: still means the adapter is driving the bus.  Mode 0 is the difference between
+#: "we only read" and "we do not transmit", which is the stronger promise this
+#: project makes elsewhere and must keep here.
+#:
+#: An exact string, never a pattern: ``^STCMM.$`` would admit modes 1 and 2.
+MONITOR_CAN_MODE: Final[str] = "STCMM0"
+
+#: The one monitor command.  The same manual marks ``ATMA``, ``ATMR`` and
+#: ``ATMT`` deprecated in favour of ``STM``/``STMA``, so ``ATMA`` staying
+#: refused is a deliberate choice rather than an oversight to tidy up.
+#:
+#: Exact, never a pattern: ``^STM.*$`` would admit anything beginning "STM".
+MONITOR_STREAM_COMMAND: Final[str] = "STMA"
+
+
+def validate_monitor_setup_command(command: str) -> str:
+    """The production gate, plus ``STCMM0``, and nothing else.
+
+    Deliberately **not** implemented by widening ``_ALLOWED_AT_EXACT``.  That
+    set feeds :func:`validate_command`, which is the unattended collector's gate
+    and the default validator every :class:`SerialTransport` gets.  Putting a
+    monitor command there would make it reachable from the collector, which is
+    precisely the thing that must not be possible.  A separate function is the
+    same shape the enhanced path already uses, and for the same reason.
+
+    Note it accepts the *mode* command but not the *stream* command.  A capture
+    tool built on this validator therefore cannot start monitoring through
+    ``send()`` even by mistake -- and ``send()`` would be badly wrong for it,
+    because a monitor stream never emits the ``>`` prompt that function waits
+    for, so it would block for its full timeout and return truncated bytes
+    flagged as a timeout.  That failure is unreachable rather than merely
+    avoided.
+    """
+    if command is None:
+        raise UnsafeCommandError("refused None: no command")
+    cmd = normalize(command)
+    if cmd == MONITOR_CAN_MODE:
+        return cmd
+    return validate_command(command)
+
+
+def validate_monitor_stream_command(command: str) -> str:
+    """Accept exactly :data:`MONITOR_STREAM_COMMAND`, and nothing else.
+
+    Not even ``STCMM0``: the two gates do not overlap, so neither command can
+    be used through the other's path.
+    """
+    if command is None:
+        raise UnsafeCommandError("refused None: no command")
+    cmd = normalize(command)
+    if cmd != MONITOR_STREAM_COMMAND:
+        raise _reject(
+            command,
+            f"the monitor gate accepts only {MONITOR_STREAM_COMMAND}; "
+            f"adapter configuration goes through "
+            f"validate_monitor_setup_command()",
+        )
+    return cmd
+
+
+# The monitor commands must never leak into the production allowlist.  Asserted
+# at import so a well-meaning edit fails here rather than on a vehicle.
+assert MONITOR_CAN_MODE not in _ALLOWED_AT_EXACT, (
+    "STCMM0 must not be in the production allowlist: that set is the "
+    "collector's gate"
+)
+assert MONITOR_STREAM_COMMAND not in _ALLOWED_AT_EXACT, (
+    "the monitor command must not be in the production allowlist"
+)
+assert not any(
+    pattern.match(MONITOR_STREAM_COMMAND) or pattern.match(MONITOR_CAN_MODE)
+    for pattern in _ALLOWED_AT_PATTERNS
+), "no production pattern may admit a monitor command"
 
 
 def validate_enhanced_command(command: str) -> str:

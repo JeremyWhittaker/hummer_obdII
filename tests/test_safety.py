@@ -135,5 +135,95 @@ class TestFreezeFrameAndMonitorServices(unittest.TestCase):
 
 
 
+class TestTheMonitorGatesAreSeparateGates(unittest.TestCase):
+    """Passive capture gets its own two gates, and they stay narrow.
+
+    The obvious implementation -- add the monitor commands to
+    ``_ALLOWED_AT_EXACT`` -- is wrong, and not marginally. That set feeds
+    :func:`validate_command`, which is the *unattended collector's* gate and the
+    default ``SerialTransport`` validator. Widening it would make monitoring
+    reachable from a service that runs for hours with nobody watching, to buy
+    nothing that two small functions do not.
+
+    Splitting them also buys a structural guarantee. ``MonitorTransport`` is
+    built with the *setup* validator, so ``send(STMA)`` raises rather than
+    blocking to the full timeout and returning truncated bytes flagged as a
+    timeout -- the exact failure ``docs/PASSIVE_CAN_VALIDATION.md`` warns about,
+    turned from a mistake to avoid into one the object cannot make.
+    """
+
+    MONITOR_COMMANDS = ("STCMM0", "STCMM1", "STCMM2", "STM", "STMA", "ATMA")
+
+    def test_the_production_gate_refuses_every_monitor_command(self):
+        for command in self.MONITOR_COMMANDS:
+            with self.subTest(command=command):
+                with self.assertRaises(UnsafeCommandError):
+                    validate_command(command)
+                self.assertFalse(is_safe(command))
+
+    def test_the_supervised_gate_refuses_them_too(self):
+        # Supervised means a human is watching an enhanced *read*, not that
+        # anything goes.
+        for command in self.MONITOR_COMMANDS:
+            with self.subTest(command=command):
+                with self.assertRaises(UnsafeCommandError):
+                    safety.validate_supervised_command(command)
+
+    def test_the_setup_gate_adds_exactly_one_command(self):
+        added = {c for c in self.MONITOR_COMMANDS
+                 if safety.is_safe(c) is False
+                 and _accepted(safety.validate_monitor_setup_command, c)}
+        self.assertEqual(added, {safety.MONITOR_CAN_MODE})
+
+    def test_the_setup_gate_is_otherwise_the_production_gate(self):
+        for command in ("ATZ", "ATRV", "ATSP7", "ATCS", "010D"):
+            with self.subTest(command=command):
+                self.assertEqual(safety.validate_monitor_setup_command(command),
+                                 validate_command(command))
+        for command in ("04", "2E1234", "2701", "22F190"):
+            with self.subTest(command=command):
+                with self.assertRaises(UnsafeCommandError):
+                    safety.validate_monitor_setup_command(command)
+
+    def test_the_stream_gate_accepts_nothing_but_the_stream_command(self):
+        self.assertEqual(
+            safety.validate_monitor_stream_command(safety.MONITOR_STREAM_COMMAND),
+            safety.MONITOR_STREAM_COMMAND)
+        for command in ("STCMM0", "STM", "ATMA", "ATZ", "ATRV", "010D", "04"):
+            with self.subTest(command=command):
+                with self.assertRaises(UnsafeCommandError):
+                    safety.validate_monitor_stream_command(command)
+
+    def test_the_two_gates_do_not_overlap(self):
+        # Neither gate can do the other's job, so a caller cannot start a
+        # stream through the configuration path or vice versa.
+        with self.assertRaises(UnsafeCommandError):
+            safety.validate_monitor_setup_command(safety.MONITOR_STREAM_COMMAND)
+        with self.assertRaises(UnsafeCommandError):
+            safety.validate_monitor_stream_command(safety.MONITOR_CAN_MODE)
+
+    def test_none_is_refused_rather_than_crashing(self):
+        for gate in (safety.validate_monitor_setup_command,
+                     safety.validate_monitor_stream_command):
+            with self.subTest(gate=gate.__name__):
+                with self.assertRaises(UnsafeCommandError):
+                    gate(None)
+
+    def test_the_receive_only_mode_is_the_one_that_does_not_acknowledge(self):
+        # A CAN node normally asserts a dominant bit in the acknowledgement slot
+        # of every frame it hears.  That is a transmission, and STCMM1 does it.
+        self.assertEqual(safety.MONITOR_CAN_MODE, "STCMM0")
+        with self.assertRaises(UnsafeCommandError):
+            safety.validate_monitor_setup_command("STCMM1")
+
+
+def _accepted(gate, command) -> bool:
+    try:
+        gate(command)
+    except UnsafeCommandError:
+        return False
+    return True
+
+
 if __name__ == "__main__":
     unittest.main()

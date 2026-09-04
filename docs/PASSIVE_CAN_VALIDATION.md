@@ -1,14 +1,87 @@
 # Passive CAN monitoring: a negative research result
 
-Status: **research note. No code, no allowlist change, nothing approved.**
-`ATMA` is rejected by [`src/hummer_obd/safety.py`](../src/hummer_obd/safety.py)
-today, [`src/hummer_obd/capabilities.py`](../src/hummer_obd/capabilities.py)
-puts it to the live gate in `GATE_REFUSE_SAMPLES` so that a weakened allowlist
-would show up in the capability report as an accepted command, and this
-document changes neither. It exists for the opposite reason to an approval: to
-record what was searched for, what was not found, and what the single bounded
-experiment worth running would look like — so the next person with this idea
-spends an evening on it instead of a month.
+Status: **the bounded experiment this note designed was approved and built on
+2026-09-03.** It is `hummer-obd-passive`
+([`src/hummer_obd/monitor.py`](../src/hummer_obd/monitor.py)). What follows
+below the next section is the research note exactly as written before that
+decision, because the reasoning is what justified the design and rewriting it
+into hindsight would destroy the record.
+
+`ATMA` is still rejected, and so is every other monitor command, by the gate the
+unattended collector runs behind.
+[`src/hummer_obd/capabilities.py`](../src/hummer_obd/capabilities.py) now puts
+six of them — `ATMA`, `STM`, `STMA`, `STCMM0`, `STCMM1`, `STCMM2` — to that live
+gate in `GATE_REFUSE_SAMPLES`, so a future widening flips a published capability
+report entry from refused to accepted in plain sight.
+
+## What was approved, and where it is narrower than this note asked for
+
+This note set three prerequisites (["What would have to change to run
+it"](#what-would-have-to-change-to-run-it)). They were treated as binding. Two
+were met as written; the second was met by doing something **stricter** than it
+asked for, and the difference is worth stating.
+
+**The note asked for "an allowlist entry for the specific monitor command, as an
+exact string". There is no allowlist entry.** `_ALLOWED_AT_EXACT` is unchanged.
+That set feeds `validate_command`, which is both the unattended collector's gate
+and the default `SerialTransport` validator — so an exact entry there, however
+narrow, would have made monitoring reachable from a service that runs for hours
+with nobody watching. Instead there are two more gates beside it, following the
+`validate_enhanced_command` precedent:
+
+| Gate | Accepts | Refuses |
+|---|---|---|
+| `validate_command` | unchanged | every monitor command |
+| `validate_supervised_command` | unchanged | every monitor command |
+| `validate_monitor_setup_command` | `validate_command` **plus `STCMM0`** | the stream command |
+| `validate_monitor_stream_command` | `STMA`, and nothing else | `STCMM0` included |
+
+The payoff is structural rather than disciplinary. `MonitorTransport` is
+constructed with the *setup* validator, so `send("STMA")` raises
+`UnsafeCommandError`. The failure this note warned about at length — `send()`
+blocking for its full timeout on a stream that never emits a prompt, then
+returning a truncated buffer flagged as a timeout — is not a mistake to be
+avoided by whoever writes the next caller. It is one the object refuses to make.
+
+**The capture path is a subclass in a new module, not a method on
+`SerialTransport`.** The note said the path "must not be reachable from the
+collector". `collector.py` constructs a `SerialTransport`; a `capture()` method
+on *that* class would mean every object the collector holds could start a
+stream, and unreachability would drop from a property to a convention. As
+`MonitorTransport(SerialTransport)` it is mechanically assertable —
+`hasattr(SerialTransport, "capture")` is `False`, and a subprocess that imports
+`hummer_obd.collector` ends without `hummer_obd.monitor` in `sys.modules`. Both
+are tests. `transport.py`, the most safety-critical file with the most existing
+tests, has a zero-line diff.
+
+**`ATSP0` is refused at import time.** Auto protocol detection discovers a
+protocol *by transmitting* — it sends until something answers. A tool whose
+entire claim is that nothing reaches the vehicle cannot auto-detect its way onto
+the bus, so the protocol is pinned (`ATSP7`) and `assert_no_vehicle_traffic`
+rejects the auto-detect commands before the module finishes loading.
+
+**What the tests assert that no existing test in this repository could.** Every
+other transport test here checks a fake's list of *command names*. That is right
+for request/response and, by construction, cannot catch a write that bypassed
+`log_tx`: the fake would record the bytes, the raw log would not, and both lists
+would still look plausible. The load-bearing assertion for a tool claiming
+silence has to be the bytes themselves — the concatenation of the raw log's `tx`
+records equals the concatenation of everything the fake serial port was handed,
+byte for byte, and the same in the `rx` direction.
+
+**What is still true.** Removing the transmission objection says nothing about
+whether there is anything to hear. A near-empty capture is the expected outcome
+and a real result; `hummer-obd-passive` exits 0 on a zero-byte capture and says
+so in its own output. Frame counts from it are **not** a measurement of bus
+load: ASCII over Bluetooth RFCOMM at 115200 baud caps at a few hundred frames
+per second against a bus carrying thousands, the capture is lossy by
+construction, and the loss is not recorded anywhere.
+
+---
+
+*Everything below this line predates the decision above.*
+
+## The original research note
 
 [The enhanced PID validation plan](ENHANCED_PID_VALIDATION.md) lists passive
 monitoring "as a candidate for evaluation, not as a fallback that can be
@@ -289,11 +362,15 @@ first and ask questions afterwards:
 * the capture exceeds its byte bound before its time bound, which means the
   assumptions behind the bound were wrong and the bound is what saved it.
 
-**Reverting the software.** Revert the allowlist entry first, then the capture
-path and its tests, then any configuration naming a monitor command. The
-acceptance after revert is that the gate rejects `STM`, `STMA`, `STCMM0` and
-`ATMA` alike, and that the existing safety tests pass unchanged. A partial
-revert that leaves a monitor command allowlisted is not a rollback.
+**Reverting the software.** Revert the two monitor gates in `safety.py` first,
+then `monitor.py` and its tests, then any configuration naming a monitor
+command. The acceptance after revert is that the gate rejects `STM`, `STMA`,
+`STCMM0` and `ATMA` alike, and that the existing safety tests pass unchanged. A
+partial revert that leaves a monitor command reachable is not a rollback.
+
+*As built, this is smaller than it was written to be.* The revert is two
+functions and two files: `_ALLOWED_AT_EXACT` was never widened, so there is no
+allowlist entry to take back out, and `transport.py` was never touched.
 
 **Proving the vehicle is unaffected.** A code revert cannot un-send anything,
 which is why the gate exists. The vehicle-side check is the same baseline

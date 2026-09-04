@@ -20,6 +20,79 @@ discount.
 
 ### Added
 
+- **`hummer-obd-passive`: the first tool here that asks the vehicle nothing.**
+  Every other command sends a request and reads the answer. This one puts the
+  adapter into receive-only CAN monitoring -- `STCMM0`, where it does not even
+  assert the acknowledgement bit that a normal CAN node puts on every frame it
+  hears -- and records whatever arrives. It answers a question the rest of the
+  project cannot: not *what will a module tell me if I ask*, but *is anything
+  being said at all*. `docs/PASSIVE_CAN_VALIDATION.md` set the prerequisites for
+  this a day before it existed and they were treated as binding.
+
+  **The gate was not widened.** The obvious implementation is an exact entry in
+  `_ALLOWED_AT_EXACT`, and it is wrong: that set feeds `validate_command`, which
+  is the unattended collector's gate and the default `SerialTransport`
+  validator. An entry there, however narrow, makes monitoring reachable from a
+  service that runs for hours with nobody watching. There are two more gates
+  instead -- `validate_monitor_setup_command` (the production gate plus
+  `STCMM0`) and `validate_monitor_stream_command` (`STMA`, and not even
+  `STCMM0`). `capabilities.py` now puts all six monitor commands to the *live*
+  production gate, so a future widening flips a published report entry from
+  refused to accepted in plain sight.
+
+  The split buys a structural guarantee rather than a rule to remember.
+  `MonitorTransport` is built with the *setup* validator, so `send("STMA")`
+  raises instead of blocking for the full timeout and returning truncated bytes
+  flagged as a timeout -- the failure the validation doc warned about at length
+  is now one the object cannot make. It is a subclass in its own module for the
+  same reason: `collector.py` constructs a `SerialTransport`, so a `capture()`
+  method on *that* class would turn "unreachable from the collector" from a
+  property into a convention. `hasattr(SerialTransport, "capture")` is `False`
+  and a subprocess importing the collector ends without the monitor in
+  `sys.modules`; both are tests. `transport.py` has a zero-line diff.
+
+  `ATSP0` is refused at import time: auto protocol detection discovers a
+  protocol *by transmitting*, and a tool whose whole claim is that nothing
+  reaches the vehicle cannot auto-detect its way onto the bus. The protocol is
+  pinned to `ATSP7`.
+
+  **A zero-byte capture exits 0.** That is the documented negative result, not a
+  failure to retry, and the tool says so in its own output. It also says, when
+  bytes do arrive, that the count is not a measurement of bus load: ASCII over
+  Bluetooth at 115200 caps at a few hundred frames per second against a bus
+  carrying thousands, the capture is lossy by construction, and the loss is not
+  recorded anywhere. **Not yet run on the vehicle** -- everything above is
+  offline evidence.
+
+- **A test this repository could not previously write.** Every existing
+  transport test asserts against a fake serial port's list of *command names*.
+  That is the right check for request/response and it cannot, by construction,
+  catch a write that bypassed `log_tx`: the fake would record the bytes, the raw
+  log would not, and both lists would still look plausible. For a tool whose
+  entire claim is silence, the assertion has to be the bytes -- the
+  concatenation of the raw log's `tx` records equals the concatenation of
+  everything the port was handed, byte for byte, and the same in the `rx`
+  direction.
+
+  Holding that property found a real defect immediately. Reading one byte and
+  then draining `in_waiting` into the same buffer loses the first byte when the
+  second read raises: it had reached the program and never reached the
+  transcript, which is the one thing the raw log exists to prevent. Each read is
+  now banked before the next is attempted. `transport.py:165-168` has the same
+  shape and the same small gap on a mid-read link failure; it is left alone
+  deliberately, because the passive path was specified to give that file a
+  zero-line diff, and it is recorded here rather than silently carried.
+
+- **`docs/CAN_FD_EXPANSION.md`.** Buying nothing and choosing nothing: a
+  comparison of red panda, PiCAN FD Duo, the isolated Waveshare HAT and
+  MDI2/GDS2, written now so the decision is not made at 2 a.m. with a truck
+  plugged in and a charge session ending. It states the hard rule once -- never
+  connect anything to an internal pair until GM service information or measured
+  physical-layer evidence identifies that bus and its bitrate -- and it is
+  honest that we have no evidence CAN FD at the connector would show us
+  anything: the gateway is a boundary, not a bottleneck, and `hummer-obd-passive`
+  measures that for free before anything is spent.
+
 - **Fifteen sourced candidate identifiers, and two supervised profiles to test
   them.** Nothing claims they work here. Every one is a service 22 read, so the
   worst outcome of asking is a negative response, and they are allowlisted to be
@@ -555,6 +628,7 @@ discount.
   bytes of a 29-bit identifier; the `ATFCS*` group configures ISO 15765-2 flow
   control for multi-frame replies, which service 09 already depends on.
 
+
 ### Fixed
 
 - **The session report keyed distance off the least reliable column it had.**
@@ -806,102 +880,6 @@ discount.
   and `docs/ENHANCED_PID_VALIDATION.md` (the evidence bar a Mode 22 identifier
   must clear before it is allowed on the wire).
 
-### Changed
-
-- **Standard OBD speed and odometer are asked of one module instead of shouted
-  at all of them.** `010D` and `01A6` were broadcast to `DB33F1`, and a
-  functional broadcast is answered by whichever module speaks first. Measured
-  across a full raw transcript: each was answered 545 times and *every single*
-  answer came from module `0x17`, while module `0x28` refused service 01 with
-  `7F 01 22` (conditionsNotCorrect) more than 760 times -- faster than module
-  17 could answer. The adapter returned the refusal and the real answer never
-  arrived. On 2026-09-03 that left speed and odometer in 8 of 79 rows while
-  every enhanced read was in all 79, and it made a 12.6-mile drive look like
-  0.06 miles until the report learned to prefer denser columns.
-
-  They are now addressed to `DA17F1` with the receive filter pinned to that
-  module's own reply address `18DAF117`, so a module that was not asked cannot
-  be mistaken for one that was. Module `0x17` is not a new address or a guess:
-  it is the `pack_power` module this node already reads pack voltage and
-  current from.
-
-- **The probe asks the vehicle what it supports, instead of a fixed generic
-  PID list.** The old list overlapped this truck in three places, so eight
-  PIDs it advertises had never been requested — including the odometer. The
-  probe now reads the vehicle's own support bitmap, and does the same for
-  service 09 via `0900`. All fourteen advertised service 01 PIDs answered, the
-  odometer decoded at 2146.6 km, and service 09 named all eight modules.
-  Decoders added alongside: A6 odometer (4 bytes at 0.1 km/bit), 30 warm-ups,
-  1C OBD standard. PID 01 is left undecoded on purpose — it is a composite of
-  MIL state and readiness monitors that the scalar sample shape cannot
-  represent honestly.
-
-- **Storage schema v3, migrated in place from v1 or v2.** The node holds readings
-  nobody can take again, so `migrate()` only ever adds: `ALTER TABLE ADD
-  COLUMN` and `CREATE TABLE IF NOT EXISTS`, never a drop, rename or rebuild,
-  and it raises rather than opening a version it does not understand. Verified
-  against a copy of the reference node's real database before the original was
-  touched, then run on the original with a backup taken first: 7384 samples,
-  18 DTC reads, 5 sessions, 1 vehicle_info and 5 events all byte-identical on
-  their original columns, with `ecu` defaulting to `''` on old rows.
-
-  v3 followed with the same shape and the same guarantee: a `cycles` table plus
-  a **nullable** `cycle_id` on `samples`, `monitor_tests` and `dtc_reads` — a
-  column alone cannot record a pass that produced zero rows, and a sleeping
-  vehicle produces exactly that; an `ecu_modules` current-state index backfilled
-  from the append-only `vehicle_info` log, where an empty name never overwrites
-  a proven one; and `dtc_ecu_reads`, `monitor_status`, `monitor_readiness` and
-  `ecu_info` as child tables rather than widened ones, so no existing row
-  changes meaning. The new columns are nullable rather than `NOT NULL DEFAULT
-  0`, because `cycle_id = 0` would be a fabricated group id that reads like a
-  real one while `NULL` says "recorded before cycles existed", which is true.
-  `add_ecu_info` refuses service 09 item 02 outright — that is the VIN, and this
-  table is exported. Verified the same way against a copy first: 7440 samples,
-  27 DTC reads, 9 sessions, 16 vehicle_info and 5 events identical, version
-  2 to 3, `cycle_id` NULL not 0, and the backfill took exactly the eight real
-  modules while excluding two malformed rows a transient bug had written.
-
-- **The module map is measured, not inferred.** Each address was queried behind
-  its own `ATCRA18DAF1<addr>` receive filter: 17 DMCM, 1D DMC2, 1E DMC3,
-  28 BSCM, 40 BCM, 45 Gateway Module - GWM, CB and CD BSM.
-
-- **UAS scaling row `0x24` removed from the service 06 table.** It could not be
-  confirmed against SAE J1979, and "a multiplier of 1.0 cannot change a
-  magnitude" is circular — it holds only if 1.0 is the right multiplier. An
-  unrecognised unit-and-scaling identifier now yields a null scaled value with
-  the raw counts kept, which is why the table is deliberately partial. A
-  plausible wrong reading is worse than an admitted gap.
-
-- **The battery watch stops the collector instead of halting the node.** A
-  PiSugar2 cannot power the Pi back on — the vendor's own position, not an
-  inference — a bare `systemctl poweroff` does not tell the chip to cut power,
-  and GPIO3 wake needs bootloader EEPROM the Zero 2 W does not have. So every
-  halting path strands an unattended node in a vehicle. The default action is
-  now `stop-collector`: it ends the polling that is drawing the power and
-  holding the serial port, and leaves the OS up and reachable. The watch keeps
-  running afterwards, so a recovering cell needs no intervention.
-  `--on-low poweroff` remains for a node whose return has been solved, and its
-  help says it has not been solved here. This also removed the need for the
-  `--dry-run` crutch the watch had briefly shipped with, so the watch is armed.
-
-- **Documents reconciled against what has actually been measured.** The README
-  had claimed "pack voltage under load" among the live driving telemetry; what
-  is captured is PID 42, the 12 V control-module supply each module sees. HV
-  pack voltage is not exposed over standard OBD on this vehicle, which is the
-  whole reason the enhanced-PID document exists. Service status was brought
-  current everywhere: service 06 is proven and advertises zero monitor IDs,
-  which is an answer rather than a failure; service 02's request path is
-  proven, while frame contents are not and cannot be until the truck develops
-  a fault of its own.
-
-- **Test counts recorded at the capability milestones above**, in order:
-  235, 243, 252, 265, 337, 346, 366, 372, 393. The suite is the acceptance
-  record
-  for a project that cannot re-run its measurements, so it grew with every
-  capability rather than after them.
-
-### Fixed
-
 - **The package had never been installed on the node.** All seven
   `hummer-obd-*` console scripts were declared and none existed;
   `import hummer_obd` raised `ModuleNotFoundError`. Every command in the
@@ -995,3 +973,98 @@ discount.
   passed `--on-low stop-collector` as one token, argparse rejected it, and the
   unit went into a restart loop. Now unbraced, with the reason recorded in the
   unit so it is not "tidied" back.
+
+
+### Changed
+
+- **Standard OBD speed and odometer are asked of one module instead of shouted
+  at all of them.** `010D` and `01A6` were broadcast to `DB33F1`, and a
+  functional broadcast is answered by whichever module speaks first. Measured
+  across a full raw transcript: each was answered 545 times and *every single*
+  answer came from module `0x17`, while module `0x28` refused service 01 with
+  `7F 01 22` (conditionsNotCorrect) more than 760 times -- faster than module
+  17 could answer. The adapter returned the refusal and the real answer never
+  arrived. On 2026-09-03 that left speed and odometer in 8 of 79 rows while
+  every enhanced read was in all 79, and it made a 12.6-mile drive look like
+  0.06 miles until the report learned to prefer denser columns.
+
+  They are now addressed to `DA17F1` with the receive filter pinned to that
+  module's own reply address `18DAF117`, so a module that was not asked cannot
+  be mistaken for one that was. Module `0x17` is not a new address or a guess:
+  it is the `pack_power` module this node already reads pack voltage and
+  current from.
+
+- **The probe asks the vehicle what it supports, instead of a fixed generic
+  PID list.** The old list overlapped this truck in three places, so eight
+  PIDs it advertises had never been requested — including the odometer. The
+  probe now reads the vehicle's own support bitmap, and does the same for
+  service 09 via `0900`. All fourteen advertised service 01 PIDs answered, the
+  odometer decoded at 2146.6 km, and service 09 named all eight modules.
+  Decoders added alongside: A6 odometer (4 bytes at 0.1 km/bit), 30 warm-ups,
+  1C OBD standard. PID 01 is left undecoded on purpose — it is a composite of
+  MIL state and readiness monitors that the scalar sample shape cannot
+  represent honestly.
+
+- **Storage schema v3, migrated in place from v1 or v2.** The node holds readings
+  nobody can take again, so `migrate()` only ever adds: `ALTER TABLE ADD
+  COLUMN` and `CREATE TABLE IF NOT EXISTS`, never a drop, rename or rebuild,
+  and it raises rather than opening a version it does not understand. Verified
+  against a copy of the reference node's real database before the original was
+  touched, then run on the original with a backup taken first: 7384 samples,
+  18 DTC reads, 5 sessions, 1 vehicle_info and 5 events all byte-identical on
+  their original columns, with `ecu` defaulting to `''` on old rows.
+
+  v3 followed with the same shape and the same guarantee: a `cycles` table plus
+  a **nullable** `cycle_id` on `samples`, `monitor_tests` and `dtc_reads` — a
+  column alone cannot record a pass that produced zero rows, and a sleeping
+  vehicle produces exactly that; an `ecu_modules` current-state index backfilled
+  from the append-only `vehicle_info` log, where an empty name never overwrites
+  a proven one; and `dtc_ecu_reads`, `monitor_status`, `monitor_readiness` and
+  `ecu_info` as child tables rather than widened ones, so no existing row
+  changes meaning. The new columns are nullable rather than `NOT NULL DEFAULT
+  0`, because `cycle_id = 0` would be a fabricated group id that reads like a
+  real one while `NULL` says "recorded before cycles existed", which is true.
+  `add_ecu_info` refuses service 09 item 02 outright — that is the VIN, and this
+  table is exported. Verified the same way against a copy first: 7440 samples,
+  27 DTC reads, 9 sessions, 16 vehicle_info and 5 events identical, version
+  2 to 3, `cycle_id` NULL not 0, and the backfill took exactly the eight real
+  modules while excluding two malformed rows a transient bug had written.
+
+- **The module map is measured, not inferred.** Each address was queried behind
+  its own `ATCRA18DAF1<addr>` receive filter: 17 DMCM, 1D DMC2, 1E DMC3,
+  28 BSCM, 40 BCM, 45 Gateway Module - GWM, CB and CD BSM.
+
+- **UAS scaling row `0x24` removed from the service 06 table.** It could not be
+  confirmed against SAE J1979, and "a multiplier of 1.0 cannot change a
+  magnitude" is circular — it holds only if 1.0 is the right multiplier. An
+  unrecognised unit-and-scaling identifier now yields a null scaled value with
+  the raw counts kept, which is why the table is deliberately partial. A
+  plausible wrong reading is worse than an admitted gap.
+
+- **The battery watch stops the collector instead of halting the node.** A
+  PiSugar2 cannot power the Pi back on — the vendor's own position, not an
+  inference — a bare `systemctl poweroff` does not tell the chip to cut power,
+  and GPIO3 wake needs bootloader EEPROM the Zero 2 W does not have. So every
+  halting path strands an unattended node in a vehicle. The default action is
+  now `stop-collector`: it ends the polling that is drawing the power and
+  holding the serial port, and leaves the OS up and reachable. The watch keeps
+  running afterwards, so a recovering cell needs no intervention.
+  `--on-low poweroff` remains for a node whose return has been solved, and its
+  help says it has not been solved here. This also removed the need for the
+  `--dry-run` crutch the watch had briefly shipped with, so the watch is armed.
+
+- **Documents reconciled against what has actually been measured.** The README
+  had claimed "pack voltage under load" among the live driving telemetry; what
+  is captured is PID 42, the 12 V control-module supply each module sees. HV
+  pack voltage is not exposed over standard OBD on this vehicle, which is the
+  whole reason the enhanced-PID document exists. Service status was brought
+  current everywhere: service 06 is proven and advertises zero monitor IDs,
+  which is an answer rather than a failure; service 02's request path is
+  proven, while frame contents are not and cannot be until the truck develops
+  a fault of its own.
+
+- **Test counts recorded at the capability milestones above**, in order:
+  235, 243, 252, 265, 337, 346, 366, 372, 393. The suite is the acceptance
+  record
+  for a project that cannot re-run its measurements, so it grew with every
+  capability rather than after them.
