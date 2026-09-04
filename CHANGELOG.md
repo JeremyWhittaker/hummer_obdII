@@ -44,6 +44,25 @@ discount.
   record every cycle as raw columns, and a test asserts that **nothing proven at
   `CB` is left uncaptured**, so this cannot recur silently.
 
+- **Six PIDs the vehicle said it supports were going uncollected.** The
+  per-module census run on 2026-09-03 had module 17 advertise nine service 01
+  PIDs — `01 0D 1C 1F 21 30 31 42 A6` — and the recorder was taking two. The
+  other seven were legislated, already decodable, and free. Six now record every
+  cycle: OBD standard, run time, distance with MIL on, warm-ups since codes
+  cleared, distance since codes cleared, and control module supply voltage.
+  `01` stays out deliberately — it is a monitor-status bitfield, not a scalar,
+  so it has no single column to land in.
+
+  These are not sourced candidates and carry no provenance debate: the
+  vehicle's own support bitmap is the evidence. They also reuse
+  `decode.decode_pid`, which already holds each scaling and unit
+  (`decode.py:446-453`) — six more hand-rolled branches would have been
+  re-deriving what that module already knows.
+
+  `0142` gives a **third independent reading of the 12 V rail**, added to the
+  cross-checks. The adapter and the drive-motor module already disagree by
+  about 6 %, and a third source is what settles which is off.
+
 - **A charge session is reported as a charge, not as a strange drive.**
   `analyze` detects charging from sustained negative pack current — a vehicle
   can sit still without charging, and the sign of the current is what says which

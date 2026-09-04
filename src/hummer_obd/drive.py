@@ -53,7 +53,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable, Final, Optional
 
-from .decode import parse_reply
+from .decode import decode_pid, parse_reply
 from .rawlog import RawLog
 from .safety import (
     validate_command,
@@ -288,9 +288,30 @@ GROUPS: tuple[AddressGroup, ...] = (
 #: Standard OBD PIDs sampled alongside.  These go through the *ordinary* gate.
 #: Asking for them needs the receive filter opened up again, because the
 #: enhanced groups leave it pointed at one module.
+#: Legislated service 01 PIDs, and the column each lands in.
+#:
+#: These are not sourced from anywhere external and are not candidates: the
+#: vehicle's own support bitmap says it answers them.  A per-module census on
+#: 2026-09-03 had module 17 advertise nine -- 01 0D 1C 1F 21 30 31 42 A6 -- and
+#: this recorder was collecting two of them.  The rest were legislated, already
+#: decodable, and going uncollected.
+#:
+#: `0D` and `A6` keep their hand-written decoders below because they predate
+#: this list.  Everything else goes through `decode.decode_pid`, which already
+#: carries the scaling and unit for each (decode.py:446-453) -- adding six more
+#: hand-rolled branches would be re-deriving what the module already knows.
+#:
+#: `01` is deliberately absent: it is a monitor-status bitfield rather than a
+#: scalar, so it has no single column to land in.
 STANDARD_PIDS: tuple[tuple[str, str], ...] = (
     ("010D", "speed_kph"),
     ("01A6", "odometer_km"),
+    ("011C", "obd_standard"),
+    ("011F", "run_time_s"),
+    ("0121", "dist_with_mil_km"),
+    ("0130", "warmups_since_clear"),
+    ("0131", "dist_since_clear_km"),
+    ("0142", "module_voltage"),
 )
 
 #: One-time setup.  Protocol, priority and flow control do not change between
@@ -343,6 +364,8 @@ COLUMNS: tuple[str, ...] = (
     "temp_f", "charger_5401_raw", "power_kw",
     "cell_avg_v", "cell_min_v", "cell_max_v", "cell_spread_mv", "cell_extra_raw",
     "array_2af1",
+    "obd_standard", "run_time_s", "dist_with_mil_km",
+    "warmups_since_clear", "dist_since_clear_km", "module_voltage",
     "regen_field_raw", "thermal_energy_raw", "thermal_distance_raw",
     "compressor_temp_raw",
     "evse_current_raw", "group_v1_raw", "group_v2_raw", "group_v3_raw",
@@ -535,6 +558,13 @@ def record(
                             ((data[0] << 24) | (data[1] << 16)
                              | (data[2] << 8) | data[3]) / 10, 1
                         )
+                    else:
+                        # Everything the census added: decode.decode_pid holds
+                        # the scaling and unit already, so this asks it rather
+                        # than restating them here.
+                        decoded = decode_pid(command[2:], reply)
+                        if decoded.value is not None:
+                            row[column] = decoded.value
                     break
         except TransportError as exc:
             session.errors.append(f"standard: {exc}")

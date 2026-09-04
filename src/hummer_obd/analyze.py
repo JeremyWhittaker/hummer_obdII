@@ -374,6 +374,12 @@ def _cross_checks(rows: list[dict]) -> dict:
     rail = _ratio(rows, "volts", "dmc2_v")
     if rail:
         checks["adapter_over_module_volts"] = rail
+    # A third, independent reading of the same rail: service 01 PID 42 is each
+    # module's own supply voltage.  The adapter and the drive-motor module
+    # already disagree by about 6 %, so a third source is worth having.
+    module = _ratio(rows, "volts", "module_voltage")
+    if module:
+        checks["adapter_over_pid42_volts"] = module
     return checks
 
 

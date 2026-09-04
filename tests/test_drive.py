@@ -783,6 +783,65 @@ class TestTheWatchCanGetADeadLinkBack(unittest.TestCase):
         self.assertEqual(non_adapter, [])
 
 
+class TestCensusProvenPidsAreCollected(unittest.TestCase):
+    """The vehicle said it supports nine; the recorder was taking two.
+
+    A per-module census on 2026-09-03 had module 17 advertise service 01 PIDs
+    01 0D 1C 1F 21 30 31 42 A6. Seven were going uncollected while being
+    legislated, already decodable, and free.
+    """
+
+    #: What module 17's own support bitmap advertised.
+    ADVERTISED = ("01", "0D", "1C", "1F", "21", "30", "31", "42", "A6")
+
+    def test_everything_advertised_is_collected_except_the_bitfield(self):
+        collected = {c[2:] for c, _ in drive.STANDARD_PIDS}
+        missing = sorted(set(self.ADVERTISED) - collected - {"01"})
+        self.assertEqual(
+            missing, [],
+            f"the vehicle advertises these and the recorder ignores them: {missing}",
+        )
+
+    def test_the_monitor_status_bitfield_is_deliberately_excluded(self):
+        # 01 is a bitfield, not a scalar, so it has no single column to land in.
+        self.assertNotIn("0101", [c for c, _ in drive.STANDARD_PIDS])
+
+    def test_each_has_a_column(self):
+        for _command, column in drive.STANDARD_PIDS:
+            with self.subTest(column=column):
+                self.assertIn(column, drive.COLUMNS)
+
+    def test_every_one_passes_the_unattended_gate(self):
+        # These are legislated service 01 reads: the normal collector's gate
+        # accepts them, unlike anything in service 22.
+        from hummer_obd.safety import validate_command
+        for command, _column in drive.STANDARD_PIDS:
+            with self.subTest(command=command):
+                self.assertEqual(validate_command(command), command)
+
+    def test_the_new_ones_reuse_the_existing_decoder(self):
+        # decode.py already carries the scaling and unit for each; restating
+        # them here would be re-deriving what that module knows.
+        from hummer_obd.decode import decode_pid
+        from hummer_obd.decode import parse_reply
+        reply = parse_reply(b"41 1F 00 3C\r\r>")
+        self.assertEqual(decode_pid("1F", reply).value, 60)
+
+    def test_a_new_pid_actually_lands_in_its_column(self):
+        class _WithRunTime(_Fake):
+            def send(self, command, timeout=None):
+                if command == "011F":
+                    self.sent.append(command)
+                    return Response(command=command, data=b"411F003C\r\r>",
+                                    elapsed_s=0.01)
+                return super().send(command, timeout)
+
+        fake = _WithRunTime()
+        session = record(fake, max_cycles=1, sleeper=lambda s: None,
+                         clock=_bounded_clock())
+        self.assertEqual(session.rows[0].get("run_time_s"), 60)
+
+
 class TestPerGroupPriority(unittest.TestCase):
     """There is no universal CAN priority, and assuming one hid a module.
 
