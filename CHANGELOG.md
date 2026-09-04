@@ -20,6 +20,34 @@ discount.
 
 ### Added
 
+- **The first charge separated the six thermal candidates into two groups, and
+  the interesting group is the one that did nothing.** Across 52 charging
+  samples the pack warmed **16.2 °F**. Three fields the source calls
+  temperatures **did not move at all**:
+
+  | Identifier | Source's label | What it did |
+  |---|---|---|
+  | `0x434F` | HV battery temperature | flat at `0x46` |
+  | `0x4127` | battery temperature A | flat at `0x0418` |
+  | `0x4124` | battery temperature B | flat at `0x0000` |
+  | `0x40E5` | battery coolant temperature 1 | moved, 35 distinct values |
+  | `0x40E6` | battery coolant temperature 2 | moved, 36 distinct, **disjoint from all 566 parked samples** |
+  | `0x2709` | A/C compressor temperature | moved, 14 distinct |
+
+  A field that holds still while the thing it allegedly measures moves 16 °F is
+  not measuring it — this project's own rule, turned on its own candidates.
+  `0x4124` reading `0x0000` throughout is not a temperature under any scaling.
+  That is evidence against three source labels, and it is not proof: a slow
+  update cadence or a different thermal zone would look identical over ten
+  minutes.
+
+  **No scaling is claimed for the three that did move**, and the reason is worth
+  recording because the fits looked tempting. Least-squares against `temp_f`
+  gives **1/17.2, 1/5.7 and 1/1.3 °C per count** — no designer picks those.
+  Over a monotonic ramp any two rising quantities fit a line, so a believable
+  slope means a round divisor that holds across a *second* charge warming at a
+  different rate. All three stay at level 1.
+
 - **`0x5401` positively identified: it is a charging *state*, not a quantity.**
   The 2026-09-04 charge gave a clean boundary: `0x00` across **566 consecutive
   parked-and-unplugged samples**, `0x93`/`0x96` across **all 22 taken while
@@ -1078,6 +1106,13 @@ discount.
 
 
 ### Fixed
+
+- **A scripted edit wrote six paragraphs into the wrong dataclass field.**
+  Inserting before the first `"),` after each identifier put the text inside the
+  `states` tuple, producing `("parked", "driving. On 2026-09-04 ...")` — six
+  corrupted entries. The suite caught it immediately and the change was reverted
+  rather than patched. Redone with explicit full-block replacements, each
+  asserted present before substitution.
 
 - **A comparison of means across unequal windows read as a decrease.** An early
   look at the charge reported `energy_kwh` down 0.076 kWh — while the pack was

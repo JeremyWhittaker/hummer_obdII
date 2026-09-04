@@ -230,7 +230,13 @@ CONFIDENCE: Final[dict[str, Evidence]] = {
     "27B5": Evidence(1, _CB, ("parked", "driving", "charging"),
                      "thermal-management distance candidate; answers, stored raw"),
     "2709": Evidence(1, _CB, ("parked", "driving", "charging"),
-                     "A/C compressor temperature candidate; answers, stored raw"),
+                     "A/C compressor temperature candidate. Moved monotonically through the 2026-09-04 charge while "
+                     "the pack warmed 16.2 F, which is consistent with a thermal "
+                     "quantity. No scaling follows: a least-squares fit against "
+                     "temp_f lands on 1/1.3 C per count and no designer picks "
+                     "that. Over a monotonic ramp any two rising quantities fit "
+                     "a line, so a believable slope means a round divisor that "
+                     "holds across a SECOND charge warming at a different rate"),
     "4149": Evidence(
         1, ("40",), ("parked", "driving"),
         "EVSE advertised current candidate. Read 384 while parked and "
@@ -247,16 +253,54 @@ CONFIDENCE: Final[dict[str, Evidence]] = {
     "416E": Evidence(1, ("40",), ("parked", "driving"),
                      "battery group voltage 3 candidate; identical to 0x416D "
                      "when read, stored raw"),
-    "434F": Evidence(1, ("40",), ("parked", "driving"),
-                     "HV battery temperature candidate; answers, stored raw"),
-    "4127": Evidence(1, ("40",), ("parked", "driving"),
-                     "battery temperature A candidate; answers, stored raw"),
-    "4124": Evidence(1, ("40",), ("parked", "driving"),
-                     "battery temperature B candidate; answers, stored raw"),
-    "40E5": Evidence(1, ("40",), ("parked", "driving"),
-                     "battery coolant temperature 1 candidate; answers, stored raw"),
-    "40E6": Evidence(1, ("40",), ("parked", "driving"),
-                     "battery coolant temperature 2 candidate; answers, stored raw"),
+    "434F": Evidence(1, ("40",), ("parked", "driving", "charging"),
+                     "HV battery temperature candidate. Across 52 charging samples on 2026-09-04 the pack warmed "
+                     "16.2 F and this field DID NOT MOVE -- one distinct value "
+                     "throughout. A field that holds still while the thing it "
+                     "allegedly measures changes is not measuring it, which is "
+                     "this project's own rule turned on its own candidate. "
+                     "Evidence against the source's label, not proof: a slow "
+                     "update cadence or a different thermal zone would look the "
+                     "same over ten minutes. Reads 0x46 "
+                     "throughout"),
+    "4127": Evidence(1, ("40",), ("parked", "driving", "charging"),
+                     "battery temperature A candidate. Across 52 charging samples on 2026-09-04 the pack warmed "
+                     "16.2 F and this field DID NOT MOVE -- one distinct value "
+                     "throughout. A field that holds still while the thing it "
+                     "allegedly measures changes is not measuring it, which is "
+                     "this project's own rule turned on its own candidate. "
+                     "Evidence against the source's label, not proof: a slow "
+                     "update cadence or a different thermal zone would look the "
+                     "same over ten minutes. Reads 0x0418 "
+                     "throughout"),
+    "4124": Evidence(1, ("40",), ("parked", "driving", "charging"),
+                     "battery temperature B candidate. Across 52 charging samples on 2026-09-04 the pack warmed "
+                     "16.2 F and this field DID NOT MOVE -- one distinct value "
+                     "throughout. A field that holds still while the thing it "
+                     "allegedly measures changes is not measuring it, which is "
+                     "this project's own rule turned on its own candidate. "
+                     "Evidence against the source's label, not proof: a slow "
+                     "update cadence or a different thermal zone would look the "
+                     "same over ten minutes. It reads 0x0000 "
+                     "throughout, which is not a temperature in any scaling"),
+    "40E5": Evidence(1, ("40",), ("parked", "driving", "charging"),
+                     "battery coolant temperature 1 candidate. Moved monotonically through the 2026-09-04 charge while "
+                     "the pack warmed 16.2 F, which is consistent with a thermal "
+                     "quantity. No scaling follows: a least-squares fit against "
+                     "temp_f lands on 1/17.2 C per count and no designer picks "
+                     "that. Over a monotonic ramp any two rising quantities fit "
+                     "a line, so a believable slope means a round divisor that "
+                     "holds across a SECOND charge warming at a different rate"),
+    "40E6": Evidence(1, ("40",), ("parked", "driving", "charging"),
+                     "battery coolant temperature 2 candidate. Its charging "
+                     "values are DISJOINT from every one of 566 parked samples. "
+                     "Moved monotonically through the 2026-09-04 charge while "
+                     "the pack warmed 16.2 F, which is consistent with a thermal "
+                     "quantity. No scaling follows: a least-squares fit against "
+                     "temp_f lands on 1/5.7 C per count and no designer picks "
+                     "that. Over a monotonic ramp any two rising quantities fit "
+                     "a line, so a believable slope means a round divisor that "
+                     "holds across a SECOND charge warming at a different rate"),
 
     # -- level 0: allowlisted, never answered here -------------------------
     #
