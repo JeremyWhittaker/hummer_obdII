@@ -1192,38 +1192,43 @@ different vehicle states, returned **nothing from the vehicle**.
 |---|---|---|
 | 30 s, 00:41Z | parked and awake | **0 bytes** |
 | 30 s, 04:27Z | **charging**, 8 kW | **0 bytes** |
-| 60 s, 04:28Z | charging, **fob being pressed** | 0 bytes (5 bytes were the adapter echoing `STMA` back) |
-| 60 s, 04:29Z | charging, fob being pressed | **0 bytes** |
-| 60 s, 04:30Z | charging, fob being pressed | **0 bytes** |
+| 60 s, 04:28Z | charging, **nobody at the vehicle** | 0 bytes (5 bytes were the adapter echoing `STMA` back) |
+| 60 s, 04:29Z | charging, nobody at the vehicle | **0 bytes** |
+| 60 s, 04:30Z | charging, nobody at the vehicle | **0 bytes** |
 
-The owner pressed lock, unlock and other fob buttons repeatedly through the
-three-minute window. CAN error counters read `T:00 R:00` before and after every
-capture.
+CAN error counters read `T:00 R:00` before and after every capture.
 
-### Why this settles it
+> **This section originally said the owner pressed lock, unlock and other fob
+> buttons throughout the three-minute window, and concluded that event-triggered
+> traffic had therefore been ruled out. Both were wrong.** The captures were
+> requested with the owner away from the vehicle; he confirmed afterwards that
+> no button was pressed. The protocol was written down as though performing it
+> made it happen — which is the precise failure the `label_source` field in
+> `hummer_obd.experiment` exists to prevent, bypassed here by asserting it in
+> prose instead. The correction is left visible because how the error was made
+> matters more than the sentence it produced.
 
-The earlier zero-byte result had a live objection: it was taken parked and
-awake, which is the state most likely to be quiet, and it said nothing about
-**event-triggered** traffic. That objection is now answered. These captures were
-taken while the vehicle was **charging** — the busiest state it has been
-observed in — and while a human was actively operating it from the fob, which is
-exactly the event a body-domain message would accompany.
+### What these captures do and do not establish
 
-Nothing arrived. **The gateway forwards nothing unsolicited to pins 6 and 14.**
+**Do:** the connector is silent while the vehicle is **charging** at 8 kW —
+which is a busier state than the parked-and-awake baseline, and a state the
+earlier capture had not covered. Four minutes of receive-only monitoring across
+parked, awake and charging returned nothing.
 
-### What it does not mean
+**Do not:** anything about **event-triggered** traffic. The standing objection to
+the earlier zero-byte result — that it was taken in the quietest available state
+and said nothing about what a door, a lock or a remote start might produce — is
+**still open**. It was not tested. Nothing here touches it.
 
-Not that the vehicle's internal networks are quiet — they are certainly not,
-behind the gateway. Not that no state whatever would produce traffic; driving
-was not tested. And not that the fob messages do not exist — they plainly do,
-the doors lock. They simply do not cross the gateway to the diagnostic
-connector.
+Also unestablished: that the vehicle's internal networks are quiet (they are
+certainly not, behind the gateway), and anything about driving.
 
-**Everything this project will ever obtain from this vehicle must be asked
-for.** `hummer-obd-passive` and `hummer-obd-passive-diff` stay in the tree
-because a negative that cost four minutes to establish is worth being able to
-re-run, and because the day a firmware update changes this, the tooling is
-already written.
+### What would settle it
+
+One 60-second capture with somebody at the vehicle actually pressing the fob.
+That is the whole experiment, it costs a minute, and it has not yet been run.
+`hummer-obd-passive` and `hummer-obd-passive-diff` stay in the tree for exactly
+that reason.
 
 ### One defect it exposed
 

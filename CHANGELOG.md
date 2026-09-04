@@ -20,26 +20,15 @@ discount.
 
 ### Added
 
-- **The passive path is closed.** Four receive-only captures — about four
-  minutes across parked, **charging**, and **fob-being-pressed** states —
-  returned **nothing from the vehicle**. The owner worked the lock, unlock and
-  other fob buttons through a three-minute window while the truck charged at
-  8 kW. `T:00 R:00` before and after every capture.
+- **The connector is silent while charging.** Four receive-only captures — about
+  four minutes across parked, awake and **charging at 8 kW** — returned nothing
+  from the vehicle. `T:00 R:00` before and after every one. Charging is a busier
+  state than the parked-and-awake baseline and the earlier capture had not
+  covered it, so this genuinely extends the negative.
 
-  This answers the standing objection to the earlier zero-byte result, which was
-  taken parked and awake — the state most likely to be quiet — and said nothing
-  about event-triggered traffic. These were taken in the busiest state the
-  vehicle has been observed in, while a human actively operated it. **The
-  gateway forwards nothing unsolicited to pins 6 and 14.**
-
-  It does not mean the internal networks are quiet, that driving would be the
-  same, or that the fob messages do not exist — the doors plainly lock. They do
-  not cross the gateway. **Everything this project will ever obtain from this
-  vehicle must be asked for.**
-
-  Both tools stay in the tree: a negative that took four minutes to establish is
-  worth being able to re-run, and if a firmware update ever changes it the
-  tooling is already written.
+  **It does not close the passive question, and this entry originally claimed it
+  did.** See the correction under *Fixed*. Event-triggered traffic remains
+  untested; the standing objection to the first zero-byte result is still open.
 
 - **The thermal-limiting hypothesis was falsified within the hour, by the same
   charge that suggested it.** Over the charge's first four minutes, power
@@ -1179,6 +1168,28 @@ discount.
 
 
 ### Fixed
+
+- **A protocol was recorded as though writing it down made it happen.** The
+  three passive captures at 04:28–04:31 were published as "the owner worked the
+  lock, unlock and other fob buttons through a three-minute window", and the
+  conclusion drawn was that event-triggered traffic had been ruled out and the
+  passive path closed for good.
+
+  **Nobody was at the vehicle.** The captures were started immediately after
+  asking for the button presses, and the owner — who was away — confirmed
+  afterwards that none happened. The captures are real and their zero-byte
+  results are real; what was invented was the vehicle state they were taken in.
+
+  This is the exact failure `hummer_obd.experiment`'s `label_source` field was
+  built to prevent — a claim about what a human observed, unbacked by a human
+  having observed it. The field was bypassed by asserting the state in prose
+  instead of recording it as data, which is worth more than the specific error:
+  **a discipline that only applies where the schema reaches is not a
+  discipline.**
+
+  Corrected in `docs/VALIDATION.md` with the original text quoted rather than
+  removed. The surviving result is narrower and still useful: the connector is
+  silent *while charging*. The fob experiment has not been run.
 
 - **A capture that received nothing reported five bytes.** They were `STMA\r` —
   the adapter echoing the tool's own stream command back despite `ATE0`,
