@@ -20,6 +20,30 @@ discount.
 
 ### Added
 
+- **Module answer rates collapse during a settled charge, and it is not damage.**
+  A post-test audit — after five recorder stop/starts and four adapter protocol
+  changes — found the newest rows carrying only 21 of 53 columns, with `pack_v`,
+  `pack_a`, the wheel speeds and the EVSE field all empty. That looks exactly
+  like a rig broken by a night of interference.
+
+  It is not. Answer rates by period:
+
+  | Period | `CB` | `17` | `28` | `40` | std PIDs |
+  |---|---|---|---|---|---|
+  | parked and awake | 99 % | 76 % | 76 % | 77 % | 65 % |
+  | charging, first 20 min | 100 % | 100 % | 100 % | 100 % | **0 %** |
+  | charging, settled | 96 % | **7–27 %** | 7–28 % | 7–26 % | 0 % |
+
+  **The degradation begins at 04:16 — eleven minutes before the first passive
+  capture.** Two distinct vehicle behaviours: standard OBD stops entirely when
+  charging begins (module `17` serves enhanced identifiers but refuses
+  legislated service 01), and the non-battery modules drop to under a third once
+  the charge settles, while the battery manager stays at 96 %.
+
+  Worth recording because a sparse session is easy to read as a fault, and a
+  night of interfering with the rig is exactly when a coincidence gets mistaken
+  for a consequence.
+
 - **Onboard charger efficiency, measured twice: 87.6 % and 91.0 %.** Pack DC
   taken within 90 seconds of each JuiceBox reading — 8.17 kW against 9.319 kW at
   04:16Z, and 8.51 kW against 9.351 kW at 05:24Z. The second is higher for a

@@ -138,6 +138,38 @@ they are all near-multiples of **0.1 pp** (mean residual 1.1 % of a step). So
 the field's resolution is a tenth of a percentage point, and while charging the
 vehicle chooses to advance it four tenths at a time.
 
+### Modules go quiet during a settled charge
+
+Checked after a night of stopping and restarting the recorder for passive tests,
+to confirm nothing had been left broken. Nothing had — but the answer rates move
+a great deal with vehicle state, and it is worth knowing before reading a sparse
+session as a fault:
+
+| Period | `CB` | `17` | `28` | `40` | standard PIDs |
+|---|---|---|---|---|---|
+| parked and awake | 99 % | 76 % | 76 % | 77 % | 65 % |
+| charging, first 20 minutes | 100 % | **100 %** | **100 %** | **100 %** | **0 %** |
+| charging, settled | 96 % | **7–27 %** | 7–28 % | 7–26 % | 0 % |
+
+Two separate behaviours:
+
+**Standard OBD stops entirely the moment charging begins.** Speed and odometer
+have a 0 % answer rate for the whole charge — module `17` serves its enhanced
+identifiers but refuses the legislated service 01 PIDs. Reasonable: the vehicle
+is not being driven.
+
+**The non-battery modules go quiet once the charge settles.** For the first
+twenty minutes after plug-in everything answers; thereafter `17`, `28` and `40`
+fall to under a third while the battery manager `CB` stays at 96 %. That reads
+like the vehicle putting everything but the battery system into a low-power
+state for the hours-long part of a charge.
+
+The timing matters for a different reason. The degradation begins at **04:16**,
+**before** the first passive capture at 04:27 — so it is vehicle behaviour and
+not damage from stopping the recorder or switching adapter protocols. Worth
+stating explicitly, because a night of interfering with the rig is exactly when
+a coincidence would be mistaken for a consequence.
+
 ### Onboard charger efficiency, measured twice
 
 The one quantity here that no amount of vehicle telemetry could produce. Pack DC
