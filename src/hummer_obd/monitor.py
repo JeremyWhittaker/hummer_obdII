@@ -55,6 +55,8 @@ from .transport import PROMPT, SerialTransport, TransportError
 
 __all__ = [
     "MONITOR_COMMANDS",
+    "PROTOCOLS",
+    "monitor_commands",
     "MAX_CAPTURE_SECONDS",
     "MAX_CAPTURE_BYTES",
     "STOP_CHARACTER",
@@ -110,18 +112,49 @@ def assert_no_vehicle_traffic(commands: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(checked)
 
 
-#: The complete list of what is transmitted before monitoring starts.  ``ATSP7``
-#: pins the protocol this vehicle uses (ISO 15765-4, 29-bit, 500 kbit/s) rather
-#: than letting the adapter search for it.  ``ATCAF0`` turns off CAN auto
-#: formatting so frames arrive as sent.  ``ATCS`` reads the CAN error counters,
-#: which are checked again afterwards.
-MONITOR_COMMANDS: Final[tuple[str, ...]] = assert_no_vehicle_traffic((
-    "ATZ", "ATE0", "ATL0", "ATS1", "ATH1", "ATAL",
-    "ATSP7",
-    "ATCAF0",
-    "ATCS",
-    MONITOR_CAN_MODE,
-))
+#: Protocols this tool may be pointed at, and what each one is.
+#:
+#: Every capture before 2026-09-04 used ``ATSP7`` alone, which is what this
+#: vehicle answers diagnostics on.  That is a real gap in the negative result:
+#: "nothing arrives" was only ever established for one protocol, and a frame on
+#: a different one would not have been seen.  None of these transmits -- they
+#: select how the receiver is clocked and framed -- and every one is a fixed
+#: string the gate already admits.
+#:
+#: ``ATSP0`` is deliberately absent: auto-detection finds a protocol by
+#: transmitting, and :func:`assert_no_vehicle_traffic` refuses it.
+PROTOCOLS: Final[dict[str, str]] = {
+    "ATSP6": "ISO 15765-4 CAN, 11-bit, 500 kbit/s",
+    "ATSP7": "ISO 15765-4 CAN, 29-bit, 500 kbit/s -- what this vehicle answers on",
+    "ATSP8": "ISO 15765-4 CAN, 11-bit, 250 kbit/s",
+    "ATSP9": "ISO 15765-4 CAN, 29-bit, 250 kbit/s",
+}
+
+DEFAULT_PROTOCOL: Final[str] = "ATSP7"
+
+
+def monitor_commands(protocol: str = DEFAULT_PROTOCOL) -> tuple[str, ...]:
+    """The complete list of what is transmitted before monitoring starts.
+
+    ``ATCAF0`` turns off CAN auto formatting so frames arrive as sent, and
+    ``ATCS`` reads the CAN error counters, which are read again afterwards.
+    """
+    if protocol not in PROTOCOLS:
+        raise UnsafeCommandError(
+            f"refused {protocol}: not one of {sorted(PROTOCOLS)}. Auto-detect "
+            "is excluded on purpose -- it finds a protocol by transmitting"
+        )
+    return assert_no_vehicle_traffic((
+        "ATZ", "ATE0", "ATL0", "ATS1", "ATH1", "ATAL",
+        protocol,
+        "ATCAF0",
+        "ATCS",
+        MONITOR_CAN_MODE,
+    ))
+
+
+#: The default set, asserted at import so a bad edit fails before a vehicle.
+MONITOR_COMMANDS: Final[tuple[str, ...]] = monitor_commands()
 
 
 @dataclass(frozen=True)
@@ -337,14 +370,26 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--label", default="",
                         help="what the vehicle was doing (one event per capture)")
     parser.add_argument("--output", help="write the capture summary JSON here")
+    parser.add_argument("--protocol", default=DEFAULT_PROTOCOL,
+                        choices=sorted(PROTOCOLS),
+                        help="which CAN protocol to listen on. Every capture "
+                             "before 2026-09-04 used ATSP7 alone, so the "
+                             "negative result covered one protocol only")
     parser.add_argument("--confirm", action="store_true",
                         help="required: this opens the serial device")
     args = parser.parse_args(argv)
 
+    try:
+        commands = monitor_commands(args.protocol)
+    except UnsafeCommandError as exc:
+        print(f"REFUSED: {exc}", file=sys.stderr)
+        return 2
+
     if not args.confirm:
         print("DRY RUN - nothing is transmitted and no serial device is opened.")
+        print(f"protocol: {args.protocol} -- {PROTOCOLS[args.protocol]}")
         print("would send, in order:")
-        for command in MONITOR_COMMANDS:
+        for command in commands:
             print(f"    {command}")
         print(f"    {MONITOR_STREAM_COMMAND}      (start monitoring)")
         print(f"    {STOP_CHARACTER!r}     (stop)")
@@ -367,10 +412,12 @@ def main(argv: Optional[list[str]] = None) -> int:
     # either way, so only a machine-level crash loses anything, and a capture
     # is repeatable.
     with RawLog(raw_path, session_id=f"monitor-{stamp}", fsync=False,
-                meta={"label": args.label}) as raw:
+                meta={"label": args.label, "protocol": args.protocol}) as raw:
         # The claim, written into the evidence it is checked against.
         raw.write_event("transmit_manifest", {
-            "setup": list(MONITOR_COMMANDS),
+            "setup": list(commands),
+            "protocol": args.protocol,
+            "protocol_meaning": PROTOCOLS[args.protocol],
             "stream": MONITOR_STREAM_COMMAND,
             "stop_char_hex": STOP_CHARACTER.hex(),
         })
@@ -383,7 +430,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         )
         try:
             transport.open()
-            for command in MONITOR_COMMANDS:
+            for command in commands:
                 reply = transport.send(command, timeout=5.0)
                 if command == "ATCS":
                     counters["before"] = reply.data.decode("ascii", "replace").strip()
