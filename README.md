@@ -170,6 +170,7 @@ The right-hand column is the one that matters operationally.
 | `hummer-obd-passive` | Listens at the connector; the adapter does not even acknowledge | yes — adapter setup only, no request |
 | `hummer-obd-passive-diff` | Compares two passive captures offline; never replays anything | **no** |
 | `hummer-obd-access` | Renders the access matrix from the code that enforces it | **no** |
+| `hummer-obd-experiment` | Records what a person observed beside a session | **no** |
 | `hummer-obd-display` | Renders the e-paper status page | no |
 | `hummer-obd-recover` | Re-binds an already bonded adapter | no |
 

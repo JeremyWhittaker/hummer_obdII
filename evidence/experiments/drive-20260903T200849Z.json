@@ -1,0 +1,14 @@
+{
+  "ambient_f": null,
+  "charge_state": "unplugged",
+  "dashboard_soc_pct": null,
+  "evse_amps": null,
+  "evse_kw": null,
+  "evse_kwh_delivered": null,
+  "hvac": "",
+  "label_source": "inferred-from-telemetry",
+  "notes": "state derived from the session's own speed and pack-current columns; no outside measurement was taken",
+  "observer": "automated",
+  "session": "drive-20260903T200849Z.csv",
+  "vehicle_state": "driving"
+}

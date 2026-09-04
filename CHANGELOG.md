@@ -20,6 +20,47 @@ discount.
 
 ### Added
 
+- **`hummer-obd-experiment`: what a person observed, recorded beside the
+  session.** Every number this project holds comes from the vehicle, and that is
+  a problem for the fields it cannot decode: correlating the truck's numbers
+  against the truck's other numbers can only ever show that two of its outputs
+  move together. `0x4149` is an EVSE-current candidate read while parked and
+  **unplugged**; the module-40 thermal fields cover 9.0 °F of a 23.4 °F corpus.
+  What breaks that circle is an outside measurement — a thermometer, a charger's
+  own display, the dashboard — and those are exactly the things a person reads
+  and then forgets.
+
+  It is a sidecar, `evidence/experiments/<session>.json`, never a change to the
+  CSV: the CSV is what the vehicle said and must stay exactly that, while the
+  sidecar is what a person claims, and a reader is entitled to weigh them
+  differently.
+
+  **The load-bearing field is `label_source`.** A label derived from the session
+  data does not break the circle — "charge_state was charging because pack
+  current was negative" adds nothing the analysis did not have — and recording
+  it as though it did would launder an inference into evidence. So the schema
+  requires the distinction and **refuses to let an inferred label carry an
+  outside measurement at all**. It has no default, because a default would be
+  answered by whichever value someone picked and the distinction would quietly
+  stop being made.
+
+  23 sidecars were generated for the existing corpus and **every one is marked
+  `inferred-from-telemetry`**, because nobody was standing at the vehicle with a
+  thermometer. That is the honest state and it is what makes the gap visible.
+
+  Other deliberate choices: unknown field names are an error rather than being
+  dropped, because silently discarding a hand-written observation is the worst
+  possible outcome — it was made, written down, and thrown away. `parked-awake`
+  and `asleep` are separate states because free text lets them blur.
+  `plugged-idle` is its own state because an EVSE reading taken plugged-in-but-
+  idle is a different observation from one taken unplugged. And a charge rate
+  recorded against `unplugged` is refused as the transcription error it is.
+
+  The required-field list is derived from the dataclass rather than hand-kept —
+  it had already drifted once during this change, so a sidecar missing
+  `label_source` raised a `TypeError` three frames down instead of naming the
+  field.
+
 - **`hummer-obd-passive-diff`: compare two passive captures and say what
   differs, if anything.** One capture answers *is anything being said at this
   connector*. Two answer the question worth asking: *does it change when
