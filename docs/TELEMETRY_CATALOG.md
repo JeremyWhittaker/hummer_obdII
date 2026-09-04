@@ -132,6 +132,10 @@ thirteen values from 69.943 to 74.743, and every gap is **0.400 pp**:
 mean 0.4000, standard deviation 0.0008, one step about every 5.4 minutes
 ```
 
+Confirmed on the full charge: **33 gaps, mean 0.4001, standard deviation
+0.00074**, every one between 0.399 and 0.402. The claim was first made on
+thirteen values and it holds.
+
 At 8.27 kW that is 0.75 kWh per step, which matches the interval. Across the
 **whole** corpus the gaps are not all 0.400 — they are 0.2, 0.3 and 0.4 — and
 they are all near-multiples of **0.1 pp** (mean residual 1.1 % of a step). So
@@ -190,6 +194,35 @@ AC reading taken at one moment. A mean over one window against a point in
 another is not a comparison. It is the same error shape as the `energy_kwh`
 "decrease" recorded and corrected earlier the same evening, and it is worth
 naming twice because it looked entirely reasonable both times.
+
+### Do not size the pack from a short charge window
+
+The energy-over-state-of-charge ratio should give the pack's capacity. Measured
+in thirds across three and a half hours of charging, it does not settle until
+late:
+
+| Window | SoC | Energy | Implied pack |
+|---|---|---|---|
+| first third | 69.943 → 73.143 | +7.13 kWh | **222.8 kWh** |
+| middle third | 73.143 → 77.943 | +9.50 kWh | 197.9 kWh |
+| last third | 77.943 → 83.145 | +9.77 kWh | **187.8 kWh** |
+| whole charge | 69.943 → 83.145 | +26.51 kWh | 200.8 kWh |
+
+The drift has a cause, and it is the lag documented above. For the first twenty
+minutes `soc_pct` did not move at all while `energy_kwh` climbed 1.42 kWh. A
+window containing that stall under-reports the SoC change and therefore
+**over-reports** the capacity — by 16 % in the first third. As the field catches
+up the estimate converges, and the last third lands at 187.8 kWh against the
+**191.9 kWh** established by three independent routes.
+
+An earlier hour-long window that happened to exclude the stall gave 188.3 kWh,
+which is the same answer. So the settled figure from this charge is about
+**188 kWh, roughly 2 % under** the established one — and the whole-charge number
+is the least trustworthy of the four despite resting on the most data, because
+it is the only one that contains the lag.
+
+**The rule: measure capacity across a window where state of charge is already
+moving.** More data does not fix a systematic bias; it just averages it in.
 
 ### An outside measurement is not automatically better evidence
 

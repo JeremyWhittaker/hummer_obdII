@@ -20,6 +20,27 @@ discount.
 
 ### Added
 
+- **Do not size a pack from a short charge window.** The
+  energy-over-state-of-charge ratio should give capacity. Across three and a
+  half hours it drifts badly and only settles late: **222.8 kWh** in the first
+  third, 197.9 in the middle, **187.8** in the last, and 200.8 for the whole
+  charge.
+
+  The cause is the documented lag. For the first twenty minutes `soc_pct` did
+  not move while `energy_kwh` climbed 1.42 kWh, so any window containing that
+  stall under-reports the SoC change and **over-reports** capacity — by 16 % in
+  the first third. An earlier hour-long window that happened to exclude the
+  stall gave 188.3 kWh; the last third gives 187.8. Same answer, about 2 % under
+  the 191.9 kWh established by three other routes.
+
+  **The whole-charge figure is the least trustworthy of the four despite resting
+  on the most data**, because it is the only one containing the lag. More data
+  does not fix a systematic bias, it averages it in.
+
+- **The 0.400 pp state-of-charge quantum confirmed on the full charge.** First
+  claimed on thirteen values; it now holds across **33 gaps — mean 0.4001,
+  standard deviation 0.00074**, every one between 0.399 and 0.402.
+
 - **Module answer rates collapse during a settled charge, and it is not damage.**
   A post-test audit — after five recorder stop/starts and four adapter protocol
   changes — found the newest rows carrying only 21 of 53 columns, with `pack_v`,
