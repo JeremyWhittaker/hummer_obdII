@@ -124,6 +124,40 @@ steps is ordinary BMS behaviour.
 step function, not a live value** — a first reading suggested it was frozen
 outright, and twenty more minutes showed it merely steps.
 
+An hour of charging measured the step exactly. `soc_pct` advanced through
+thirteen values from 69.943 to 74.743, and every gap is **0.400 pp**:
+
+```text
+0.4  0.399  0.402  0.399  0.4  0.4  0.4  0.4  0.401  0.4  0.399  0.4
+mean 0.4000, standard deviation 0.0008, one step about every 5.4 minutes
+```
+
+At 8.27 kW that is 0.75 kWh per step, which matches the interval. Across the
+**whole** corpus the gaps are not all 0.400 — they are 0.2, 0.3 and 0.4 — and
+they are all near-multiples of **0.1 pp** (mean residual 1.1 % of a step). So
+the field's resolution is a tenth of a percentage point, and while charging the
+vehicle chooses to advance it four tenths at a time.
+
+### An outside measurement is not automatically better evidence
+
+The app read **70 %** and later **75 %** across that same hour, and the vehicle
+read **69.943** and **74.743**. Using them to size the pack from the 9.04 kWh
+taken on:
+
+| Source | Change | Implied pack |
+|---|---|---|
+| myGMC app, whole percent | 5 pp | **180.8 kWh** |
+| `soc_pct`, three decimals | 4.800 pp | **188.3 kWh** |
+| Established elsewhere, three routes | | 191.9 kWh |
+
+The app is an *outside* reading and the worse one, by 4 %, purely because it
+rounds. This project treats outside measurements as the thing that breaks the
+circle of correlating a vehicle's numbers against its own — and they do — but
+**"outside" and "precise" are different properties, and the first does not
+imply the second.** Where the vehicle reports more digits than the display, use
+the vehicle's, and use the display for the quantities the vehicle never states
+at all: the wall current, the ambient temperature, the charger's own kilowatts.
+
 The app also read **233 mi** against a recorded `range_mi` of **233.0** — exact
 — and 70 % against 69.943 %. That is a cross-check of the decoding against an
 independent readout, though not of the underlying sensors, since the app is

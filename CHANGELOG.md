@@ -20,6 +20,39 @@ discount.
 
 ### Added
 
+- **State of charge steps by exactly 0.400 pp while charging.** An hour of the
+  2026-09-04 charge took `soc_pct` through thirteen values, 69.943 to 74.743,
+  and every gap is 0.400: **mean 0.4000, standard deviation 0.0008**, one step
+  about every 5.4 minutes. At 8.27 kW that is 0.75 kWh per step, which matches
+  the interval.
+
+  Corpus-wide the gaps are *not* all 0.400 — they are 0.2, 0.3 and 0.4 — and all
+  are near-multiples of **0.1 pp** (mean residual 1.1 % of a step). So the field
+  resolves to a tenth of a percentage point and the vehicle advances it four
+  tenths at a time while charging. The earlier "frozen" and then "steps coarsely"
+  readings were both windows too short to see the pattern; this is the pattern.
+
+- **An outside measurement is not automatically better evidence.** Across that
+  hour the app read 70 % then 75 %, and the vehicle read 69.943 then 74.743.
+  Sizing the pack from the same 9.04 kWh:
+
+  | Source | Change | Implied pack |
+  |---|---|---|
+  | myGMC app, whole percent | 5 pp | 180.8 kWh |
+  | `soc_pct`, three decimals | 4.800 pp | **188.3 kWh** |
+  | Established by three other routes | | 191.9 kWh |
+
+  The *outside* reading is the worse one, by 4 %, purely because it rounds. This
+  project treats outside measurements as what breaks the circle of correlating a
+  vehicle's numbers against its own — and they do — but **"outside" and
+  "precise" are different properties and the first does not imply the second.**
+  Where the vehicle reports more digits than the display, use the vehicle's;
+  reserve the display for what the vehicle never states at all — wall current,
+  ambient temperature, the charger's own kilowatts.
+
+  The app's other readings remain excellent: 249 mi against a recorded 249.16,
+  and 233 against 233.0 an hour earlier.
+
 - **Single-wire CAN on pin 1: researched, and declined.** With every framing on
   pins 6 and 14 silent, the obvious thought was that we had been listening to
   the wrong wire — GM historically carried locks, lights and remote fob on GMLAN
