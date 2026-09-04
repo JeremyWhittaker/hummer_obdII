@@ -44,6 +44,36 @@ discount.
   record every cycle as raw columns, and a test asserts that **nothing proven at
   `CB` is left uncaptured**, so this cannot recur silently.
 
+- **`hummer-obd-decode`: the project can now re-derive its own findings — and
+  the first thing it did was disprove one.** Every published correlation lived
+  only as prose in a code comment, computed ad hoc in a shell; there was no
+  correlation function anywhere in `src/`. The new tool extracts every plausible
+  field from each raw hex column — single bytes, big-endian `u16`/`s16` pairs,
+  `u24` windows — and correlates each against every quantity the vehicle reports
+  directly. Stdlib only: `statistics.correlation`, no pandas, because the
+  analysis stack is hand-rolled for a Pi Zero on purpose.
+
+  It reproduced `0x2B43` against state of charge at **+0.994** (published:
+  +0.995) and found something the hand analysis missed — the same positions
+  track `energy_kwh` at **+0.999**, better than they track SoC, which is what a
+  finer-grained field should do.
+
+  **It did not reproduce `0x5401` against pack current at −0.81.** The real
+  figure over 1907 paired rows is **−0.09**. The original came from a corpus
+  that was almost entirely parked and charging, where pack current spanned −22
+  to +105 A; once real driving was recorded, current reached +836 A while the
+  byte stayed at zero, and the relationship collapsed. It was measuring corpus
+  composition. The conclusion it appeared to support — that `0x5401` tracks
+  charging state and is not power — is unchanged, because it rests on the
+  plateau across a ninefold power range and the decay to zero after a charge,
+  neither of which involved that number.
+
+  Three behaviours are deliberate and tested: transitional rows are dropped and
+  the count reported (correlating through wake/sleep edges invented a +0.55);
+  every correlation carries the **span** of what it was measured against (all
+  the temperature figures rest on 5.4 °F); and a constant field is reported as a
+  finding rather than skipped.
+
 - **Six documents were asserting things the code had already disproved.** An
   audit of every file against the current source found claims that had outlived
   the facts, in some cases by a day, in one case inside the same file:

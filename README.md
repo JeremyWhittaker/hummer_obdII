@@ -148,6 +148,7 @@ The right-hand column is the one that matters operationally.
 | `hummer-obd-capabilities` | Sanitized report of a node's live state | **no** |
 | `hummer-obd-analyze` | Reads a recorded session back | **no** |
 | `hummer-obd-live` | Every sensor and how long since it answered | **no** |
+| `hummer-obd-decode` | Correlates undecoded raw fields against measured quantities | **no** |
 | `hummer-obd-export` | Local export of stored telemetry | **no** |
 | `hummer-obd-drive` | The automatic session recorder (a service) | yes — `ATRV` only while asleep |
 | `hummer-obd-collector` | Reconnect-aware poller, disabled by default | yes — standard OBD only |
@@ -242,6 +243,8 @@ src/hummer_obd/
                      answering; never opens the port either
   registry.py        renders the identifier registry into the docs from the
                      safety gate itself, so the two cannot drift
+  decode_fields.py   correlates undecoded raw columns against measured
+                     quantities, so a published figure can be rechecked
   discover.py        per-module support census using only J1979's own bitmaps;
                      sends no vendor identifier and guesses nothing
   probe.py           supervised one-shot probe and offline replay

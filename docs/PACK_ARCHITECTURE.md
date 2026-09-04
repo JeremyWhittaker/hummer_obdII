@@ -237,13 +237,37 @@ it settles the question in the negative.
 
 | evidence | value |
 |---|---|
-| correlation with pack current | **−0.81** over 297 paired samples |
+| correlation with pack current | **−0.09** over 1907 paired rows (see the correction below) |
 | value while charging | 147–152 |
 | power range across those samples | **1.85 – 16.51 kW** |
 | value while not charging | zero in **227 of 254** samples |
 
 So it is certainly tied to charging — and just as certainly not power, because a
 ninefold change in measured power moves it by at most five counts.
+
+### Correction: the −0.81 was an artefact of the corpus
+
+This table read **−0.81 over 297 paired samples** until `hummer-obd-decode`
+existed to re-derive it. It does not hold. Over 1907 paired rows the correlation
+is **−0.09**, and restricting to the same early sessions the original used gives
+−0.09 as well.
+
+The original figure was computed when almost everything recorded was a parked or
+charging vehicle, with pack current spanning −22 to +105 A. `0x5401` sat near
+150 while charging and 0 otherwise, and pack current was negative while charging,
+so the two moved together. Once real driving entered the corpus — pack current
+reaching **+836 A** while this byte stayed at zero throughout — the relationship
+collapsed. It was measuring what the corpus happened to contain, not a property
+of the signal.
+
+**The conclusion it supported is unchanged and was reached by other evidence:**
+the plateau at 147–152 across a ninefold power range, the zero in 227 of 254
+non-charging samples, and the monotonic decay to zero after a charge ended. Those
+are what establish that `0x5401` tracks charging state and is not power. The
+correlation was never load-bearing — it was quoted as though it were.
+
+This is the first thing the decode tool did, and the reason it was built: a
+number that no one can recompute is a number no one can check.
 
 The decisive evidence is the end of a charge. Over three and a half minutes,
 with state of charge flat at 89.653 %, energy flat at 172.03 kWh, and pack

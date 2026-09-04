@@ -30,6 +30,7 @@ hummer-obd-drive = "hummer_obd.drive:main"
 hummer-obd-analyze = "hummer_obd.analyze:main"
 hummer-obd-live = "hummer_obd.live:main"
 hummer-obd-discover = "hummer_obd.discover:main"
+hummer-obd-decode = "hummer_obd.decode_fields:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

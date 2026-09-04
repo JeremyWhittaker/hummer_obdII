@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import statistics
 import sys
 from pathlib import Path
 from typing import Optional
@@ -44,6 +45,9 @@ __all__ = [
     "KM_PER_MILE",
     "read_session",
     "analyze",
+    "array_values",
+    "field_windows",
+    "correlate",
     "format_report",
     "main",
 ]
@@ -137,6 +141,71 @@ def read_session(path: str | Path) -> tuple[list[dict], list[str], list[str]]:
                     row[key] = _number(value)
             rows.append(row)
     return rows, warnings, header
+
+
+def array_values(text: object) -> Optional[list[int]]:
+    """The bytes of a hex column, or ``None`` if it is not hex.
+
+    The recorder stores anything whose meaning is unproven as an uppercase hex
+    string -- twenty-six per-module values in ``0x2B43``, twenty-four in
+    ``0x2AF1``, nine single fields from module 40.  Reading them back as numbers
+    is the first step of deciding what any of them are.
+    """
+    if not isinstance(text, str):
+        return None
+    stripped = text.strip()
+    if not stripped:
+        return None
+    try:
+        return list(bytes.fromhex(stripped))
+    except ValueError:
+        return None
+
+
+def field_windows(values: list[int]) -> dict[str, list[int]]:
+    """Every plausible field an array of bytes could contain.
+
+    A manufacturer's array is a run of bytes with no separators, so which
+    *widths* it holds is part of what has to be discovered.  Single bytes,
+    big-endian 16-bit pairs signed and unsigned, and 24-bit windows cover the
+    shapes this vehicle has used everywhere its encoding is already known --
+    ``0x27C6`` is a u16, ``0x27C7`` a u24, ``0x2414`` a signed 16.
+
+    Each window is returned as a one-element list so a caller can concatenate
+    across rows into a time series per candidate field.
+    """
+    out: dict[str, list[int]] = {}
+    for i, value in enumerate(values):
+        out[f"b{i:02d}"] = [value]
+    for i in range(len(values) - 1):
+        raw = (values[i] << 8) | values[i + 1]
+        out[f"u16@{i:02d}"] = [raw]
+        out[f"s16@{i:02d}"] = [raw - 0x10000 if raw & 0x8000 else raw]
+    for i in range(len(values) - 2):
+        out[f"u24@{i:02d}"] = [
+            (values[i] << 16) | (values[i + 1] << 8) | values[i + 2]
+        ]
+    return out
+
+
+def correlate(xs: list[float], ys: list[float]) -> Optional[float]:
+    """Pearson correlation, or ``None`` when the question does not apply.
+
+    ``statistics.correlation`` raises on inputs where a correlation is not
+    defined rather than returning a value, which is correct and inconvenient:
+    the two cases that matter here -- too few samples, and a field that never
+    moves -- are both *findings*.  A constant field is the strongest statement
+    an array position can make, and it must reach the report rather than the
+    traceback.
+    """
+    if len(xs) != len(ys) or len(xs) < 3:
+        return None
+    if len(set(xs)) < 2 or len(set(ys)) < 2:
+        return None
+    try:
+        return statistics.correlation(xs, ys)
+    except statistics.StatisticsError:
+        return None
 
 
 def _series(rows: list[dict], key: str) -> list[float]:

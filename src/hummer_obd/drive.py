@@ -126,8 +126,14 @@ DECODERS: dict[str, Callable[[bytes], dict]] = {
     # now given it the reference this comment used to be waiting for, and the
     # answer is that it is not power at all:
     #
-    #   * It correlates with pack current at -0.81 over 297 paired samples, so
-    #     it is certainly tied to charging.
+    #   * It is tied to charging.  An earlier note here claimed a -0.81
+    #     correlation with pack current over 297 paired samples; that figure
+    #     did not survive a larger corpus.  Over 1907 paired rows the
+    #     correlation is -0.09.  The original was computed when the recorded
+    #     data was almost entirely parked and charging, with pack current
+    #     spanning -22 to +105 A; once real driving was recorded that span
+    #     reached +836 A while this byte stayed at zero throughout.  It was
+    #     measuring the composition of the corpus, not the signal.
     #   * But while charging it sits at 147-152 across a measured 1.85 to
     #     16.51 kW -- a ninefold power range holding one plateau.  Power it is
     #     not.
