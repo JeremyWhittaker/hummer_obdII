@@ -317,6 +317,48 @@ over Bluetooth at 115200 baud; it caps at a few hundred frames per second
 against a bus carrying thousands. The capture is lossy by construction and the
 loss is not recorded anywhere.
 
+### Making an unknown field identify itself
+
+Seventeen recorded columns are raw payload bytes with no meaning claimed, and no
+amount of correlating them against the vehicle's *other* numbers will fix that —
+it can only show that two of the truck's outputs move together. What identifies
+a field is an **outside intervention**.
+
+The recorder does not need stopping for this. It is already sampling every
+column every eight seconds; all you add is a note of when you did something.
+
+```bash
+# on the node, or over ssh from a phone
+PYTHONPATH=src python3 -m hummer_obd.experiment mark "hvac max cool on"
+#   ... hold that state at least three minutes ...
+PYTHONPATH=src python3 -m hummer_obd.experiment mark "hvac off"
+
+# then, offline, from anywhere
+hummer-obd-respond --dir evidence/sessions
+```
+
+**Two rules that decide whether the result means anything.**
+
+*Start with the largest step available.* A cabin setpoint moved one degree may
+change nothing measurable; the climate system switched off and on is a
+multi-kilowatt step this recorder cannot miss. Find which field responds with
+the coarse step, then use fine steps to find its resolution. The other order
+produces a null result that means nothing.
+
+*Hold each state long enough.* At an eight-second cycle three minutes is about
+twenty samples. `hummer-obd-respond` refuses to call a difference a response
+when either side has fewer than eight, because a difference from five samples is
+a coincidence with a decimal point.
+
+Marks are keyed by UTC time, not by session, so it does not matter which CSV the
+recorder happens to be writing or whether you cross a session boundary.
+
+**What it gives you is association in time, and nothing more.** A field that
+moves when the climate system starts may be measuring compressor current, cabin
+temperature, the pack heater reacting or the 12 V load. Separating it from
+everything that did *not* move is real progress; identifying it needs a second
+intervention that changes one of those and not the others.
+
 ### Comparing captures (`hummer-obd-passive-diff`)
 
 One capture answers *is anything being said*. Two answer the more interesting

@@ -390,3 +390,4 @@ anything:
 | What are the permanent safety rules? | [SAFETY.md](SAFETY.md) |
 | How do I operate the node? | [RUNBOOK.md](RUNBOOK.md) |
 | Would new hardware help? | [CAN_FD_EXPANSION.md](CAN_FD_EXPANSION.md) |
+| Could GM's own tool decode the raw fields for us? | [OEM_DIAGNOSTIC_WORKFLOW.md](OEM_DIAGNOSTIC_WORKFLOW.md) |
