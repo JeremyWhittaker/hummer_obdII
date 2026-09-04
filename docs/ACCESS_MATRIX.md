@@ -155,7 +155,7 @@ Every cell below is produced by putting that command to that gate and recording 
 | `warmups_since_clear` | standard OBD, asked of module 17 | `0130` | 0x18 | — |
 | `dist_since_clear_km` | standard OBD, asked of module 17 | `0131` | 0x18 | — |
 | `module_voltage` | standard OBD, asked of module 17 | `0142` | 0x18 | — |
-| `regen_field_raw` | battery manager (module CB) | `0x27BF` | 0x14 | **1** answers here |
+| `regen_field_raw` | battery manager (module CB) | `0x27BF` | 0x14 | **2** decoded |
 | `thermal_energy_raw` | battery manager (module CB) | `0x27BB` | 0x14 | **2** decoded |
 | `thermal_distance_raw` | battery manager (module CB) | `0x27B5` | 0x14 | **1** answers here |
 | `compressor_temp_raw` | battery manager (module CB) | `0x2709` | 0x14 | **1** answers here |
@@ -170,7 +170,7 @@ Every cell below is produced by putting that command to that gate and recording 
 | `coolant_2_raw` | body (module 40) | `0x40E6` | 0x18 | **2** decoded |
 | `pack_v` | pack power (module 17) | `0x2885` | 0x14 | **4** cross-validated in more than one state |
 | `pack_a` | pack power (module 17) | `0x2414` | 0x14 | **4** cross-validated in more than one state |
-| `field_2429_raw` | pack power (module 17) | `0x2429` | 0x14 | **1** answers here |
+| `field_2429_raw` | pack power (module 17) | `0x2429` | 0x14 | **2** decoded |
 | `hv_power_kw` | computed by the recorder, not read from a module | `V x A` | — | — |
 | `dmc2_v` | drive motor controller (module 1D) | `0x33E5` | 0x14 | **3** cross-validated |
 | `wheel_fl_kph` | brake / chassis controller (module 28) | `0x4A7A` | 0x14 | **3** cross-validated |

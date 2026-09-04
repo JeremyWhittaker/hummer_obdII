@@ -66,7 +66,7 @@ asserts it, so the distinction cannot quietly reappear.
 | Charging-state indicator | `0x5401` | none applied | — | **read** |
 | 24-element array | `0x2AF1` | none applied | — | **raw** |
 | `0x2AF5` trailing bytes | `0x2AF5` | `[B6:B9]`, none applied | — | **raw** |
-| Regeneration field | `0x27BF` | none applied | — | **raw** |
+| Regeneration field | `0x27BF` | none applied | — | **read** |
 | Thermal-management energy | `0x27BB` | none applied | — | **read** |
 | Thermal-management distance | `0x27B5` | none applied | — | **raw** |
 | A/C compressor temperature | `0x2709` | none applied | — | **raw** |
@@ -217,6 +217,145 @@ about units. `0x4127` at 601 is not 601 of anything.
 second, on a different day, reproducing 601 in `0x4127` and the return in
 `0x40E5`, is the missing evidence. A genuinely cold morning would separately
 settle whether `coolant_1_raw`'s 0.0591 °C/count is really 1/16.
+
+### The commute: 905 A of swing, and the first field that decodes to a physical quantity
+
+On 2026-09-04 the vehicle drove 20.1 km to work in 17 minutes. Every decode
+attempt before this had only slow monotonic ramps to work with — a charge, a
+night cooling down. This drive swung pack current from **−275 A to +630 A**,
+reversing sign 27 times, which is the one input shape elapsed time cannot
+imitate.
+
+#### `0x2429` is a bipolar drive/regen torque signal, zero-referenced at 22534
+
+The source calls it nominal pack voltage ÷ 64. It is not a voltage, and the
+proof needs no correlation: in `drive-20260904T020049Z.csv` the *measured* pack
+voltage swings **0.83 V → 377.89 V** across 526 samples as the contactors work,
+and this field reads `0x5806` in every one of them. A field that does not move
+while its claimed quantity moves 377 V is not that quantity. It also moves the
+wrong way under load — at peak draw the real pack voltage sags to 377.20 V while
+this field ÷ 64 *rises* to 400.00 V.
+
+What it is instead:
+
+- **22534 (`0x5806`) is an exact zero point.** Constant across 1,083 stationary
+  samples corpus-wide, and the *only* value present in 7 of the 8 sessions that
+  carry it. It ignores HVAC entirely — 308 of 309 parked A‑B‑A samples read
+  `0x5806` through cold soak, A/C, heat and A/C — and the single exception is
+  the row where wheel speed first reads 3 kph.
+- **It reverses about that zero with torque direction.** All 25 drive samples
+  below −20 A sit under 22534; 73 of 75 above +20 A sit over it. Sign matched on
+  25 of 27 zero crossings. Against elapsed time, r = −0.113 over 1,017 s.
+- **It is not a function of pack current.** Gain falls from 18.2 counts/A at
+  30 kph to 3.9 at 132 kph — a 1/speed law. The previously published
+  "~16.4 counts per amp" was an artefact of pooling speeds.
+- **It tracks electrical power ÷ speed**, R² = 0.926 over the 82 samples above
+  40 kph, with a near-zero intercept.
+
+Read that last point carefully. `hv_power_kw` is `pack_v × pack_a` and `pack_v`
+varies only ±2.4 %, so P/v is very nearly *current ÷ speed*, and calling it
+tractive force imports an assumption of roughly constant drivetrain efficiency.
+One check supports the force reading using **module 28 only and no pack current
+at all**: predicting the field from `longitudinal_g` and speed² gives R² = 0.766
+across all 140 samples and an implied vehicle mass of **3,415 kg** — the right
+order for this vehicle.
+
+**No equation is shipped.** The constant is 2.30–2.42 newtons per count, which
+is not a divisor a designer picks; it becomes round only by assuming an
+unmeasured rolling radius or final-drive ratio. The zero point is not round
+under any candidate scaling either. It must be read as one big-endian u16, not
+byte 0 alone — the low byte is pinned at `0x06` in all 320 baseline samples,
+which no independent signal would be.
+
+#### Pack internal resistance, measured for the first time
+
+With current swinging 905 A while SoC moved only 4.5 pp, open-circuit voltage is
+nearly constant and the pack's resistance falls out of the data.
+
+| Method | Result | n |
+|---|---|---|
+| Consecutive-step ΔV/ΔI, pooled | **18.59 ± 0.11 mΩ** (r = −0.991) | 550 steps |
+| Level regression of `pack_v` on `pack_a` | 20.37 mΩ, implied OCV 390.12 V | 140 |
+| Two-lag model: instantaneous + previous-sample | 19.95 + 2.11 = **22.06 mΩ** | 2,100 |
+
+That is **0.194 mΩ per cell** at 96 series cells. The ~2 mΩ spread between
+methods is not noise, it decomposes: there is an instantaneous resistance of
+about 19.9 mΩ plus a 2.1 mΩ component that depends on the *previous* sample's
+current, so the pack reads ~18.6 mΩ on a 7-second step and ~22.1 mΩ at sustained
+load. Maximum observed sag is 14.27 V at 630 A.
+
+**Use the step estimator, not the level regression.** Across seven sessions the
+step estimator returns 18.03–19.21 mΩ (mean 18.70, sd 0.40). The level
+regression on the same seven returns −44.45, 18.59, 18.97, 19.03, 20.49, 21.43
+and 25.81 mΩ — including a **wrong sign** — and swings 27 % on the target file
+purely from where the window edge is placed.
+
+#### `soc_pct` quantises differently in each direction, and freezes while parked
+
+- **Exactly 0.500 pp per step discharging, exactly 0.400 pp charging.** The two
+  sets are disjoint corpus-wide: 36 of 37 down-steps at 0.500, 75 of 76 up-steps
+  at 0.400, over 7,057 rows in 39 files.
+- **It freezes when parked and catches up under way.** Across 282 parked samples
+  and 45.2 minutes, 2.500 kWh drained and SoC moved **0.000 pp**. In the drive,
+  59 samples at the head and 37 at the tail are flat, and all 9 steps fall in the
+  middle 44.
+
+So this drive **cannot** size the pack: moving the window edges alone yields
+anything from **152 to 253 kWh** on the same discharge. Reported honestly as a
+negative result rather than as a third estimate.
+
+The corpus can, though. One uninterrupted **19.710 pp** discharge gives
+**190.5 ± 0.8 kWh** by regression on its SoC transition anchors, and the
+corpus-wide pointwise `energy_kwh ÷ (soc_pct/100)` over all 6,961 rows has a
+median of **190.5** with sd 0.89. That cross-validates the established 191.9 kWh
+and sits **below** the charge-derived 194.0 kWh.
+
+#### The accumulator family, and what each one's scope is
+
+`0x27BB`, `0x27B5` and `dist_since_chg_mi` all reset to zero in the **same poll**
+at the end of a charge — one decrease in 3,362 samples across 14 sessions. They
+are since-last-charge counters, not lifetime ones.
+
+- **`0x27BB` is not a clock.** It froze for 5.18 h across 1,307 charging samples,
+  for 328 samples of Ready with HVAC off, and for all 99 cold-soak samples. Its
+  step rate differs ~2.8× between parked-with-HVAC and driving *in the direction
+  that excludes a per-poll counter* — the drive polled faster (7.3 s/sample vs
+  9.5) and stepped slower. All 3,302 decoded samples are divisible by 10.
+- **`0x27B5` is not distance.** It advanced 32 counts across 311 consecutive
+  samples in which the odometer did not move. It is also reconstructible from
+  `0x27BB` to within ±1 count by any multiplier in 0.2125–0.2143, so the two are
+  one signal at two scales. No round divisor fits that range — 1/5 and 1/4 are
+  both rejected by the residuals.
+- **`0x27BF` is regen-specific.** Across 226 samples spanning 4 h 39 min of AC
+  charging, with pack current negative throughout and SoC rising 69.943 → 89.145,
+  it read exactly 77 and never moved — so it is not an unthresholded coulomb
+  counter. It has a tick threshold: ticking intervals carry median regen current
+  102.5 A against 26.1 A for non-ticking (AUC 0.896), though the ranges overlap.
+  No tick size is established and none can be from 7–9 s polling.
+
+#### Two corrections to entries published earlier the same day
+
+**`0x4127 = 1048` does not mean charging.** This project published that "every
+one" of those samples has negative pack current. That was written from a *mean*
+of −8.6 A in a summary table; the script written to check it crashed, and the
+claim shipped anyway. Re-derived: of 443 samples at 1048 carrying a current, 235
+are negative, **184 are strictly positive** and 24 are zero — and all 184
+positives have `charger_5401_raw = '00'`, the charger inactive.
+
+The rule that *does* hold without exception is better: of 477 samples at 1048,
+**zero carry any `speed_kph` value at all**. Charging is merely a subset of the
+no-wheel-speed state, which is why the charging story looked right on parked
+data. The drive supplied the disambiguating case — the field steps to 1048 six
+seconds after the last wheel-speed report, parked, unplugged, SoC flat and pack
+current positive, with `0x4124` dropping 1000 → 0 in the same poll.
+
+**`power_kw` was never in conflict with `hv_power_kw`.** It is not a module
+reading at all: the recorder computes it as the slope of `energy_kwh` over a
+60 s trailing window, with an inverted sign convention. Reconstructed 508/508
+rows exactly. The apparent 6× disagreement was one hard-throttle instantaneous
+sample (237.64 kW) compared against a 60-second average; the trailing mean at
+that same row was 42.01 kW against `−power_kw` of 37.82 — 10 % apart. Corpus-wide
+r = +0.9725 against the 60 s mean, versus +0.3988 against the instantaneous value.
 
 ### The cold soak: the best thermal experiment yet, and it decodes nothing
 
@@ -482,7 +621,7 @@ They were never fitted to one another, yet they agree:
 |---|---|---|---|---|
 | Traction pack voltage | `0x2885` | `[B0:B1] / 100` | V | **measured** |
 | Traction pack current | `0x2414` | `signed16 / 20`, negative = charging | A | **measured** |
-| Unknown, load-tracking | `0x2429` | none applied | — | **raw** |
+| Unknown, load-tracking | `0x2429` | none applied | — | **read** |
 | Instantaneous HV power | derived | `pack_v * pack_a / 1000` | kW | **measured** |
 
 This was the project's single largest gap and it is now closed. Measured during

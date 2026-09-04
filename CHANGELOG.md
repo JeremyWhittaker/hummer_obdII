@@ -20,6 +20,75 @@ discount.
 
 ### Added
 
+- **The commute decoded `0x2429` into a physical quantity, and measured the
+  pack's internal resistance for the first time.** A 20.1 km drive swung pack
+  current **−275 A to +630 A** with 27 sign reversals — the one input shape
+  elapsed time cannot imitate, and the thing every previous decode attempt
+  lacked. Analysed across seven dimensions with an adversarial verifier on each.
+
+  - **`0x2429` is a bipolar drive/regen torque signal zero-referenced at 22534
+    (`0x5806`).** Not a voltage: in one session the measured pack voltage swings
+    0.83 → 377.89 V across 526 samples while this field holds `0x5806` in every
+    one. The zero point is constant across 1,083 stationary samples corpus-wide
+    and is the only value present in 7 of the 8 sessions carrying it. It
+    reverses about that zero with torque direction (25 of 27 zero crossings) and
+    tracks electrical power ÷ speed at R² = 0.926. The earlier "~16.4 counts per
+    amp" is superseded — that gain falls from 18.2 at 30 kph to 3.9 at 132 kph,
+    a 1/speed law, so the pooled figure was an artefact of mixing speeds.
+    Supported by a module-28-only check using no pack current at all:
+    `longitudinal_g` and speed² predict the field at R² = 0.766 with an implied
+    vehicle mass of 3,415 kg. **No equation is shipped** — 2.30–2.42 N per count
+    is not a divisor a designer picks, and it only becomes round by assuming an
+    unmeasured rolling radius or final drive.
+  - **Pack internal resistance: 18.59 ± 0.11 mΩ** (0.194 mΩ/cell at 96S) from
+    550 consecutive-step ΔV/ΔI measurements, r = −0.991. The ~2 mΩ spread against
+    the level regression decomposes rather than being noise: 19.95 mΩ
+    instantaneous plus 2.11 mΩ depending on the previous sample's current, so
+    ~18.6 mΩ on a 7 s step and ~22.1 mΩ sustained. Use the step estimator — the
+    level regression returns the wrong sign on one session and swings 27 % with
+    window placement.
+  - **`soc_pct` quantises differently by direction**: exactly 0.500 pp
+    discharging, 0.400 pp charging, disjoint corpus-wide over 7,057 rows. It also
+    freezes while parked (2.500 kWh drained over 45.2 min for 0.000 pp) and
+    catches up under way, so **this drive cannot size the pack** — moving the
+    window edges alone gives 152 to 253 kWh. Recorded as a negative result.
+  - **Pack capacity from a discharge: 190.5 ± 0.8 kWh**, from the corpus's one
+    uninterrupted 19.710 pp discharge, with the corpus-wide pointwise median at
+    190.5 (sd 0.89, n=6,961). Cross-validates the established 191.9 kWh and sits
+    below the charge-derived 194.0.
+  - **The accumulator family is scoped**: `0x27BB`, `0x27B5` and
+    `dist_since_chg_mi` all reset in the same poll at charge end — one decrease
+    in 3,362 samples — so they are since-last-charge counters. `0x27BB` is not a
+    clock (froze 5.18 h across 1,307 charging samples; steps *slower* while
+    polling *faster*). `0x27B5` is not distance (32 counts across 311 samples
+    with a static odometer) and carries nothing `0x27BB` does not. `0x27BF` is
+    regen-specific — it read exactly 77 through 4 h 39 min of charging — with a
+    tick threshold but no establishable tick size at 7–9 s polling.
+
+### Fixed
+
+- **`0x4127 = 1048` does not mean charging, and the claim that it did was
+  published from a mean.** This project stated that "every one" of those samples
+  has negative pack current. That came from a −8.6 A mean in a summary table; the
+  script written to verify it crashed with a `TypeError`, and the claim shipped
+  without the check being re-run. Re-derived: of 443 samples at 1048 carrying a
+  current, 235 are negative, **184 are strictly positive** and 24 are zero, with
+  all 184 positives showing `charger_5401_raw = '00'`.
+
+  The rule that holds without exception is better than the one it replaces: of
+  477 samples at 1048, **zero carry any `speed_kph` value**. Charging is a subset
+  of the no-wheel-speed state, which is why the wrong rule fit the parked corpus.
+  The drive gave the disambiguating case — 1048 appears six seconds after the
+  last wheel-speed report while parked, unplugged, SoC flat and current positive.
+
+- **`power_kw` was never in conflict with `hv_power_kw`.** It is not a module
+  reading: the recorder computes it as the slope of `energy_kwh` over a 60 s
+  trailing window, with an inverted sign. Reconstructed 508/508 rows exactly. The
+  apparent 6× gap was one hard-throttle instantaneous sample against a
+  60-second average — the trailing mean at that row was 42.01 kW against 37.82.
+  Corpus-wide r = +0.9725 against the 60 s mean vs +0.3988 against the
+  instantaneous value.
+
 - **Driving is the state where everything answers.** Measured corpus-wide as the
   fraction of populated cells by service: while moving, standard service 01 and
   enhanced service 22 are both at **100.0 %** (2,727 and 6,382 cells). While
