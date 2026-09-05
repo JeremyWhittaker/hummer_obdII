@@ -86,9 +86,12 @@ discount.
   independent falsification**, reached from entirely different data than the
   moving-vehicle one and agreeing with it.
 
-  These figures come from a session still being written and are marked as such;
-  they get re-derived when it closes. **Two conclusions were drafted from this
-  charge and withdrawn before publication**, both from reading a window that
+  Re-derived against the closed 351-row session and unchanged. The charge also
+  used charger state `0x0D` (125 samples) as well as `0x0C` (210), and neither
+  appears in the `0x93`–`0x99` family that every 240 V charge uses exclusively —
+  so the two charge types are distinguishable from the state word alone.
+  **Two conclusions were drafted from this charge and withdrawn before
+  publication**, both from reading a window that
   ended before the value settled: first that 96 was the 120 V charging value,
   then that the chargers needed divisors of 3.98 and 8.00 and that
   `960 × amps ÷ volts` fitted both. The settled reading of 160 kills all of it.
