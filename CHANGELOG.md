@@ -65,6 +65,23 @@ discount.
 
 ### Fixed
 
+- **`0x4127`'s powertrain-down family is `{429, 1048}`, not 1048 alone — and
+  the error came from reading a session that was still being written.** The
+  previous entry said "all 22 samples with no road speed reported read 1048".
+  That was measured on 93 rows of a file that became 335, in which 429 had not
+  yet appeared. On the complete file, 67 of 69 no-speed samples read 1048 and
+  2 read 429.
+
+  Corpus-wide the partition is clean: 429 (9 samples) and 1048 (601) occur
+  **only** with no speed reported — 610 of 610 — while 234, 238, 242, 246, 261
+  and 601 occur with a speed in 2,373 of 2,374, one sample of 234 excepted.
+
+  Every other figure taken from that partial read survived the complete file
+  unchanged — 18.86 mΩ at n=62, 242 across all 68 moving samples, 9.10 km, and
+  the `0x2429` sign convention at 31/32 and 28/29, with the zero-point evidence
+  strengthening from 22 to 59 powertrain-down samples all at exactly 22534.
+  That was luck, not method. A session is read after it closes.
+
 - **`0x4127 = 246` is not "the moving value".** The previous entry said 246
   "appears in no other session and is first seen in the exact poll of first
   wheel motion". The second drive holds **242** across all 68 moving samples.

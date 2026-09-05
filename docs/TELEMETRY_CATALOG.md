@@ -366,9 +366,13 @@ value is that nothing here was fitted to it.
 (n = 62 steps, r = −0.9926, 0.1964 mΩ/cell) against 18.59 mΩ pooled over the
 earlier corpus — **1.5 % apart**, from a separate drive on separate roads.
 
-**`0x4127`'s no-speed rule holds; its "246" claim does not.** All 22 samples
-with no road speed reported read 1048, and no sample with a speed did — the
-same rule that holds across 477 corpus samples. But this drive holds **242**
+**`0x4127`'s no-speed rule holds; its "246" claim does not.** The values split
+cleanly by whether a road speed is being reported. Corpus-wide, 429 (9 samples)
+and 1048 (601) occur **only** with no speed — 610 of 610 — while 234, 238, 242,
+246, 261 and 601 occur with a speed in 2,373 of 2,374. One sample of 234 breaks
+it. So `{429, 1048}` is the powertrain-down family, not 1048 alone; an earlier
+version of this section said otherwise because it was measured on a session
+still being written, where 429 had not yet appeared. But this drive holds **242**
 across all 68 moving samples, where the previous one held 246 throughout. So
 the powertrain-up value is a **per-session constant** drawn from the
 234/238/242/246 family, not a fixed motion marker. The state distinction is
