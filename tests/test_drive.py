@@ -6,6 +6,7 @@ anything neither safety gate allows.
 """
 
 import os
+import tempfile
 import unittest
 
 from hummer_obd import drive
@@ -19,6 +20,7 @@ from hummer_obd.drive import (
     STANDARD_PIDS,
     record,
     run_auto,
+    watch_interval,
 )
 from hummer_obd.safety import (
     ENHANCED_READ_DIDS,
@@ -1274,3 +1276,86 @@ class TestTheWakeThresholdAgainstMeasuredStates(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class TestTheWakeWatchBacksOffInsteadOfAlwaysWaitingFiveMinutes(unittest.TestCase):
+    """Catching a drive that starts right after the vehicle fell asleep.
+
+    The slow interval exists to bound how often WAKE_PROBE reaches a sleeping
+    vehicle, and that bound is real: the asleep band is 12.7-12.9 V against a
+    12.8 V threshold, so a parked truck reads "awake" on the rail about half
+    the time and only the probe settles it.
+
+    But five minutes is also five minutes of drive lost, and on 2026-09-04 it
+    cost the start of two of them -- including the motion-onset transition that
+    would have settled whether 0x4127 steps at first wheel movement. The
+    workaround was restarting the service by hand, which needs network access
+    to a node that is off WiFi exactly when it is moving. Hence a fast window
+    first, then the old behaviour.
+    """
+
+    def test_a_vehicle_that_just_fell_asleep_is_watched_briskly(self):
+        self.assertEqual(watch_interval(0.0), drive.WAKE_WATCH_FAST_S)
+        self.assertEqual(
+            watch_interval(drive.WAKE_WATCH_WINDOW_S - 1), drive.WAKE_WATCH_FAST_S)
+
+    def test_a_vehicle_asleep_a_long_time_falls_back_to_the_slow_interval(self):
+        self.assertEqual(watch_interval(drive.WAKE_WATCH_WINDOW_S), 300.0)
+        self.assertEqual(watch_interval(drive.WAKE_WATCH_WINDOW_S + 3600), 300.0)
+
+    def test_a_cold_start_does_not_assume_a_wake_is_imminent(self):
+        # None means this run has never seen the vehicle fall asleep, so there
+        # is no reason to think it is about to wake -- the node reboots far
+        # more often next to a truck parked overnight than one just switched
+        # off, and watching fast forever would transmit the probe all night.
+        self.assertEqual(watch_interval(None), 300.0)
+
+    def test_the_slow_interval_stays_caller_controlled(self):
+        self.assertEqual(watch_interval(None, slow_s=42.0), 42.0)
+        self.assertEqual(watch_interval(9999, slow_s=42.0), 42.0)
+
+    def test_the_watch_actually_shortens_after_a_session_ends_asleep(self):
+        # The property that matters, end to end. A cold start on a sleeping
+        # vehicle must still wait the slow interval -- there is no reason to
+        # think a truck parked overnight is about to move -- but once this run
+        # has WATCHED one fall asleep, the next look must come quickly.
+        def waits_for(volts_sequence, budget):
+            waits: list[float] = []
+            ticks = {"t": 0.0}
+
+            def clock():
+                ticks["t"] += 1.0
+                return ticks["t"]
+
+            calls = {"n": 0}
+
+            def stop():
+                calls["n"] += 1
+                return calls["n"] > budget
+
+            with tempfile.TemporaryDirectory() as out:
+                run_auto(
+                    _Fake(volts_sequence=list(volts_sequence)), output_dir=out,
+                    sleeper=waits.append, say=lambda m: None, stop=stop,
+                    clock=clock, max_session_s=2.0,
+                )
+            return waits
+
+        cold = waits_for([12.4] * 6, 4)
+        self.assertEqual(set(cold), {300.0}, f"cold start watched fast: {cold}")
+
+        # Awake first, then the rail drops: this run has now seen it sleep.
+        after = waits_for([13.9] + [12.4] * 10, 25)
+        self.assertIn(
+            drive.WAKE_WATCH_FAST_S, after,
+            f"no fast wait after falling asleep; waits were {after}",
+        )
+
+    def test_the_fast_window_costs_far_less_than_the_restart_loop_it_replaces(self):
+        # The 2026-09-04 restart loop sent roughly 100 requests a minute to a
+        # sleeping vehicle. The whole fast window must stay far below that, or
+        # this fix trades one harm for another.
+        probes = drive.WAKE_WATCH_WINDOW_S / drive.WAKE_WATCH_FAST_S
+        self.assertLessEqual(probes, 40)
+        per_minute = 60.0 / drive.WAKE_WATCH_FAST_S
+        self.assertLess(per_minute, 10)

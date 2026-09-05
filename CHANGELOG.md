@@ -20,6 +20,31 @@ discount.
 
 ### Added
 
+- **The wake watch no longer costs the first five minutes of every drive.**
+  After a session ended, `run_auto` waited a flat 300 s before looking again,
+  so a drive beginning right after the vehicle fell asleep lost up to five
+  minutes — including, on 2026-09-04, the motion-onset transition that would
+  have settled whether `0x4127` steps at first wheel movement. It happened
+  twice, and both times the workaround was restarting the service by hand,
+  which needs network access to a node that is off WiFi *precisely because* it
+  is moving. That makes it a defect in unattended capture, not an annoyance.
+
+  The 300 s was not arbitrary and is not simply lowered: it bounds how often
+  `WAKE_PROBE` reaches a sleeping vehicle, and that matters because the measured
+  asleep band is 12.7–12.9 V against a 12.8 V threshold, so a parked truck reads
+  "awake" on the rail about half the time and only the probe settles it.
+  Instead the watch is now adaptive — `WAKE_WATCH_FAST_S` (20 s) for
+  `WAKE_WATCH_WINDOW_S` (10 min) after the vehicle is seen to fall asleep, then
+  the old 300 s. A vehicle that just parked is far likelier to move again soon
+  than one that has been asleep overnight.
+
+  The whole fast window costs about 30 single-PID probes, two orders of
+  magnitude below the 2026-09-04 restart loop's ~100 requests per minute, and a
+  test asserts that bound so the window cannot quietly be widened into one. A
+  cold start deliberately does **not** watch fast: with no observed sleep there
+  is no reason to expect a wake, and the node reboots beside an overnight-parked
+  truck more often than a just-switched-off one.
+
 - **A second drive independently confirms two findings and corrects a third.**
   9.10 km, 93 samples, −325.8 to +577.5 A, and nothing in it was fitted to.
 

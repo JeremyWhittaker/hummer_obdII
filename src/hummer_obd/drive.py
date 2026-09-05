@@ -888,7 +888,50 @@ def _asleep(transport: Transport, timeout: float) -> bool:
 #: requests every five minutes against a truck that was plainly asleep, because
 #: its rail sat at 12.8 V and no threshold can call that. One request costs a
 #: hundredth of that and answers the same question.
+#: How long after a vehicle falls asleep to keep watching at the fast interval
+#: below, before backing off to the slow one.
+#:
+#: The slow interval exists to bound how often ``WAKE_PROBE`` is transmitted to
+#: a sleeping vehicle: the measured asleep band is 12.7-12.9 V and WAKE_VOLTS is
+#: 12.8, so a parked truck reads "awake" on the rail about half the time and the
+#: probe is what settles it.  Five minutes of that is cheap.
+#:
+#: Five minutes is also, however, five minutes of a drive missed.  It cost the
+#: start of two drives on 2026-09-04 -- including the motion-onset transition
+#: that would have settled whether 0x4127 steps at first wheel movement -- and
+#: the workaround both times was to restart the service by hand, which needs
+#: network access to a node that is off WiFi precisely when it is moving.
+#:
+#: A vehicle that has just fallen asleep is far likelier to wake soon (an
+#: errand, a stop in traffic) than one that has been parked overnight, so the
+#: watch stays brisk for a bounded window and then backs off.  The whole window
+#: costs about 30 probes of one PID each -- two orders of magnitude below the
+#: restart loop of 2026-09-04, which sent roughly a hundred requests a minute.
+WAKE_WATCH_WINDOW_S: float = 600.0
+
+#: The interval used inside that window.
+WAKE_WATCH_FAST_S: float = 20.0
+
 WAKE_PROBE: str = "010D"
+
+
+def watch_interval(
+    since_asleep_s: Optional[float],
+    *,
+    fast_s: float = WAKE_WATCH_FAST_S,
+    window_s: float = WAKE_WATCH_WINDOW_S,
+    slow_s: float = 300.0,
+) -> float:
+    """How long to wait before looking for a wake again.
+
+    Fast for a bounded window after the vehicle falls asleep, slow thereafter.
+    ``None`` means the vehicle has not been observed to fall asleep during this
+    run, which is the cold-start case: use the slow interval rather than
+    assuming a wake is imminent.
+    """
+    if since_asleep_s is None or since_asleep_s >= window_s:
+        return slow_s
+    return fast_s
 
 
 def _vehicle_answers(transport: Transport, timeout: float) -> bool:
@@ -935,7 +978,15 @@ def run_auto(
     #: Set once the modules have been observed to stop answering while the
     #: rail still read awake.  Until they answer again, do not open a session.
     slept_by_silence = False
+    #: When the vehicle was last observed to fall asleep, on the monotonic
+    #: clock.  ``None`` until it has, so a cold start does not watch fast.
+    asleep_since: Optional[float] = None
     unanswered = 0
+
+    def watch_wait() -> None:
+        """Sleep until the next look for a wake, fast or slow as appropriate."""
+        elapsed = None if asleep_since is None else clock() - asleep_since
+        sleeper(watch_interval(elapsed, slow_s=asleep_interval_s))
     while not stop():
         volts = _volts(transport, timeout)
         if volts is None:
@@ -978,7 +1029,8 @@ def run_auto(
             if awake:
                 say(f"vehicle asleep ({volts} V); session ended")
                 awake = False
-            sleeper(asleep_interval_s)
+                asleep_since = clock()
+            watch_wait()
             continue
 
         if not awake:
@@ -987,7 +1039,7 @@ def run_auto(
             # once, so confirm with one request before spending a session on
             # it.  Everything a sleeping vehicle sees stays at ATRV plus this.
             if slept_by_silence and not _vehicle_answers(transport, timeout):
-                sleeper(asleep_interval_s)
+                watch_wait()
                 continue
             slept_by_silence = False
             awake = True
@@ -1045,9 +1097,11 @@ def run_auto(
         if session.ended_asleep:
             awake = False
             slept_by_silence = True
-            say(f"vehicle asleep (its modules stopped answering); "
-                f"watching every {asleep_interval_s:.0f}s")
-            sleeper(asleep_interval_s)
+            asleep_since = clock()
+            say(f"vehicle asleep (its modules stopped answering); watching "
+                f"every {WAKE_WATCH_FAST_S:.0f}s for {WAKE_WATCH_WINDOW_S/60:.0f} "
+                f"min, then every {asleep_interval_s:.0f}s")
+            watch_wait()
             continue
 
 
