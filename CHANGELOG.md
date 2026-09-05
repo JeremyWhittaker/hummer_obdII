@@ -78,6 +78,22 @@ discount.
 
 ### Fixed
 
+- **The `soc_pct` step is not "exactly" 0.400 pp, and the exactness was an
+  artefact of the decode.** The field is `u16 / 655.35`, so 0.400 pp is
+  **262.14 counts** and 0.500 pp is **327.68** — neither an integer, and the
+  module reports integers. Charging steps run **+262 counts (64 of 79) and +263
+  (14)**; discharging **−328 (24 of 42), −327 (7), −329 (8)**. Decoded, that is
+  0.399/0.400/0.401/0.402, and earlier readings called it "exactly 0.400" by
+  taking the commonest value for the only one — including a claim published
+  hours earlier the same day that two steps were "+0.400 pp exactly".
+
+  The quantum itself is real and the rate-independence result survives: the
+  120 V charge's steps are +262 and +263 counts, the same as the 8 kW charges.
+  What was wrong was reading a rounded decode instead of the raw counts under
+  it.
+
+### Fixed
+
 - **`0x4149` is not EVSE current, and the proof needs no charger at all.** The
   entry already called the `160 ÷ 4 = 40.0 A` match a coincidence, on the
   grounds that 160 predated the charger by 124 minutes. That is now a direct

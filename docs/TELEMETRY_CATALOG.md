@@ -292,13 +292,23 @@ purely from where the window edge is placed.
 
 #### `soc_pct` quantises differently in each direction, and freezes while parked
 
-- **Exactly 0.500 pp per step discharging, exactly 0.400 pp charging.** The two
-  sets are disjoint corpus-wide: 36 of 37 down-steps at 0.500, 75 of 76 up-steps
-  at 0.400, over 7,057 rows in 39 files.
+- **0.400 pp per step charging, 0.500 pp discharging — but never *exactly*, and
+  the reason is the encoding.** `soc_pct` is decoded as `u16 / 655.35`, so
+  0.400 pp is **262.14 counts** and 0.500 pp is **327.68** — neither is an
+  integer, and the module can only report integers. So the step alternates:
+  charging runs **+262 counts (64 of 79) and +263 (14)**, discharging **−328
+  (24 of 42), −327 (7) and −329 (8)**. Decoded, that shows up as steps of 0.399,
+  0.400, 0.401 and 0.402, which earlier readings of this table reported as
+  "exactly 0.400" by taking the commonest value for the only one.
+
+  The quantum is real; the exactness was an artefact of reading a rounded
+  decode instead of the raw counts underneath it. Work in counts.
 - **The charging quantum is not rate-dependent.** Every charge behind that figure
   was a 240 V one at roughly 8 kW. The 120 V charge on 2026-09-05 ran at
   **0.581 kW — about a fourteenth of the power** — and both of its steps, at
-  04:45:04 and 06:04:38, were **+0.400 pp exactly**. So 0.400 pp is a property of
+  04:45:04 and 06:04:38, were **+262 counts** — the same quantum the 8 kW charges
+  use. A third step at 07:22:31 was +263 counts, which is the same quantum
+  landing on the other side of the rounding. So the step size is a property of
   the field rather than of how fast the pack is filling, which a single charge
   rate could not have shown. Figures re-derived against the closed 344-row
   session; the rate was quoted as 0.586 kW from a shorter window while it was
