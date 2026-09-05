@@ -77,10 +77,14 @@ discount.
   91686-G5020, nameplate read at the vehicle) was connected on 2026-09-05. The
   charger state took **`0x0C`, a value absent from all 7,117 prior rows**, and
   the charge settled at ~0.51 kW into the pack by two agreeing routes. `0x4149`
-  read 96 for 29 minutes, then 160 from 02:59:37, after which module 40 stopped
-  answering it. If 160 is that charge's settled value it is decisive — the field
-  would read 160 for both a 40.2 A and a 12 A supply, and an advertised current
-  cannot be equal for sources differing 3.35×.
+  read 96 for 29 minutes, then **settled on 160: seventeen answers spanning
+  02:59:37 to 03:59:42, every one 160**, including isolated answers at 03:44:47
+  and 03:59:23 after a 35-minute gap in which module 40 answered almost nothing.
+  A value surviving that discontinuity is not a window artefact. So the field
+  reads 160 for a 40.2 A supply and 160 for a 12 A one — and an advertised
+  current cannot be equal for sources differing 3.35×. That is a **second
+  independent falsification**, reached from entirely different data than the
+  moving-vehicle one and agreeing with it.
 
   These figures come from a session still being written and are marked as such;
   they get re-derived when it closes. **Two conclusions were drafted from this
