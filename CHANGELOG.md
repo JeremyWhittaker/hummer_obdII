@@ -67,12 +67,12 @@ discount.
 
 - **The `soc_pct` charging quantum is confirmed rate-independent.** The 0.400 pp
   figure came entirely from 240 V charges at roughly 8 kW. The 120 V charge ran
-  at **0.586 kW, about a seventeenth of the power**, and its first step was
-  **+0.400 pp exactly** at 04:45:04. A single charge rate could not distinguish
+  at **0.581 kW, about a fourteenth of the power**, and both of its steps —
+  04:45:04 and 06:04:38 — were **+0.400 pp exactly**. A single charge rate could not distinguish
   "the field steps in 0.400 pp" from "the field steps once per fixed energy at
   this rate"; two rates seventeen-fold apart can, and do.
 
-- `0x4149` read `00A0` = 160 for a further 17 samples across a second session
+- `0x4149` read `00A0` = 160 for a further **42 samples** across a second session
   file on the same 120 V cordset, with charger state `0x0D` throughout. The
   falsification stands on more data than it was published with.
 

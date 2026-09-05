@@ -297,10 +297,12 @@ purely from where the window edge is placed.
   at 0.400, over 7,057 rows in 39 files.
 - **The charging quantum is not rate-dependent.** Every charge behind that figure
   was a 240 V one at roughly 8 kW. The 120 V charge on 2026-09-05 ran at
-  **0.586 kW — about a seventeenth of the power** — and its first step, at
-  04:45:04, was **+0.400 pp exactly**. So 0.400 pp is a property of the field
-  rather than of how fast the pack is filling, which a single charge rate could
-  not have shown.
+  **0.581 kW — about a fourteenth of the power** — and both of its steps, at
+  04:45:04 and 06:04:38, were **+0.400 pp exactly**. So 0.400 pp is a property of
+  the field rather than of how fast the pack is filling, which a single charge
+  rate could not have shown. Figures re-derived against the closed 344-row
+  session; the rate was quoted as 0.586 kW from a shorter window while it was
+  still being written.
 - **It freezes when parked and catches up under way.** Across 282 parked samples
   and 45.2 minutes, 2.500 kWh drained and SoC moved **0.000 pp**. In the drive,
   59 samples at the head and 37 at the tail are flat, and all 9 steps fall in the
