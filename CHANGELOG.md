@@ -65,6 +65,30 @@ discount.
 
 ### Fixed
 
+- **`0x4149` is not EVSE current, and the proof needs no charger at all.** The
+  entry already called the `160 ÷ 4 = 40.0 A` match a coincidence, on the
+  grounds that 160 predated the charger by 124 minutes. That is now a direct
+  falsification instead of an absence of support: **the field reads 388 in 384
+  samples taken while the vehicle is moving at 2–143 kph, across 5 distinct
+  session files, with the charger state `00` in every one.** Nothing is plugged
+  into a vehicle doing 143 kph. Measured on closed, committed sessions only.
+
+- **A second EVSE, recorded provisionally.** A 12 A / 120 V cordset (Yura
+  91686-G5020, nameplate read at the vehicle) was connected on 2026-09-05. The
+  charger state took **`0x0C`, a value absent from all 7,117 prior rows**, and
+  the charge settled at ~0.51 kW into the pack by two agreeing routes. `0x4149`
+  read 96 for 29 minutes, then 160 from 02:59:37, after which module 40 stopped
+  answering it. If 160 is that charge's settled value it is decisive — the field
+  would read 160 for both a 40.2 A and a 12 A supply, and an advertised current
+  cannot be equal for sources differing 3.35×.
+
+  These figures come from a session still being written and are marked as such;
+  they get re-derived when it closes. **Two conclusions were drafted from this
+  charge and withdrawn before publication**, both from reading a window that
+  ended before the value settled: first that 96 was the 120 V charging value,
+  then that the chargers needed divisors of 3.98 and 8.00 and that
+  `960 × amps ÷ volts` fitted both. The settled reading of 160 kills all of it.
+
 - **`0x4127`'s powertrain-down family is `{429, 1048}`, not 1048 alone — and
   the error came from reading a session that was still being written.** The
   previous entry said "all 22 samples with no road speed reported read 1048".
