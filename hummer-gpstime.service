@@ -22,9 +22,11 @@ User=root
 WorkingDirectory=/home/jeremy/hummer-obd
 Environment=PYTHONPATH=/home/jeremy/hummer-obd/src
 ExecStart=/usr/bin/python3 -m hummer_obd.gpstime --set --wait-s 90
-# A cold receiver in a garage is normal and exits 0. This only guards against
-# the unit itself failing, which must never block the recorder from starting.
-SuccessExitStatus=0 1
+# No SuccessExitStatus override. A cold receiver in a garage already exits 0
+# by design, so the only way this fails is a real fault worth seeing -- and
+# hummer-drive.service does not Require or Want this unit, so a failure here
+# cannot stop the recorder starting. Masking exit 1 would buy nothing and hide
+# the one case that matters: running without the privilege to set the clock.
 TimeoutStartSec=120
 
 [Install]
