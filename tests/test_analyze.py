@@ -8,7 +8,6 @@ as a plausible one.
 import csv
 import json
 import os
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -23,6 +22,20 @@ from hummer_obd.analyze import (
 from hummer_obd.drive import COLUMNS
 
 REPO = Path(__file__).resolve().parents[1]
+
+
+def local_sessions() -> list:
+    """Every session CSV present on THIS machine, tracked or not.
+
+    Deliberately the filesystem and not ``git ls-files``. Session data is
+    personal -- a timestamped record of every trip, its speeds and its braking
+    -- so it is gitignored and never published. A guard keyed to what is
+    *committed* would therefore protect nobody: it would find nothing in a
+    fresh clone and, worse, nothing on the machine actually collecting the
+    data. Keyed to the filesystem it protects the operator, which is the only
+    person who has a corpus to be wrong about.
+    """
+    return sorted((REPO / "evidence" / "sessions").glob("drive-*.csv"))
 
 
 def _rows(samples):
@@ -146,12 +159,9 @@ class TestHexColumnsAreNotParsedAsNumbers(unittest.TestCase):
         through, which is why this supplements the round-trip test above
         instead of replacing it.
         """
-        tracked = subprocess.run(
-            ["git", "ls-files", "evidence/sessions/*.csv"],
-            cwd=REPO, capture_output=True, text=True, check=True,
-        ).stdout.split()
+        tracked = [str(p.relative_to(REPO)) for p in local_sessions()]
         if not tracked:
-            self.skipTest("no committed sessions to check")
+            self.skipTest("no session data on this machine to check")
         offenders: dict[str, str] = {}
         for name in tracked:
             with open(REPO / name, newline="", encoding="utf-8") as handle:
@@ -683,12 +693,9 @@ class TestSessionsDoNotGoBackwardsInTime(unittest.TestCase):
     }
 
     def test_no_new_session_starts_before_the_previous_one_ended(self):
-        tracked = subprocess.run(
-            ["git", "ls-files", "evidence/sessions/*.csv"],
-            cwd=REPO, capture_output=True, text=True, check=True,
-        ).stdout.split()
+        tracked = [str(p.relative_to(REPO)) for p in local_sessions()]
         if not tracked:
-            self.skipTest("no committed sessions to check")
+            self.skipTest("no session data on this machine to check")
         spans = []
         for name in tracked:
             with open(REPO / name, newline="", encoding="utf-8") as handle:
@@ -710,12 +717,9 @@ class TestSessionsDoNotGoBackwardsInTime(unittest.TestCase):
     def test_the_pinned_violations_still_exist(self):
         # If one stops overlapping, the pin is stale and hiding a real check.
         # This is the failure mode where an allowlist quietly becomes a lie.
-        tracked = subprocess.run(
-            ["git", "ls-files", "evidence/sessions/*.csv"],
-            cwd=REPO, capture_output=True, text=True, check=True,
-        ).stdout.split()
+        tracked = [str(p.relative_to(REPO)) for p in local_sessions()]
         if not tracked:
-            self.skipTest("no committed sessions to check")
+            self.skipTest("no session data on this machine to check")
         names = {os.path.basename(n) for n in tracked}
         for pinned in self.KNOWN:
             with self.subTest(session=pinned):

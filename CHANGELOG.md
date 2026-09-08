@@ -76,6 +76,38 @@ discount.
   file on the same 120 V cordset, with charger state `0x0D` throughout. The
   falsification stands on more data than it was published with.
 
+### Changed
+
+- **Recorded vehicle data is no longer committed, and cannot be by accident.**
+  This repository is public. 58 session files — 8,908 rows over five days —
+  had been pushed to a named account: no coordinates and no VIN, but a
+  timestamped record of every trip taken, with departure and arrival times,
+  speeds, braking pressure, steering angle and cornering forces.
+
+  `evidence/` is now **deny-by-default** — its `.gitignore` ignores everything
+  and admits exceptions individually — and all 88 evidence files are untracked.
+  They remain on disk. Somebody who clones this, plugs in their own adapter and
+  runs the recorder is protected without deciding anything or reading a warning,
+  which is the only protection that works on a stranger.
+
+  `tests/test_privacy.py` holds the door shut: nothing under `evidence/` is
+  tracked but the ignore rules; a session that does not exist yet is still
+  ignored once created; the blanket rule has not escaped `evidence/` to
+  silently untrack source; and every tracked file is scanned for VINs, with the
+  four invented fixture VINs pinned so a *real* one pasted into a test still
+  fails, plus a test that the pins still match reality.
+
+  The three corpus guards in `tests/test_analyze.py` were keyed to
+  `git ls-files` and would have gone silent the moment the data stopped being
+  committed — protecting nobody, least of all the person actually collecting
+  it. They now read the filesystem, so they guard the operator's local corpus
+  and skip cleanly on a fresh clone.
+
+  **This stops further publication; it does not remove anything from git
+  history.** The README's privacy section previously claimed the repository
+  "contains no ... telemetry database", which was untrue when written and is
+  corrected.
+
 ### Fixed
 
 - **A restored clock backdated a session, and nothing rejected it.** The Pi has

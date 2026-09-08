@@ -1,7 +1,17 @@
-# Evidence is local terminal output from provisioning and live validation.
-# It can contain network/device metadata and never belongs in the public repo.
-*.txt
-*.log
-*.png
-*.jsonl
-*.b64
+# Nothing recorded from a real vehicle belongs in this repository.
+#
+# This repo is PUBLIC. A session CSV is not an abstract dataset: it is a
+# timestamped record of every trip its owner took -- when they left, when they
+# arrived, how fast they drove, how hard they braked and cornered -- tied to a
+# named account. No coordinates are needed for that to be a personal activity
+# log, and 58 sessions covering five days were published here before anyone
+# noticed. That is the mistake this file exists to make unrepeatable.
+#
+# The rule is deny-by-default: everything under evidence/ is ignored, and an
+# exception has to be added deliberately for anything that is genuinely not
+# personal. That way a fresh clone protects its owner without them having to
+# know any of this, which is the only kind of protection that works.
+*
+
+# ...except the rules themselves.
+!.gitignore

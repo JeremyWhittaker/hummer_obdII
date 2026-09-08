@@ -411,10 +411,40 @@ See [Validation](docs/VALIDATION.md) for the test matrix and evidence policy.
 
 ## Privacy and data ownership
 
-The public repository contains no passwords, Wi-Fi keys, Tailscale keys,
-private network addresses, adapter MAC address, VIN, raw vehicle transcript, or
-telemetry database. Local runtime paths are denied by `.gitignore`; the raw log
-reviewer masks vehicle identity before producing a summary.
+**This repository is public, and recorded vehicle data does not belong in it.**
+
+`evidence/` is **deny-by-default**: its `.gitignore` ignores everything and
+admits exceptions one at a time. Clone this, plug in your own adapter, run the
+recorder, and your sessions stay on your machine without you deciding anything
+or reading this paragraph — which is the only kind of protection that works.
+
+Three tests in `tests/test_privacy.py` hold the door shut: nothing under
+`evidence/` is tracked but the ignore rules; a session file that does not exist
+yet is still ignored when created; and the blanket rule has not escaped
+`evidence/` to silently stop tracking source. A fourth scans every tracked file
+for VINs, pinning the four invented ones used as test fixtures so that a *real*
+VIN pasted into a test still fails.
+
+**What was published before this rule existed.** 58 session files — 8,908 rows
+spanning 2026-09-03 to 2026-09-08 — were committed and pushed. They carry no
+coordinates and no VIN, but they are a timestamped record of every trip taken
+in those five days: departure and arrival times, speeds, wheel speeds, braking
+pressure, steering angle and cornering forces, against an odometer running
+2,197.6 to 2,404.2 km. They are untracked as of this change, which stops
+further publication but does not remove them from git history.
+
+An earlier version of this section claimed the repository "contains no ...
+telemetry database". That was not true when it was written.
+
+The rest holds: no passwords, Wi-Fi keys, Tailscale keys, private network
+addresses, adapter MAC address, VIN, or raw vehicle transcript. Local runtime
+paths are denied by `.gitignore`; the raw log reviewer masks vehicle identity
+before producing a summary.
+
+**If you record your own vehicle**, the data is yours and stays local. To share
+a finding, quote the numbers rather than committing the session — every claim
+in `docs/` is written that way, with sample counts and spans, precisely so the
+evidence does not have to be published to be checkable by its owner.
 
 This repository does not currently grant an open-source license. Source is
 published for portfolio and review purposes; contact the owner before reuse or
