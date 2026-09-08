@@ -37,7 +37,7 @@ fi
 
 OPERATOR="${SUDO_USER:-jeremy}"
 SYSTEMCTL="$(command -v systemctl)"
-UNITS=(hummer-drive hummer-rfcomm hummer-battery hummer-display)
+UNITS=(hummer-drive hummer-rfcomm hummer-battery hummer-display hummer-gpstime)
 SUDOERS=/etc/sudoers.d/hummer-node
 
 echo "# operator: $OPERATOR"
