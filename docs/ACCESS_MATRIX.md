@@ -127,7 +127,7 @@ Every cell below is produced by putting that command to that gate and recording 
 
 ## 2. What is collected
 
-**53 columns** per sample. The level is from `hummer_obd.confidence`; **only level 3 and above is a production telemetry reading**, and **18 of 53** columns clear that bar. Everything below it is either raw evidence being accumulated or a candidate waiting for the vehicle state that will decide it.
+**62 columns** per sample. The level is from `hummer_obd.confidence`; **only level 3 and above is a production telemetry reading**, and **18 of 62** columns clear that bar. Everything below it is either raw evidence being accumulated or a candidate waiting for the vehicle state that will decide it.
 
 | Column | Where it comes from | Identifier | Priority | Level |
 |---|---|---|---|---|
@@ -184,6 +184,15 @@ Every cell below is produced by putting that command to that gate and recording 
 | `array_2b43` | battery manager (module CB) | `0x2B43` | 0x14 | **1** answers here |
 | `mil_on` | standard OBD, asked of module 17 | `0101` | 0x18 | — |
 | `dtc_count` | standard OBD, asked of module 17 | `0101` | 0x18 | — |
+| `gps_mode` | GPS -- gpsd, no vehicle traffic | `gpsd` | — | — |
+| `gps_lat` | GPS -- gpsd, no vehicle traffic | `gpsd` | — | — |
+| `gps_lon` | GPS -- gpsd, no vehicle traffic | `gpsd` | — | — |
+| `gps_alt_m` | GPS -- gpsd, no vehicle traffic | `gpsd` | — | — |
+| `gps_speed_mps` | GPS -- gpsd, no vehicle traffic | `gpsd` | — | — |
+| `gps_track_deg` | GPS -- gpsd, no vehicle traffic | `gpsd` | — | — |
+| `gps_sats` | GPS -- gpsd, no vehicle traffic | `gpsd` | — | — |
+| `gps_epx_m` | GPS -- gpsd, no vehicle traffic | `gpsd` | — | — |
+| `gps_time` | GPS -- gpsd, no vehicle traffic | `gpsd` | — | — |
 
 ## 3. What cannot be reached
 

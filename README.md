@@ -409,6 +409,59 @@ See [Validation](docs/VALIDATION.md) for the test matrix and evidence policy.
 - [Future maintainer handoff](docs/HANDOFF.md) — invariants, current state, and
   the safe next milestone for humans or coding agents.
 
+## GPS
+
+A BU-353S4 (SiRF Star IV over a PL2303 bridge, 4800 baud) on `/dev/ttyUSB0`,
+served by `gpsd` on its standard port 2947. The recorder reads gpsd's JSON
+protocol on a background thread and appends nine columns to every session row:
+fix mode, latitude, longitude, altitude, speed, track, satellites used, gpsd's
+longitude-error estimate, and the satellite timestamp.
+
+**GPS is a passenger.** The recorder's job is the vehicle, so a receiver that is
+unplugged, unfixed or wedged costs a session nothing: the reader never blocks,
+never raises into the recorder, and every GPS column is written on every row —
+present and empty rather than absent, because a row that omits them when the
+GPS is quiet is indistinguishable from a row recorded before GPS existed.
+
+It also reports *why* there is no fix, which the sibling `unidenr8` project
+could only diagnose by hand: gpsd unreachable, gpsd running but serving no
+device, and a device with no fix are three different faults with three
+different remedies, and they look identical to a client that does not check
+gpsd's `DEVICES` report. A cold start is explicitly not a fault.
+
+### The clock
+
+`timedatectl` on this Pi reports **`RTC time: n/a`**. There is no battery-backed
+clock, so on boot it restores whatever was saved at shutdown and waits for NTP —
+which needs a network the vehicle does not have parked away from WiFi. That is
+not hypothetical: on 2026-09-08 the node returned from a three-day outage, opened
+a session named for a time three days earlier, and wrote a row asserting an
+odometer 107 km ahead of where the vehicle had been at that timestamp.
+
+`hummer-obd-gpstime` sets the clock from the satellites, which need neither a
+network nor a battery. It reports and changes nothing unless given `--set`.
+
+It does **not** trust the receiver blindly. SiRF is the chipset family known for
+GPS week-rollover faults, it is what this vehicle carries, and a rolled-over
+receiver reports a precise, well-formed time roughly 19.7 years early with a
+healthy fix and a full satellite count. Any time outside 2026-01-01..2046-01-01
+is refused, and the floor is fixed rather than derived from "now" — a bound
+computed from the clock cannot check the clock.
+
+Installing it as a boot service needs root, because stepping the clock does:
+
+```bash
+sudo cp hummer-gpstime.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now hummer-gpstime.service
+systemctl status hummer-gpstime.service
+```
+
+The unit is ordered `Before=hummer-drive.service` so the first session of a boot
+is stamped correctly, and exits 0 when there is no fix — a cold receiver in a
+garage is normal, and a failed unit before the recorder would be worse than the
+wrong clock it exists to fix.
+
 ## Privacy and data ownership
 
 **This repository is public, and recorded vehicle data does not belong in it.**

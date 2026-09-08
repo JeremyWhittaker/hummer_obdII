@@ -33,6 +33,7 @@ import time
 from typing import Optional
 
 from . import drive
+from . import gps as gps_module
 from .analyze import read_session, sane
 
 __all__ = ["column_sources", "snapshot", "render", "main"]
@@ -41,6 +42,15 @@ __all__ = ["column_sources", "snapshot", "render", "main"]
 #: missing from here still displays, just without the niceties -- the set of
 #: columns itself always comes from ``drive.COLUMNS``.
 LABELS: dict[str, tuple[str, str]] = {
+    "gps_mode": ("GPS fix mode", ""),
+    "gps_lat": ("GPS latitude", "deg"),
+    "gps_lon": ("GPS longitude", "deg"),
+    "gps_alt_m": ("GPS altitude", "m"),
+    "gps_speed_mps": ("GPS speed", "m/s"),
+    "gps_track_deg": ("GPS track", "deg"),
+    "gps_sats": ("GPS satellites used", ""),
+    "gps_epx_m": ("GPS longitude error", "m"),
+    "gps_time": ("GPS time (satellite clock)", ""),
     "utc": ("sample timestamp", ""),
     "elapsed_s": ("seconds into session", "s"),
     "volts": ("12 V rail (adapter)", "V"),
@@ -253,6 +263,11 @@ def column_sources() -> dict[str, tuple[str, str]]:
         for did in group.dids:
             for column in _decoder_columns(did):
                 sources[column] = (f"{friendly} (module {module})", f"0x{did}")
+    # GPS does not come off the CAN bus at all. Attributed here so it shows
+    # as its own block rather than an unattributed straggler -- and so that a
+    # receiver going quiet reads as one silent group, exactly like a module.
+    for column in gps_module.COLUMNS:
+        sources[column] = ("GPS -- gpsd, no vehicle traffic", "gpsd")
     for column, how in DERIVED.items():
         sources[column] = ("computed by the recorder, not read from a module", how)
     return sources

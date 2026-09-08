@@ -61,6 +61,7 @@ from .safety import (
     validate_enhanced_command,
     validate_supervised_command,
 )
+from . import gps as gps_module
 from .transport import SerialTransport, Transport, TransportError
 
 __all__ = ["AddressGroup", "GROUPS", "DECODERS", "COLUMNS",
@@ -418,6 +419,10 @@ COLUMNS: tuple[str, ...] = (
     "brake_kpa", "steering_deg", "lateral_g", "longitudinal_g",
     "array_2b43",
     "mil_on", "dtc_count",
+    # GPS, appended rather than interleaved: a column's position is part of
+    # the CSV contract and every session already on disk was written without
+    # these. Appending means an old reader sees the same first 53 fields.
+    *gps_module.COLUMNS,
 )
 
 
@@ -536,6 +541,7 @@ def record(
     clock: Callable[[], float] = time.monotonic,
     stop_when: Optional[Callable[[], bool]] = None,
     row_sink: Optional[Callable[[dict], None]] = None,
+    gps_reader: Optional[object] = None,
 ) -> Session:
     """Sample every group on a timer until a bound is reached.
 
@@ -559,6 +565,15 @@ def record(
             "utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
             "elapsed_s": round(clock() - started, 3),
         }
+
+        # GPS is a passenger. The recorder's job is the vehicle, and a receiver
+        # that is unplugged, unfixed or wedged must cost the session nothing --
+        # so this cannot raise, and the reader is written not to block.
+        if gps_reader is not None:
+            try:
+                row.update(gps_reader.columns())
+            except Exception as exc:  # pragma: no cover - defensive
+                session.errors.append(f"gps: {type(exc).__name__}: {exc}")
 
         try:
             volts = parse_reply(transport.send("ATRV", timeout=timeout).data)
@@ -1067,6 +1082,13 @@ def run_auto(
     A session ends when the vehicle goes back to sleep, so each wake period
     produces its own file rather than one unbounded CSV.
     """
+    # One reader for the whole run.  gpsd streams continuously and a fix takes
+    # a cold receiver minutes to acquire, so starting it per session would
+    # throw that away every time the vehicle sleeps.  It is a daemon thread
+    # that swallows its own errors; if there is no gpsd it simply never
+    # produces a fix and every GPS column stays empty.
+    gps_reader = gps_module.GpsReader().start()
+
     awake = False
     #: Set once the modules have been observed to stop answering while the
     #: rail still read awake.  Until they answer again, do not open a session.
@@ -1183,6 +1205,7 @@ def run_auto(
                 # answers have already stopped.
                 stop_when=stop,
                 row_sink=sink,
+                gps_reader=gps_reader,
             )
         say(f"{session.cycles} cycles -> {path}")
 

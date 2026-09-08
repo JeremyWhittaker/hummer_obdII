@@ -1,0 +1,31 @@
+[Unit]
+Description=Hummer Pi set the system clock from the GPS at boot
+Documentation=https://github.com/JeremyWhittaker/hummer_obdII
+# This Pi has no RTC: `timedatectl` reports `RTC time: n/a`. On boot it
+# restores the time saved at shutdown and then waits for NTP, which needs a
+# network the vehicle does not have parked away from WiFi or while moving.
+# The satellites need neither a network nor a battery.
+#
+# Ordered before the recorder because the whole point is that the first
+# session of a boot is stamped correctly. On 2026-09-08 it was not: the node
+# came back after three days, opened a session named for the wrong day, and
+# wrote an odometer 107 km ahead of where the vehicle had been at that time.
+After=gpsd.service
+Wants=gpsd.service
+Before=hummer-drive.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Root only for clock_settime; nothing else here needs privilege.
+User=root
+WorkingDirectory=/home/jeremy/hummer-obd
+Environment=PYTHONPATH=/home/jeremy/hummer-obd/src
+ExecStart=/usr/bin/python3 -m hummer_obd.gpstime --set --wait-s 90
+# A cold receiver in a garage is normal and exits 0. This only guards against
+# the unit itself failing, which must never block the recorder from starting.
+SuccessExitStatus=0 1
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

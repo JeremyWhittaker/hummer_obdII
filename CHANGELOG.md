@@ -108,6 +108,49 @@ discount.
   "contains no ... telemetry database", which was untrue when written and is
   corrected.
 
+### Added
+
+- **GPS is integrated into the recorder.** A BU-353S4 (SiRF Star IV, PL2303
+  bridge, 4800 baud) on `/dev/ttyUSB0`, read through `gpsd`'s JSON protocol on
+  its standard port 2947. Nine columns are appended to every session row: fix
+  mode, latitude, longitude, altitude, speed, track, satellites used, gpsd's
+  longitude-error estimate, and the satellite timestamp. Columns are
+  **appended**, never interleaved — a column's position is part of the CSV
+  contract and every session on disk was written without these.
+
+  Parsing is ported from the sibling `unidenr8` project, which solved the same
+  problem against the same receiver. Two of its lessons are carried over
+  because they are not obvious: gpsd has **renamed its altitude field**
+  (`altMSL`/`altHAE`/`alt`, and a reader knowing one spelling silently records
+  nothing against other versions), and **staleness must be judged on the
+  monotonic clock**, since wall time on an RTC-less Pi steps by days exactly
+  during the boot window that matters. Its asyncio transport was not ported —
+  this recorder is synchronous — and its port-2948 convention was deliberately
+  not adopted: that is its own documented stopgap for when `/etc/default/gpsd`
+  cannot be edited, and it does not survive a reboot.
+
+  **GPS is a passenger.** It never blocks, never raises into the recorder, and
+  writes every column on every row — present and empty rather than absent,
+  because an omitted column is indistinguishable from a session recorded before
+  GPS existed. It also reports *why* there is no fix, closing a gap `unidenr8`
+  documents as a manual runbook procedure: gpsd unreachable, gpsd serving no
+  device, and a device with no fix are three faults with three remedies and look
+  identical unless gpsd's `DEVICES` report is checked.
+
+- **`hummer-obd-gpstime` sets the system clock from the satellites.** This Pi
+  has no RTC — `timedatectl` reports `RTC time: n/a` — so it restores the
+  shutdown time on boot and waits for a network the vehicle does not have. That
+  produced the 2026-09-08 backdated session directly.
+
+  It does not trust the receiver: **SiRF is the chipset family known for GPS
+  week-rollover faults**, it is what this vehicle carries, and a rolled-over
+  receiver reports a precise, well-formed time ~19.7 years early with a healthy
+  fix and full satellite count. Times outside 2026-01-01..2046-01-01 are
+  refused, and the floor is **fixed rather than derived from "now"** — a bound
+  computed from the clock cannot check the clock. Dry-run by default; `--set`
+  to act. `hummer-gpstime.service` is provided, ordered before the recorder,
+  and exits 0 with no fix so a cold receiver never blocks the boot.
+
 ### Fixed
 
 - **A restored clock backdated a session, and nothing rejected it.** The Pi has
