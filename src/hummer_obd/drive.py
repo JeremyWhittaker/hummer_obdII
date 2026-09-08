@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import glob
 import os
 import sys
 import time
@@ -907,12 +908,104 @@ def _asleep(transport: Transport, timeout: float) -> bool:
 #: watch stays brisk for a bounded window and then backs off.  The whole window
 #: costs about 30 probes of one PID each -- two orders of magnitude below the
 #: restart loop of 2026-09-04, which sent roughly a hundred requests a minute.
+#: How long to wait, at session start, for the clock to become plausible.
+#:
+#: The Pi has no real-time clock.  On boot it restores whatever ``fake-hwclock``
+#: saved at the last shutdown and only jumps to the true time once NTP answers,
+#: which needs a network the vehicle may not be near.  On 2026-09-08 the node
+#: came back after a three-day outage, restored a clock reading 2026-09-05
+#: 11:01, opened ``drive-20260905T110130Z.csv``, and wrote a row asserting an
+#: odometer of 2404.2 km at that timestamp.  The real reading at that moment
+#: had been 2297.0.  Nothing rejected it: a time series through that row shows
+#: the vehicle moving 107 km in 24 seconds.
+#:
+#: Waiting is bounded rather than absolute on purpose.  Refusing to record
+#: until the clock is right would silence the recorder exactly when the vehicle
+#: is away from WiFi, which is when it is being driven -- the state worth
+#: recording most.  So it waits, and if the clock never becomes plausible it
+#: records anyway and says so loudly, because a warned bad timestamp is
+#: recoverable and a missing drive is not.
+CLOCK_WAIT_S: float = 120.0
+
+#: How often to re-check the clock inside that window.
+CLOCK_POLL_S: float = 5.0
+
 WAKE_WATCH_WINDOW_S: float = 600.0
 
 #: The interval used inside that window.
 WAKE_WATCH_FAST_S: float = 20.0
 
 WAKE_PROBE: str = "010D"
+
+
+def newest_recorded_utc(output_dir: str) -> Optional[str]:
+    """The newest ``utc`` already written to any session in *output_dir*.
+
+    Read from the files rather than from their names: a session opened under a
+    restored clock carries a filename as wrong as its rows, so the name proves
+    nothing.  Only the last line of each file is needed, but these are small and
+    read once per session start, so it does not bother seeking.
+    """
+    newest: Optional[str] = None
+    for path in glob.glob(os.path.join(output_dir, "drive-*.csv")):
+        try:
+            with open(path, encoding="utf-8") as handle:
+                last = ""
+                for line in handle:
+                    if line.strip():
+                        last = line
+        except OSError:
+            continue
+        stamp = last.split(",", 1)[0].strip()
+        # The header's first field is the literal "utc"; a data row's is a
+        # timestamp.  Comparing lexically is safe for ISO-8601 in UTC.
+        if stamp and stamp != "utc" and (newest is None or stamp > newest):
+            newest = stamp
+    return newest
+
+
+def clock_is_plausible(output_dir: str, now: str) -> bool:
+    """Whether *now* is at or after everything already recorded.
+
+    Time not going backwards is the weakest property a clock can have and the
+    only one checkable without a network.
+    """
+    newest = newest_recorded_utc(output_dir)
+    return newest is None or now >= newest
+
+
+def wait_for_plausible_clock(
+    output_dir: str,
+    *,
+    say: Callable[[str], None] = lambda m: None,
+    sleeper: Callable[[float], None] = time.sleep,
+    wait_s: float = CLOCK_WAIT_S,
+    poll_s: float = CLOCK_POLL_S,
+    stamp: Callable[[], str] = lambda: datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+) -> bool:
+    """Give NTP a bounded chance to correct a restored clock.
+
+    Returns whether the clock ended up plausible.  Recording proceeds either
+    way; the return value is what the caller warns on.
+    """
+    waited = 0.0
+    while True:
+        # Read the clock ONCE per pass and reuse it.  Sampling it twice in one
+        # iteration -- for the test and again for the message -- would let the
+        # two disagree, which is a strange bug to introduce into the function
+        # whose whole job is distrusting the clock.
+        now = stamp()
+        if clock_is_plausible(output_dir, now):
+            if waited:
+                say(f"clock became plausible after {waited:.0f}s")
+            return True
+        if waited >= wait_s:
+            return False
+        if waited == 0.0:
+            say(f"clock reads {now} but {newest_recorded_utc(output_dir)} is "
+                f"already recorded; waiting up to {wait_s:.0f}s for NTP")
+        sleeper(poll_s)
+        waited += poll_s
 
 
 def watch_interval(
@@ -1045,6 +1138,12 @@ def run_auto(
             awake = True
             say(f"vehicle awake ({volts} V); starting a session")
 
+        # A restored clock names the file as wrongly as it stamps the rows, so
+        # this has to happen before the name is chosen, not after.
+        if not wait_for_plausible_clock(output_dir, say=say, sleeper=sleeper):
+            say("WARNING: clock is still behind data already recorded; "
+                "recording anyway, timestamps in this session are not "
+                "trustworthy until they overtake the previous session")
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         path = f"{output_dir.rstrip('/')}/drive-{stamp}.csv"
         with open(path, "w", encoding="utf-8", newline="") as handle:

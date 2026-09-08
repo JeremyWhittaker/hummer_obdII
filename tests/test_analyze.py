@@ -655,3 +655,71 @@ class TestCli(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class TestSessionsDoNotGoBackwardsInTime(unittest.TestCase):
+    """A session starting before the previous one ended is corrupt data.
+
+    The Pi has no real-time clock. On boot it restores whatever fake-hwclock
+    saved and only jumps to the truth once NTP answers, so a session opened in
+    that window is named and stamped with a time that has already passed. The
+    row is well-formed, every column is in range, and ``sane()`` passes it --
+    nothing in this project noticed until a corpus sweep looked for it.
+
+    Two violations exist and are pinned below. The point of the test is the
+    third: a new one means the recorder wrote backdated rows again, and the
+    guard in ``drive.wait_for_plausible_clock`` did not hold.
+    """
+
+    #: file -> what it overlaps, and why it is tolerated.
+    KNOWN = {
+        # Restored clock after a three-day outage. Its first row asserts an
+        # odometer of 2404.2 km at a timestamp when the true reading was
+        # 2297.0, so a series through it shows 107 km covered in 24 seconds.
+        "drive-20260905T110130Z.csv": "boot before NTP, 2026-09-08 outage",
+        # A recorder restart inside the same minute; 62 s of overlap, and the
+        # odometer agrees across it, so no false motion is implied.
+        "drive-20260903T214503Z.csv": "restart overlap, 62 s, odometer agrees",
+    }
+
+    def test_no_new_session_starts_before_the_previous_one_ended(self):
+        tracked = subprocess.run(
+            ["git", "ls-files", "evidence/sessions/*.csv"],
+            cwd=REPO, capture_output=True, text=True, check=True,
+        ).stdout.split()
+        if not tracked:
+            self.skipTest("no committed sessions to check")
+        spans = []
+        for name in tracked:
+            with open(REPO / name, newline="", encoding="utf-8") as handle:
+                rows = [r for r in csv.DictReader(handle) if (r.get("utc") or "").strip()]
+            if rows:
+                spans.append((os.path.basename(name),
+                              rows[0]["utc"], rows[-1]["utc"]))
+        spans.sort(key=lambda t: t[0])
+        violations = {}
+        for (_, _, ended), (name, started, _) in zip(spans, spans[1:]):
+            if started < ended:
+                violations[name] = f"starts {started[:19]}, previous ended {ended[:19]}"
+        self.assertEqual(
+            set(violations) - set(self.KNOWN), set(),
+            "a session was recorded with a clock behind data already on disk, "
+            f"which backdates every row in it: {violations}",
+        )
+
+    def test_the_pinned_violations_still_exist(self):
+        # If one stops overlapping, the pin is stale and hiding a real check.
+        # This is the failure mode where an allowlist quietly becomes a lie.
+        tracked = subprocess.run(
+            ["git", "ls-files", "evidence/sessions/*.csv"],
+            cwd=REPO, capture_output=True, text=True, check=True,
+        ).stdout.split()
+        if not tracked:
+            self.skipTest("no committed sessions to check")
+        names = {os.path.basename(n) for n in tracked}
+        for pinned in self.KNOWN:
+            with self.subTest(session=pinned):
+                self.assertIn(
+                    pinned, names,
+                    f"{pinned} is pinned as a known backwards-time session but "
+                    "is no longer committed; remove it from KNOWN")

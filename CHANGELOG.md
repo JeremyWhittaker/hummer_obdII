@@ -78,6 +78,42 @@ discount.
 
 ### Fixed
 
+- **A restored clock backdated a session, and nothing rejected it.** The Pi has
+  no real-time clock: on boot it restores whatever `fake-hwclock` saved and only
+  jumps to the truth once NTP answers. Returning from a three-day outage on
+  2026-09-08 it restored a clock reading 2026-09-05 11:01, opened
+  `drive-20260905T110130Z.csv`, and wrote a row asserting an **odometer of
+  2404.2 km at that timestamp — when the true reading had been 2297.0.** A time
+  series through that row shows the vehicle covering **107 km in 24 seconds**.
+
+  The row is well-formed, every column is in range, and `sane()` passes it. No
+  check in this project noticed; a corpus sweep looking for it did.
+
+  `run_auto` now waits up to `CLOCK_WAIT_S` (120 s) for the clock to overtake
+  the newest timestamp already on disk, before choosing a filename — a restored
+  clock names the file as wrongly as it stamps the rows, so the check has to
+  come first. The newest timestamp is read from the **rows**, never the
+  filenames, for the same reason.
+
+  The wait is **bounded on purpose**. Refusing to record until the clock is
+  right would silence the recorder exactly when the vehicle is away from WiFi,
+  which is when it is being driven — the state most worth recording. So it
+  records anyway and warns loudly: a flagged bad timestamp is recoverable, a
+  missing drive is not.
+
+  A corpus test pins the two existing violations and fails on a third, plus a
+  second test asserting the pinned files still exist — an allowlist that stops
+  matching reality is how a check quietly becomes a lie.
+
+- **Three days of vehicle data were lost to that outage**, recorded here because
+  a gap that is not written down looks later like a vehicle that did nothing.
+  The last real session ended 2026-09-05T11:01:56 on the 120 V cordset. Between
+  then and 2026-09-08T15:26 the odometer moved **2297.0 → 2404.2 km (107.2 km
+  driven)**, SoC went 79.207 → 89.735, and energy 152.04 → 172.94 kWh. The
+  240 V changeover the owner reported was never captured.
+
+### Fixed
+
 - **The `soc_pct` step is not "exactly" 0.400 pp, and the exactness was an
   artefact of the decode.** The field is `u16 / 655.35`, so 0.400 pp is
   **262.14 counts** and 0.500 pp is **327.68** — neither an integer, and the

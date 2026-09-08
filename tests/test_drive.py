@@ -1359,3 +1359,82 @@ class TestTheWakeWatchBacksOffInsteadOfAlwaysWaitingFiveMinutes(unittest.TestCas
         self.assertLessEqual(probes, 40)
         per_minute = 60.0 / drive.WAKE_WATCH_FAST_S
         self.assertLess(per_minute, 10)
+
+
+class TestARestoredClockCannotSilentlyBackdateASession(unittest.TestCase):
+    """The Pi has no RTC, and a stale clock writes false data that nothing rejects.
+
+    On 2026-09-08 the node returned from a three-day outage, restored a clock
+    reading 2026-09-05 11:01 from fake-hwclock, opened a session named for that
+    time, and wrote a row asserting an odometer of 2404.2 km at it. The true
+    reading at that moment had been 2297.0. A time series through that row shows
+    the vehicle covering 107 km in 24 seconds, and no existing check noticed:
+    the row is well-formed, the columns are in range, and `sane()` passes it.
+    """
+
+    def _session(self, tmp, name, last_utc):
+        path = os.path.join(tmp, name)
+        with open(path, "w", encoding="utf-8", newline="") as handle:
+            handle.write(",".join(COLUMNS) + "\n")
+            row = {"utc": last_utc, "elapsed_s": "0.0"}
+            handle.write(",".join(str(row.get(k, "")) for k in COLUMNS) + "\n")
+        return path
+
+    def test_the_newest_timestamp_comes_from_the_rows_not_the_filename(self):
+        # A session opened under a restored clock is named as wrongly as it is
+        # stamped, so the filename cannot be the source of truth.
+        with tempfile.TemporaryDirectory() as tmp:
+            self._session(tmp, "drive-20260101T000000Z.csv", "2026-09-05T11:01:56Z")
+            self.assertEqual(
+                drive.newest_recorded_utc(tmp), "2026-09-05T11:01:56Z")
+
+    def test_an_empty_directory_has_no_opinion_about_the_clock(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(drive.newest_recorded_utc(tmp))
+            self.assertTrue(drive.clock_is_plausible(tmp, "2026-01-01T00:00:00Z"))
+
+    def test_a_header_only_session_is_not_mistaken_for_a_timestamp(self):
+        # The restart loop left eleven of these in the real corpus. Reading
+        # "utc" as a timestamp would poison every later comparison.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "drive-20260905T110130Z.csv")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(",".join(COLUMNS) + "\n")
+            self.assertIsNone(drive.newest_recorded_utc(tmp))
+
+    def test_a_clock_behind_recorded_data_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._session(tmp, "drive-20260905T103034Z.csv", "2026-09-05T11:01:56Z")
+            self.assertFalse(
+                drive.clock_is_plausible(tmp, "2026-09-05T11:01:32Z"),
+                "a clock 24 seconds behind the last row must not look fine")
+            self.assertTrue(
+                drive.clock_is_plausible(tmp, "2026-09-08T15:26:19Z"))
+
+    def test_it_waits_for_ntp_and_notices_when_the_clock_is_corrected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._session(tmp, "drive-a.csv", "2026-09-05T11:01:56Z")
+            # Stale for two polls, then NTP lands.
+            stamps = iter(["2026-09-05T11:01:32Z", "2026-09-05T11:01:32Z",
+                           "2026-09-08T15:26:19Z", "2026-09-08T15:26:19Z"])
+            waits, said = [], []
+            ok = drive.wait_for_plausible_clock(
+                tmp, say=said.append, sleeper=waits.append,
+                wait_s=60.0, poll_s=5.0, stamp=lambda: next(stamps))
+            self.assertTrue(ok)
+            self.assertEqual(waits, [5.0, 5.0])
+            self.assertTrue(any("waiting up to" in m for m in said))
+            self.assertTrue(any("became plausible" in m for m in said))
+
+    def test_it_gives_up_and_records_rather_than_losing_a_drive(self):
+        # Refusing outright would silence the recorder exactly when the vehicle
+        # is away from WiFi, which is when it is moving. A warned bad timestamp
+        # is recoverable; an unrecorded drive is not.
+        with tempfile.TemporaryDirectory() as tmp:
+            self._session(tmp, "drive-a.csv", "2026-09-05T11:01:56Z")
+            waits = []
+            ok = drive.wait_for_plausible_clock(
+                tmp, say=lambda m: None, sleeper=waits.append,
+                wait_s=20.0, poll_s=5.0, stamp=lambda: "2026-09-05T11:01:32Z")
+            self.assertFalse(ok)
+            self.assertEqual(sum(waits), 20.0, "must bound the wait, not hang")
