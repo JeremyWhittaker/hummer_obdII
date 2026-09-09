@@ -249,19 +249,30 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now hummer-dashboard.service
 ```
 
-If a hand-started reader is already holding the port, stop it first — and
-**anchor the pattern**:
+If a hand-started reader is already holding the port, stop it first — with a
+**bracketed** pattern:
 
 ```bash
-pkill -f '^/usr/bin/python3 -m hummer_obd.dashboard'
+pkill -f 'python3 -m hummer_obd[.]dashboard'
 ```
 
-`pkill -f hummer_obd.dashboard` is a trap. The pattern appears in the command
+`pkill -f hummer_obd.dashboard` is a trap: the pattern appears in the command
 line of the shell running it, so it matches its own invoking shell and kills
-the command mid-sequence. That cost one install here: the unit was copied and
-`daemon-reload` ran, then the chain died before `enable --now`, leaving a unit
-that looked installed and was not enabled. The sibling `unidenr8` runbook
+the command part-way through. That cost one install here — the unit was copied
+and `daemon-reload` ran, then the chain died before `enable --now`, leaving a
+unit that looked installed and was not enabled. The sibling `unidenr8` runbook
 documents the same trap against `gpsd`.
+
+Anchoring on the full path (`^/usr/bin/python3 …`) fixes the self-match and
+then fails a different way: systemd runs the reader as `/usr/bin/python3` while
+a hand-started one is usually a bare `python3`, so the anchor matches the
+service and misses the process actually holding the port. That cost the *next*
+install: the service came up into `Address already in use` and sat in a restart
+loop.
+
+The bracket form solves both. `hummer_obd[.]dashboard` matches a real command
+line, which contains a literal dot, but not the invoking shell's, which
+contains the brackets — and it is indifferent to how python was spelled.
 
 Check `--host` before enabling location. The shipped unit binds a Tailscale
 address, so the listener is reachable across that tailnet and nowhere else —
