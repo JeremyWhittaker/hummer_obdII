@@ -160,6 +160,42 @@ select:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid 
   align-items:start;
 }
 .hero > :first-child{grid-row:1 / span 2}
+/* The right column's two cards should add up to the left one's height rather
+   than trailing off short. The truck's canvas is a fixed 430 px plus its
+   chrome, so the rows are told to share the column equally and each card is
+   made to fill the row it is in -- otherwise the map sizes to its own content
+   and the detector sits in whatever is left. */
+/* The two right-hand cards live inside one grid item, which is what makes
+   them add up to the truck's height. Rows of 1fr on the outer grid could not:
+   an auto-height grid has no fixed total for a fraction to divide, so each
+   row sized to its own content and the column ran 105 px past the truck. A
+   single item stretches to the height the truck sets, and dividing THAT is a
+   definite height to work with. */
+.hero-side{display:grid;gap:var(--gap);min-height:0}
+@media (min-width:1121px){
+  /* The side column sets the row height and the truck stretches to it, rather
+     than the other way round. Making the truck drive it needed a definite
+     height for the fractions to divide, and an auto-height grid has none --
+     every attempt from that direction either overflowed or grew. Inverting it
+     needs no magic number: two cards of natural height fix the row, the
+     canvas fills whatever is left, and the columns end level by construction. */
+  /* `align-items:start` on the base rule stops grid items stretching, which
+     is exactly what this needs them to do. */
+  .hero{grid-template-rows:auto;align-items:stretch}
+  .hero > :first-child{
+    grid-row:auto;display:flex;flex-direction:column;min-height:0;
+  }
+  .hero > :first-child .vehicle-wrap{flex:1 1 auto;min-height:260px;display:flex}
+  .hero > :first-child #scene{flex:1 1 auto;height:auto;min-height:0}
+  .hero-side{grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
+  .hero-side > .card{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+  .hero-side .map-wrap{flex:1 1 auto;min-height:0;overflow:hidden}
+  .hero-side #map{height:100%!important;width:100%;display:block}
+  .hero-side .r8-face-wrap{
+    flex:1 1 auto;display:grid;place-items:center;min-height:0;overflow:hidden;
+  }
+  .hero-side #r8-face{max-height:100%}
+}
 @media (max-width:1120px){
   .hero{grid-template-columns:1fr;grid-template-rows:none}
   .hero > :first-child{grid-row:auto}
@@ -452,6 +488,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     <div class="caveat" id="module-caveat"></div>
   </div>
 
+  <div class="hero-side">
   <!-- ================= THE MAP ================= -->
   <div class="card bracket fadeable">
     <h2>Track</h2>
@@ -491,6 +528,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        aria-label="Uniden R8 front panel"></svg></div>
   <div class="r8-state" id="r8-state"></div>
   <p class="prov" id="r8-history"></p>
+  </div>
   </div>
 </div>
 
@@ -1357,6 +1395,41 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        and the camera is allowed below the axle line so they can be seen.
        Grounding the object is not worth blindfolding the view. */
 
+    /* --- the Infinity Roof --------------------------------------------
+       GMC: "the Infinity Roof's four class-exclusive removable modular Sky
+       Panels and detachable front I-Bar." The layout is two front and two
+       rear split by the I-Bar, which the accessory catalogue confirms from
+       the other direction: the Sky Convertible Top (RPO SBD) "functions in
+       place of the two front Sky Panels and I-Bar."
+
+       Individual panel dimensions are NOT PUBLISHED -- the only constraint
+       anywhere is that all four stow in the 11.3 cu ft eTrunk -- so the roof
+       opening is simply divided in four, which asserts the arrangement GM
+       states and no dimension it does not. Drawn as glass because they are
+       transparent on Edition 1 ("Tinted Transparent Sky Panels are standard
+       on Edition 1 Pickup and SUV") and opaque on 2X/3X. */
+    var roofFront = cowlX - 0.06, roofRear = bulkX + 0.06,
+        iBarX = (roofFront + roofRear) / 2;
+    [[iBarX, roofFront], [roofRear, iBarX]].forEach(function (span, front) {
+      [-1, 1].forEach(function (side) {
+        slab("skypanel-" + (front ? "f" : "r") + (side < 0 ? "l" : "r"),
+             span[0] + 0.03, span[1] - 0.03, roof - 0.035, roof,
+             side < 0 ? -W + 0.12 : 0.03, side < 0 ? -0.03 : W - 0.12,
+             GLASS, { alpha: 0.30, layer: "shell" });
+      });
+    });
+    /* The I-Bar is structure, not glass, and it detaches with the panels. */
+    slab("roof-ibar", iBarX - 0.05, iBarX + 0.05, roof - 0.04, roof + 0.01,
+         -W + 0.10, W - 0.10, TRIM);
+
+    /* --- the eTrunk ---------------------------------------------------
+       11.3 cu ft under the power hood, published on GMC's own spec table.
+       0.320 m3, drawn to that volume rather than to a shape nobody gives:
+       1.06 x 0.86 x 0.35 is 0.319. Where its walls actually sit is not
+       published, so the volume is the claim and the proportions are not. */
+    slab("etrunk", cowlX + 0.16, cowlX + 1.22, beltline - 0.30, beltline + 0.05,
+         -0.43, 0.43, [0.13, 0.14, 0.15], { layer: "aux" });
+
     /* --- the cabin ----------------------------------------------------
        Built so the driver's seat has something to look at. What is here is
        what GM publishes or draws: the 12.3-inch reconfigurable cluster and
@@ -1415,6 +1488,26 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     /* One paddle, on the left of the column, and it lights under regen. */
     add({ id: "regen-paddle", mesh: "bev", layer: "cabin", colour: [0.14, 0.15, 0.16],
           regen: true, t: [0.86, 1.42, seatZ - 0.185], s: [0.020, 0.095, 0.014] });
+
+    /* The second row. GMC publishes its dimensions -- 38.4 in of head room,
+       39.0 in of leg room, 64.0 in of shoulder room, 60.2 in of hip room --
+       which is what puts the bench behind the front seats rather than at a
+       spacing chosen to look right. */
+    add({ id: "seat-rear-back", mesh: "bev", layer: "cabin", colour: [0.09, 0.10, 0.11],
+          t: [-0.94, 1.34, 0], s: [0.15, 0.62, 1.62] });
+    add({ id: "seat-rear-base", mesh: "bev", layer: "cabin", colour: [0.09, 0.10, 0.11],
+          t: [-0.66, 1.06, 0], s: [0.50, 0.14, 1.62] });
+
+    /* Door handles, two a side at the beltline. Small, and the thing a
+       three-quarter view looks for to know it is looking at a door. */
+    [-1, 1].forEach(function (side) {
+      [0.62, -0.42].forEach(function (x, i) {
+        slab("handle-" + (side < 0 ? "l" : "r") + i,
+             x - 0.11, x + 0.11, beltline + 0.05, beltline + 0.11,
+             side < 0 ? -W - 0.005 : W - 0.035, side < 0 ? -W + 0.035 : W + 0.005,
+             [0.46, 0.49, 0.52]);
+      });
+    });
 
     /* Seats, so the cabin reads as a cabin from inside it. */
     [[seatZ, "driver"], [-seatZ, "passenger"]].forEach(function (seat) {

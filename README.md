@@ -298,6 +298,23 @@ down its length, which also matches the shape of an Ultium CMA. Corrected to
 one across, twelve along: each module 1.42 × 0.178 m, where the assumption made
 them 0.71 × 0.36 — a shape Ultium does not build.
 
+**The Infinity Roof, the eTrunk, the second row and the door handles** are
+drawn from GM's own copy: "four class-exclusive removable modular Sky Panels
+and detachable front I-Bar", two front and two rear — confirmed from the other
+direction by the Sky Convertible Top accessory, which "functions in place of
+the two front Sky Panels and I-Bar". Individual panel dimensions are not
+published anywhere, so the roof opening is divided in four and no dimension is
+claimed. The eTrunk is drawn to its published 11.3 cu ft rather than to a
+shape nobody gives. The second row sits where GMC's published 39.0 in of leg
+room puts it.
+
+Not drawn: a tonneau cover. Both versions are accessories (RPO VPB soft
+roll-up, 5KM hard power retractable) rather than standard equipment, and
+nothing in the telemetry reports whether one is fitted — so drawing one would
+be asserting a fact about this specific truck that the vehicle never states.
+Nor are there controls for it: this node is read-only and a button that
+actuated anything would cross the line the whole project is built on.
+
 **The bed is a bed.** It was two thin rails with nothing between them, on a
 cab 0.8 m too short — proportions being most of what identifies this truck.
 GMC publishes the whole box: 60.10 in of inner length, 61.02 in across the
@@ -516,6 +533,12 @@ re-read every five seconds would cost more than everything else the page does.
 A session that cannot be read is reported as *unknown*, not as parked. Failing
 to read a file says nothing about whether the vehicle moved, and filing it
 under "parked" would hide a real trip.
+
+The map and the detector share one column that adds up to the truck's height
+exactly. Getting there took inverting the problem: fractions on the outer grid
+could not divide an auto height, so the two cards set the row and the vehicle's
+canvas stretches to fill it. No magic number, and it stays level when the
+caption rewraps.
 
 **Two tabs: Live, and Data & logs.** The live view is the vehicle, the map and
 the detector — three tiles, the truck down the left and the map with the
