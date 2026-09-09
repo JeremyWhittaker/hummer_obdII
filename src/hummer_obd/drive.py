@@ -48,6 +48,8 @@ import argparse
 import csv
 import glob
 import os
+import re
+import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -446,11 +448,73 @@ DEAD_CYCLES_BEFORE_EXIT: int = 3
 _NON_VEHICLE_COLUMNS: Final[frozenset[str]] = frozenset({"utc", "elapsed_s", "volts"})
 
 
+#: How the kernel describes an RFCOMM binding that is actually carrying a
+#: connection.  Anything else -- 'clean', 'closed' -- is a binding that
+#: exists with no link behind it.
+_RFCOMM_CONNECTED: Final[str] = 'connected'
+
+
+def link_state(device: str) -> Optional[str]:
+    """What the RFCOMM binding behind *device* is doing, or None if unknown.
+
+    ``rfcomm show`` needs no privileges, which is the whole reason this is
+    worth asking: the recorder cannot repair a stale binding -- that needs
+    root -- but it can say that a stale binding is what is wrong, instead
+    of reporting 'the adapter is silent' forever and leaving whoever reads
+    the log to guess which of a dozen things broke.
+    """
+    match = re.fullmatch(r'/dev/rfcomm(\d+)', device or '')
+    if not match:
+        return None
+    try:
+        done = subprocess.run(['rfcomm', 'show', match.group(1)],
+                              capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    # 'rfcomm0: 00:04:3E:84:BD:82 channel 1 closed [tty-attached]'
+    words = done.stdout.split()
+    for state in ('connected', 'clean', 'closed', 'listening', 'connecting'):
+        if state in words:
+            return state
+    return None
+
+
+def _link_advice(transport: Transport) -> str:
+    # Asked of the transport rather than passed in, so `record` keeps its
+    # signature and a fake transport with no device simply answers the
+    # generic sentence instead of raising inside a recovery path.
+    device = getattr(transport, 'device', '') or ''
+    """A sentence naming what is wrong with the link, and what fixes it."""
+    state = link_state(device)
+    if state is None:
+        return 'the adapter is silent too'
+    if state == _RFCOMM_CONNECTED:
+        # The binding is up and the adapter still will not talk, so the
+        # fault is in the adapter rather than in Bluetooth. Unplugging it
+        # is the remedy and no amount of reopening substitutes for it.
+        return ('the adapter is silent while its RFCOMM binding is '
+                'connected, so the link is up and the adapter itself is '
+                'not answering -- it likely needs unplugging from the '
+                'OBD port')
+    return (f"the adapter is silent and its RFCOMM binding is '{state}' "
+            f'rather than connected, so the Bluetooth link is down. '
+            f'Reopening the device does not rebind it; that needs '
+            f"'systemctl restart hummer-rfcomm'")
+
+
 def _revive(transport: Transport, *, timeout: float, attempt: int) -> None:
     """Reopen the link and re-initialise the adapter, or raise.
 
-    Reopening the RFCOMM device re-establishes the Bluetooth link, and that
-    returns the ELM to its power-on defaults.  So the session header has to be
+    Reopening the RFCOMM device re-establishes the Bluetooth link *when the
+    binding is still live*. On 2026-09-09 it was not: ``rfcomm show`` said
+    the binding was 'closed [tty-attached]' with no ACL connection at all,
+    and reopening the device could not bring it back -- only rebinding
+    could, which needs root this process does not have. A silent adapter
+    is therefore reported with the binding's state attached, because
+    'reopening the link' repeated forever describes the attempt rather
+    than the fault. Reopening does return the ELM to its power-on defaults.  So the session header has to be
     sent again: reconnecting without it leaves an adapter that answers with
     echo on and no protocol selected, which reads as corrupt data rather than
     as a dead link -- worse than the failure being recovered from.
@@ -740,7 +804,7 @@ def record(
                     f"{dead_cycles} consecutive cycles decoded nothing and "
                     + (f"the node is moving at {_gps_speed(gps_reader):.0f} km/h, "
                        f"so the vehicle is not asleep"
-                       if moving else "the adapter is silent too")
+                       if moving else _link_advice(transport))
                     + "; exiting so the link is re-established"
                 )
             try:

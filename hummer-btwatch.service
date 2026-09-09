@@ -1,0 +1,26 @@
+[Unit]
+# The recorder cannot repair this itself: rebinding RFCOMM, resetting the
+# controller and restarting bluetoothd all need privileges it does not have,
+# and deliberately does not have. So the repair lives here, as root, and the
+# recorder stays unprivileged.
+Description=Hummer Pi Bluetooth link watchdog
+Documentation=file:/home/jeremy/hummer-obd/src/hummer_obd/btwatch.py
+After=bluetooth.service
+Wants=bluetooth.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/jeremy/hummer-obd
+Environment=PYTHONPATH=/home/jeremy/hummer-obd/src
+ExecStart=/usr/bin/python3 -m hummer_obd.btwatch --once
+# Root, because that is the whole point. Everything it may execute is asserted
+# by tests/test_btwatch.py to be node-local Bluetooth and nothing else.
+User=root
+# It reads no vehicle data and writes no files; the journal is its only output.
+ProtectHome=read-only
+ProtectSystem=strict
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

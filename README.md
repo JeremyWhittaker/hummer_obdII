@@ -427,6 +427,27 @@ page still loads from Home Assistant, the geometry still draws, every fact
 reads as a dash, and the detector's screen goes dark saying "not reachable"
 rather than showing a plausible idle display of a device that is not there.
 
+**A Bluetooth watchdog, because the recorder cannot repair its own link.**
+Two devices reach this node over Bluetooth — the OBD adapter and the radar
+detector — and on 2026-09-09 both were paired, the controller was `UP RUNNING`
+with zero errors, `bluetoothd` was active, and neither was connected. Nothing
+reported a fault because at every layer it inspects there wasn't one. The
+recorder logged "adapter still silent; reopening the link" for an hour, and
+reopening could never have helped: the RFCOMM binding had gone stale, and
+rebinding needs privileges the recorder does not have and should not have.
+
+`hummer-obd-btwatch` runs as root on a timer and climbs a ladder — reconnect,
+then reset the controller, then restart the daemon — one rung at a time, only
+when *both* devices are known down. Both, not either: the OBD adapter drops
+every time the vehicle sleeps, which is most of every day, and a watchdog that
+reset the controller each time would spend its life fighting normal behaviour.
+The tests are mostly about that restraint, and one of them parses the module's
+own source to assert every command it can execute is node-local Bluetooth.
+
+It was the detector being down *alongside* the adapter that identified this —
+Jeremy's observation, and the thing that separates "the adapter is broken"
+from "the node's Bluetooth is broken".
+
 **`ATRV` answering means the serial link is alive, and nothing more.** It is
 an adapter-only command that reaches no vehicle module, so it separates a dead
 serial link from a live one and says nothing about whether the adapter still

@@ -1,0 +1,13 @@
+[Unit]
+Description=Check the Hummer Pi Bluetooth links every minute
+
+[Timer]
+# A minute is well inside the recorder's own patience and well outside
+# anything that could be called hammering the stack.
+OnBootSec=90s
+OnUnitActiveSec=60s
+AccuracySec=10s
+Unit=hummer-btwatch.service
+
+[Install]
+WantedBy=timers.target

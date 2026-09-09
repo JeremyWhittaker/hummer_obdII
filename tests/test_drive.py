@@ -7,7 +7,9 @@ anything neither safety gate allows.
 
 import os
 import tempfile
+import subprocess
 import unittest
+from unittest.mock import patch
 
 from hummer_obd import drive
 from hummer_obd.drive import (
@@ -1272,6 +1274,70 @@ class TestTheWakeThresholdAgainstMeasuredStates(unittest.TestCase):
                 raise TransportError("link gone")
 
         self.assertFalse(drive._asleep(_Silent(), 1.0))
+
+
+class LinkDiagnosisTests(unittest.TestCase):
+    """A silent adapter has more than one cause, and the log should say which.
+
+    On 2026-09-09 the recorder logged "adapter still silent; reopening the
+    link" in a loop for an hour. Reopening could never have worked: the RFCOMM
+    binding itself had gone stale -- `rfcomm show` said "closed
+    [tty-attached]" with no ACL connection -- and rebinding needs root the
+    recorder does not have. It could not fix it. It could have said so.
+    """
+
+    class Fake:
+        def __init__(self, device):
+            self.device = device
+
+    def test_a_stale_binding_names_the_command_that_fixes_it(self):
+        with patch.object(drive, "link_state", return_value="closed"):
+            advice = drive._link_advice(self.Fake("/dev/rfcomm0"))
+        self.assertIn("closed", advice)
+        self.assertIn("Bluetooth link is down", advice)
+        self.assertIn("hummer-rfcomm", advice)
+
+    def test_a_connected_binding_blames_the_adapter_instead(self):
+        # Link up, adapter still mute: rebinding is not the answer and saying
+        # so would send whoever reads it down the wrong path.
+        with patch.object(drive, "link_state", return_value="connected"):
+            advice = drive._link_advice(self.Fake("/dev/rfcomm0"))
+        self.assertIn("adapter itself is not answering", advice)
+        self.assertNotIn("hummer-rfcomm", advice)
+
+    def test_an_unknown_link_says_only_what_it_knows(self):
+        with patch.object(drive, "link_state", return_value=None):
+            self.assertEqual(drive._link_advice(self.Fake("/dev/ttyUSB0")),
+                             "the adapter is silent too")
+
+    def test_a_transport_with_no_device_does_not_raise(self):
+        # This runs inside a recovery path. Throwing here would replace a
+        # diagnosable fault with an AttributeError.
+        class Bare:
+            pass
+
+        self.assertIsInstance(drive._link_advice(Bare()), str)
+
+    def test_only_an_rfcomm_device_is_interrogated(self):
+        # A USB adapter has no RFCOMM binding, and shelling out to ask about
+        # one would be noise at best.
+        for device in ("/dev/ttyUSB0", "/dev/ttyACM0", "", "/dev/rfcommX"):
+            with self.subTest(device=device):
+                self.assertIsNone(drive.link_state(device))
+
+    def test_the_binding_state_is_read_from_rfcomm_show(self):
+        line = "rfcomm0: 00:04:3E:84:BD:82 channel 1 closed [tty-attached]\n"
+        done = subprocess.CompletedProcess(["rfcomm"], 0, stdout=line, stderr="")
+        with patch.object(drive.subprocess, "run", return_value=done):
+            self.assertEqual(drive.link_state("/dev/rfcomm0"), "closed")
+        done = subprocess.CompletedProcess(["rfcomm"], 0, stdout=
+            "rfcomm0: 00:04:3E:84:BD:82 channel 1 connected [tty-attached]\n", stderr="")
+        with patch.object(drive.subprocess, "run", return_value=done):
+            self.assertEqual(drive.link_state("/dev/rfcomm0"), "connected")
+
+    def test_a_missing_rfcomm_tool_is_not_an_error(self):
+        with patch.object(drive.subprocess, "run", side_effect=FileNotFoundError):
+            self.assertIsNone(drive.link_state("/dev/rfcomm0"))
 
 
 class MovingVehicleIsNotAsleepTests(unittest.TestCase):
