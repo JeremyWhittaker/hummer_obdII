@@ -1223,6 +1223,35 @@ and said nothing about what a door, a lock or a remote start might produce — i
 Also unestablished: that the vehicle's internal networks are quiet (they are
 certainly not, behind the gateway), and anything about driving.
 
+#### Remote start, 2026-09-09 — half of that objection answered
+
+Jeremy remote-started the truck deliberately so the node could be tested
+against it. What the connector showed:
+
+| | |
+|---|---|
+| `ATRV` | **12.7 V**, twice, five minutes apart |
+| `0101`, `0121`, `0130`, `0131`, `0142` | **`NO DATA`** — every one |
+| Session opened by the recorder | none |
+
+So **remote start does not wake the diagnostic bus.** It powers the connector
+from the 12 V battery and leaves the modules unresponsive: the gateway answers
+nothing, and 12.7 V is the resting-battery reading rather than the 13.6 V seen
+whenever the DC-DC converter is actually running. `WAKE_VOLTS` is 12.8, so the
+recorder classified it asleep and sent nothing but `ATRV` — correctly, since
+the requests it withheld would each have returned `NO DATA`.
+
+Worth stating plainly because the temptation is to lower the threshold: 12.7
+sits one tenth of a volt below it, and moving it would have bought nothing but
+a round of unanswered requests to a truck that is not listening. The threshold
+comment already names 12.7 as the only unambiguous sleeping reading, and this
+is the first measurement to test that claim against a vehicle its owner had
+just switched on.
+
+This does **not** settle the passive-capture objection. Nobody listened to the
+DLC during the remote start; what is established is that the vehicle will not
+*answer* while in it, not that it puts nothing on the wire.
+
 ### It was settled twenty minutes later
 
 The experiment above was then run properly.
