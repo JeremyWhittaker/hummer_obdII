@@ -209,6 +209,44 @@ discount.
   legislated tendency of speedometers to read high, and GPS speed error could
   each account for it alone, and nothing here separates them.
 
+### Added
+
+- **The Uniden R8 is on the dashboard.** A sibling project on the same Pi logs
+  the detector; `src/hummer_obd/r8.py` reads its published state and SQLite
+  history and serves both at `/api/r8`. Read server-side rather than fetched by
+  the browser, because the page's CSP allows connections to its own origin only
+  — which is the right default and means cross-project data comes through here.
+
+  It treats that input as untrusted throughout: the schema is pinned to
+  **exactly 1** (the sibling's tests pin its key sets as literals precisely
+  because this project consumes them, so a `>=` would accept a schema 2 whose
+  fields had moved); staleness is computed **here** from `updated_at` on our own
+  clock, because the file's own `stale` flag is packet age at write time and
+  stops updating when the writer dies — exactly when staleness matters;
+  `gps_locked` stays **tri-state**, since null means the detector never said,
+  which is not "no lock"; and band and direction are allowlisted before they
+  reach a display. The database is opened `mode=ro` so this can never migrate
+  the sibling's schema underneath its owner.
+
+  **Alert coordinates are gated on the same `--expose-location` switch** as the
+  vehicle's own position. The detector's database does record them, and leaking
+  position through the radar panel while the telemetry panel withheld it would
+  be a hole in one wall of the same room.
+
+- **The vehicle diagram now animates from live readings.** Coolant loops flow,
+  and their rate comes from `0x27BB` actually advancing between polls — so a
+  thermal system that has stopped working stops the animation instead of
+  decorating. Heat and cooling take different colours, following the vehicle's
+  own instrument language. Energy paths run pack-to-axle and **reverse, in
+  green, under regen**. Motor cores brighten with the power flowing through
+  them, and the brake calipers glow with `brake_kpa` at all four corners —
+  shared, because there is one system pressure and no per-corner brake data.
+
+  The silhouette was also rebuilt with flared wheel arches and seated tyres,
+  and the cab and bed are outlines rather than filled regions: this is a
+  cutaway, and a filled cab drawn over the battery hid the thing the diagram
+  exists to show.
+
 ### Fixed
 
 - **Three faults found by rendering the page and looking at it**, none of which

@@ -19,7 +19,7 @@ from importlib.resources import files
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from . import analyze, live
+from . import analyze, live, r8
 from .confidence import CONFIDENCE, LEVEL_NAMES
 
 SESSION_NAME = re.compile(r"drive-\d{8}T\d{6}Z\.csv\Z")
@@ -427,6 +427,13 @@ def make_server(store: SessionStore, host: str = "127.0.0.1", port: int = 8765) 
                 if url.path == "/":
                     self._reply(200, files("hummer_obd").joinpath("dashboard.html").read_bytes(),
                                 "text/html; charset=utf-8")
+                elif url.path == "/api/r8":
+                    # The detector is a separate project on the same Pi. Its
+                    # state is read here rather than fetched by the browser
+                    # because this page's CSP allows connections to its own
+                    # origin only -- which is the right default, and means
+                    # cross-project data has to come through this server.
+                    self._reply(200, r8.snapshot(location=store.expose_location))
                 elif url.path == "/api/sessions":
                     self._reply(200, store.sessions())
                 elif url.path == "/api/snapshot":

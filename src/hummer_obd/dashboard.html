@@ -168,6 +168,57 @@ select:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid 
    whatever the telemetry said. The script owns fill; CSS owns the animation. */
 .mod{transition:fill .45s ease}
 
+/* --- flowing fluid ---------------------------------------------------
+   Coolant loops are dashed strokes whose offset animates, which reads as
+   flow. Direction and rate are set by the script from real readings, so a
+   stopped pump is a stopped animation rather than decoration that lies.
+   The duration is a CSS custom property the script writes per loop. */
+.flow{
+  stroke-dasharray:7 11;
+  animation:flow var(--rate,3s) linear infinite;
+}
+.flow.reverse{animation-direction:reverse}
+.flow.halted{animation-play-state:paused;opacity:.32}
+@keyframes flow{to{stroke-dashoffset:-18}}
+
+/* Energy between pack and motors. Same idea, faster, and the script flips
+   .reverse for regen so current visibly runs back into the battery. */
+.energy{stroke-dasharray:4 9;animation:flow var(--rate,1.1s) linear infinite}
+.energy.reverse{animation-direction:reverse}
+.energy.halted{animation-play-state:paused;opacity:.22}
+
+@media (prefers-reduced-motion:reduce){
+  .flow,.energy{animation:none}
+}
+
+/* Brake calipers glow with real pressure. */
+.caliper{transition:fill .25s ease,filter .25s ease}
+
+.hot{filter:url(#glowWarm)}
+.cold{filter:url(#glowCool)}
+
+/* --- radar ------------------------------------------------------------ */
+.r8-panel{display:grid;grid-template-columns:auto 1fr;gap:12px 16px;align-items:center}
+.r8-state{font-size:12.5px;color:var(--ink-3)}
+.r8-state b{color:var(--ink);font-weight:600}
+.alerts{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:7px}
+.alerts li{
+  display:grid;grid-template-columns:54px 1fr auto;gap:12px;align-items:center;
+  padding:8px 11px;border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--bg);font-size:12.5px;
+}
+.band{
+  font-weight:800;font-size:11.5px;letter-spacing:.06em;text-align:center;
+  padding:3px 0;border-radius:5px;
+}
+.band-KA{background:rgba(255,92,92,.16);color:#ff9b9b}
+.band-K{background:rgba(255,180,84,.16);color:#ffd39a}
+.band-X{background:rgba(108,199,255,.16);color:#b0e0ff}
+.band-LASER{background:rgba(255,77,224,.16);color:#ffb0f2}
+.band-unknown{background:rgba(255,255,255,.06);color:var(--ink-3)}
+.bars{font-family:var(--mono);letter-spacing:1px;color:var(--ev-orange)}
+.r8-meta{color:var(--ink-3);font-size:11.5px;text-align:right;white-space:nowrap}
+
 /* --- the map -------------------------------------------------------- */
 .map-wrap{position:relative}
 #map{width:100%;height:auto;display:block;border-radius:var(--r-sm);background:#0a0c0d}
@@ -283,89 +334,160 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     <div class="vehicle-wrap">
       <svg id="vehicle" viewBox="0 0 1000 400" role="img"
            aria-labelledby="veh-title veh-desc">
-        <title id="veh-title">Top-down diagram of the vehicle</title>
-        <desc id="veh-desc">Battery modules, drive units, wheels and charge port
-          shown in their physical locations, coloured by live telemetry.</desc>
+        <title id="veh-title">Cutaway plan view of the vehicle</title>
+        <desc id="veh-desc">Battery modules, drive units, brakes, coolant loops
+          and charge port in their physical locations, animated from live
+          telemetry.</desc>
 
         <defs>
           <linearGradient id="bodyGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#2a2f33"/><stop offset="1" stop-color="#1a1e21"/>
+            <stop offset="0" stop-color="#333a3f"/>
+            <stop offset=".5" stop-color="#242a2e"/>
+            <stop offset="1" stop-color="#171b1e"/>
           </linearGradient>
-          <linearGradient id="packGrad" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stop-color="#141719"/><stop offset="1" stop-color="#101315"/>
+          <linearGradient id="floorGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#121618"/><stop offset="1" stop-color="#0b0e0f"/>
           </linearGradient>
+          <linearGradient id="motorGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#3b444a"/><stop offset="1" stop-color="#232a2e"/>
+          </linearGradient>
+          <radialGradient id="packGlow" cx=".5" cy=".5" r=".5">
+            <stop offset="0" stop-color="#b9f227" stop-opacity=".10"/>
+            <stop offset="1" stop-color="#b9f227" stop-opacity="0"/>
+          </radialGradient>
+          <filter id="glowWarm" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="4" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="glowCool" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="3" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="drop" x="-25%" y="-25%" width="150%" height="150%">
+            <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity=".55"/>
+          </filter>
         </defs>
 
-        <!-- body shell: 216.8 in long x 86.7 in wide = 2.50:1 -->
-        <path d="M28,150 Q28,40 120,40 L900,40 Q972,40 972,120 L972,280
-                 Q972,360 900,360 L120,360 Q28,360 28,250 Z"
-              fill="url(#bodyGrad)" stroke="#3a4145" stroke-width="2"/>
-        <!-- windscreen / cab, purely to make the orientation obvious -->
-        <path d="M330,62 L560,62 L575,338 L330,338 Z" fill="#1e2225" stroke="#333a3e"/>
-        <path d="M348,78 L548,78 L558,322 L348,322 Z" fill="#191d20" opacity=".85"/>
-        <text x="452" y="208" text-anchor="middle" fill="#4a5357" font-size="15"
+        <!-- ===== body. Boxy on purpose: squared arches, flat flanks, blunt
+             nose. 216.8 in long by 86.7 in wide, so 2.50:1. ===== -->
+        <!-- Silhouette. Squared-off nose, flat flanks, blunt tail, and wheel
+             arches that flare from the body rather than sitting beside it --
+             the arches are what make a Hummer read as a Hummer from above. -->
+        <g filter="url(#drop)">
+          <path d="M40,132 L40,268 L52,282 L52,318 L96,318
+                   L100,336 L212,336 L216,318 L262,318 L262,282
+                   L718,282 L718,318 L734,318 L738,336 L850,336 L854,318
+                   L946,318 L958,300 L958,100 L946,82 L854,82 L850,64
+                   L738,64 L734,82 L718,82 L718,118 L262,118 L262,82
+                   L216,82 L212,64 L100,64 L96,82 L52,82 L52,118 Z"
+                fill="url(#bodyGrad)" stroke="#535d63" stroke-width="2"
+                stroke-linejoin="round"/>
+          <!-- hood shut line and a bed lip, for depth -->
+          <line x1="262" y1="118" x2="262" y2="282" stroke="#3b4449" stroke-width="1.5"/>
+          <line x1="718" y1="118" x2="718" y2="282" stroke="#3b4449" stroke-width="1.5"/>
+          <line x1="40" y1="200" x2="52" y2="200" stroke="#3b4449" stroke-width="1.5"/>
+        </g>
+
+        <!-- Cab and bed as outlines only. This is a cutaway: the pack runs
+             underneath both, and a filled region on top of it would hide the
+             thing the whole diagram exists to show. -->
+        <path d="M300,98 L596,98 L596,302 L300,302" fill="none"
+              stroke="#2b3236" stroke-width="1.5" stroke-dasharray="4 6"/>
+        <rect x="612" y="104" width="316" height="192" rx="6" fill="none"
+              stroke="#2b3236" stroke-width="1.5" stroke-dasharray="4 6"/>
+        <text x="612" y="90" text-anchor="end" fill="#4b555b" font-size="10"
               font-family="ui-sans-serif,system-ui" letter-spacing="3">CAB</text>
-        <!-- bed -->
-        <rect x="600" y="70" width="330" height="260" rx="10" fill="#191d20" stroke="#2f363a"/>
-        <text x="765" y="205" text-anchor="middle" fill="#454e52" font-size="13"
+        <text x="770" y="90" text-anchor="middle" fill="#4b555b" font-size="10"
               font-family="ui-sans-serif,system-ui" letter-spacing="3">BED</text>
 
-        <!-- axle centrelines -->
-        <line x1="174" y1="34" x2="174" y2="366" stroke="#2f363a" stroke-width="1.5" stroke-dasharray="5 5"/>
-        <line x1="774" y1="34" x2="774" y2="366" stroke="#2f363a" stroke-width="1.5" stroke-dasharray="5 5"/>
-
-        <!-- battery pack footprint: 84 x 56 in, between the axles -->
-        <rect x="294" y="96" width="372" height="208" rx="9"
-              fill="url(#packGrad)" stroke="#3a4145" stroke-width="1.5"/>
+        <!-- ===== battery floor ===== -->
+        <rect x="286" y="88" width="388" height="224" rx="11"
+              fill="url(#floorGrad)" stroke="#39434a" stroke-width="1.5"/>
+        <rect id="pack-glow" x="286" y="88" width="388" height="224" rx="11"
+              fill="url(#packGlow)" opacity="0"/>
         <g id="modules"></g>
-        <text x="480" y="88" text-anchor="middle" fill="#6f7b80" font-size="11.5"
-              font-family="ui-sans-serif,system-ui" letter-spacing="2.2">24 MODULES &middot; 2 LAYERS OF 12</text>
+        <text x="480" y="80" text-anchor="middle" fill="#66727a" font-size="11"
+              font-family="ui-sans-serif,system-ui" letter-spacing="2.4">24 MODULES · 2 LAYERS OF 12</text>
 
-        <!-- drive units -->
+        <!-- ===== coolant. Front loop serves the cabin and power electronics;
+             the pack loop runs the length of the battery. Both animate only
+             when the thermal system is actually doing something. ===== -->
+        <g fill="none" stroke-linecap="round">
+          <!-- front loop: HVAC pod out along the flank and back, clear of the
+               motor and the pack so a pipe reads as a pipe. -->
+          <path id="loop-front" class="flow" d="M108,278 L134,278 L134,84 L282,84"
+                stroke="#55d9ed" stroke-width="3" opacity=".85"/>
+          <path id="loop-front-b" class="flow" d="M282,316 L134,316 L134,296 L108,296"
+                stroke="#55d9ed" stroke-width="3" opacity=".85"/>
+          <!-- pack loop: along the battery's own long edges -->
+          <path id="loop-pack" class="flow" d="M292,84 L690,84 L690,200"
+                stroke="#55d9ed" stroke-width="2.6" opacity=".6"/>
+          <path id="loop-pack-b" class="flow" d="M690,200 L690,316 L292,316"
+                stroke="#55d9ed" stroke-width="2.6" opacity=".6"/>
+        </g>
+
+        <!-- ===== energy: pack to the axles it drives ===== -->
+        <g fill="none" stroke-linecap="round">
+          <path id="energy-front" class="energy" d="M286,200 L214,200"
+                stroke="#ee521a" stroke-width="4"/>
+          <path id="energy-rear" class="energy" d="M674,200 L738,200"
+                stroke="#ee521a" stroke-width="4"/>
+        </g>
+
+        <!-- ===== drive units ===== -->
         <g id="motor-front">
-          <rect x="146" y="158" width="58" height="84" rx="9" fill="#232a2e" stroke="#4a5357" stroke-width="1.5"/>
-          <text x="175" y="205" text-anchor="middle" fill="#93a1a5" font-size="11" font-family="ui-sans-serif,system-ui">1&times;</text>
+          <rect x="150" y="156" width="62" height="88" rx="10"
+                fill="url(#motorGrad)" stroke="#5a656b" stroke-width="1.5"/>
+          <circle id="motor-front-core" cx="181" cy="200" r="15" fill="#2c3439"/>
+          <text x="181" y="266" text-anchor="middle" fill="#7d8a90" font-size="10"
+                font-family="ui-sans-serif,system-ui">FRONT · 1</text>
         </g>
         <g id="motor-rear">
-          <rect x="742" y="140" width="64" height="120" rx="9" fill="#232a2e" stroke="#4a5357" stroke-width="1.5"/>
-          <line x1="774" y1="146" x2="774" y2="254" stroke="#3a4145" stroke-width="1.2"/>
-          <text x="774" y="205" text-anchor="middle" fill="#93a1a5" font-size="11" font-family="ui-sans-serif,system-ui">2&times;</text>
+          <rect x="740" y="140" width="70" height="120" rx="10"
+                fill="url(#motorGrad)" stroke="#5a656b" stroke-width="1.5"/>
+          <circle id="motor-rear-core-a" cx="775" cy="172" r="14" fill="#2c3439"/>
+          <circle id="motor-rear-core-b" cx="775" cy="228" r="14" fill="#2c3439"/>
+          <text x="775" y="278" text-anchor="middle" fill="#7d8a90" font-size="10"
+                font-family="ui-sans-serif,system-ui">REAR · 2</text>
         </g>
 
-        <!-- wheels. Nose left + driver's side bottom => FL bottom-left. -->
+        <!-- ===== wheels, tyres and brakes. Nose left, driver's side bottom,
+             so front-left is bottom-left. ===== -->
         <g id="wheels">
-          <rect id="w-fr" x="150" y="18"  width="48" height="30" rx="7" fill="#20262a" stroke="#4a5357"/>
-          <rect id="w-fl" x="150" y="352" width="48" height="30" rx="7" fill="#20262a" stroke="#4a5357"/>
-          <rect id="w-rr" x="750" y="18"  width="48" height="30" rx="7" fill="#20262a" stroke="#4a5357"/>
-          <rect id="w-rl" x="750" y="352" width="48" height="30" rx="7" fill="#20262a" stroke="#4a5357"/>
+          <g><rect id="w-fr" x="112" y="66" width="86" height="46" rx="8" fill="#0e1113" stroke="#6a757b" stroke-width="1.5"/>
+             <rect id="c-fr" class="caliper" x="122" y="104" width="66" height="10" rx="5" fill="#39424a"/></g>
+          <g><rect id="w-fl" x="112" y="288" width="86" height="46" rx="8" fill="#0e1113" stroke="#6a757b" stroke-width="1.5"/>
+             <rect id="c-fl" class="caliper" x="122" y="286" width="66" height="10" rx="5" fill="#39424a"/></g>
+          <g><rect id="w-rr" x="750" y="66" width="86" height="46" rx="8" fill="#0e1113" stroke="#6a757b" stroke-width="1.5"/>
+             <rect id="c-rr" class="caliper" x="760" y="104" width="66" height="10" rx="5" fill="#39424a"/></g>
+          <g><rect id="w-rl" x="750" y="288" width="86" height="46" rx="8" fill="#0e1113" stroke="#6a757b" stroke-width="1.5"/>
+             <rect id="c-rl" class="caliper" x="760" y="286" width="66" height="10" rx="5" fill="#39424a"/></g>
         </g>
-        <text id="t-fr" x="174" y="12"  text-anchor="middle" fill="#93a1a5" font-size="11" class="num">&ndash;</text>
-        <text id="t-fl" x="174" y="396" text-anchor="middle" fill="#93a1a5" font-size="11" class="num">&ndash;</text>
-        <text id="t-rr" x="774" y="12"  text-anchor="middle" fill="#93a1a5" font-size="11" class="num">&ndash;</text>
-        <text id="t-rl" x="774" y="396" text-anchor="middle" fill="#93a1a5" font-size="11" class="num">&ndash;</text>
+        <text id="t-fr" x="155" y="58"  text-anchor="middle" fill="#93a1a5" font-size="11" class="num">–</text>
+        <text id="t-fl" x="155" y="350" text-anchor="middle" fill="#93a1a5" font-size="11" class="num">–</text>
+        <text id="t-rr" x="793" y="58"  text-anchor="middle" fill="#93a1a5" font-size="11" class="num">–</text>
+        <text id="t-rl" x="793" y="350" text-anchor="middle" fill="#93a1a5" font-size="11" class="num">–</text>
 
         <!-- charge port: driver's side, rear quarter, aft of the rear wheel -->
         <g id="charge-port">
-          <rect x="862" y="330" width="42" height="26" rx="6" fill="#20262a" stroke="#4a5357" stroke-width="1.5"/>
-          <circle id="charge-led" cx="883" cy="343" r="5.5" fill="#394145"/>
+          <rect x="872" y="262" width="46" height="28" rx="7" fill="#1b2023" stroke="#5a656b" stroke-width="1.5"/>
+          <circle id="charge-led" cx="895" cy="276" r="6" fill="#394145"/>
         </g>
-        <text x="883" y="376" text-anchor="middle" fill="#6f7b80" font-size="10"
-              font-family="ui-sans-serif,system-ui">CHARGE</text>
+        <text x="895" y="302" text-anchor="middle" fill="#66727a" font-size="9.5"
+              font-family="ui-sans-serif,system-ui" letter-spacing="1.5">CHARGE</text>
 
-        <!-- 12 V battery: frunk, passenger-side pod (passenger = top here) -->
+        <!-- 12 V in the frunk, passenger-side pod (passenger = top here) -->
         <g id="lv-batt">
-          <rect x="62" y="76" width="52" height="34" rx="6" fill="#20262a" stroke="#4a5357" stroke-width="1.5"/>
-          <text x="88" y="98" text-anchor="middle" fill="#93a1a5" font-size="10.5" font-family="ui-sans-serif,system-ui">12V</text>
+          <rect x="58" y="104" width="50" height="32" rx="6" fill="#1b2023" stroke="#5a656b" stroke-width="1.5"/>
+          <text x="83" y="125" text-anchor="middle" fill="#93a1a5" font-size="10.5" font-family="ui-sans-serif,system-ui">12V</text>
         </g>
-
-        <!-- thermal: compressor and coolant hardware live in the front zone -->
+        <!-- thermal hardware sits in the front zone -->
         <g id="thermal">
-          <rect x="62" y="266" width="52" height="34" rx="6" fill="#20262a" stroke="#4a5357" stroke-width="1.5"/>
-          <text x="88" y="288" text-anchor="middle" fill="#93a1a5" font-size="10.5" font-family="ui-sans-serif,system-ui">HVAC</text>
+          <rect x="58" y="264" width="50" height="32" rx="6" fill="#1b2023" stroke="#5a656b" stroke-width="1.5"/>
+          <text x="83" y="285" text-anchor="middle" fill="#93a1a5" font-size="10.5" font-family="ui-sans-serif,system-ui">HVAC</text>
         </g>
 
-        <!-- direction of travel -->
-        <path d="M8,200 L26,190 L26,210 Z" fill="#4a5357"/>
+        <path d="M8,200 L26,189 L26,211 Z" fill="#5a656b"/>
       </svg>
     </div>
     <div class="legend" id="legend"></div>
@@ -389,6 +511,13 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     <div class="map-stats" id="map-stats"></div>
   </div>
 </div>
+
+<section class="card bracket fadeable" style="margin-bottom:var(--gap)">
+  <h2>Radar &middot; Uniden R8</h2>
+  <p class="sub" id="r8-sub">From the detector's own logger on this node.</p>
+  <div class="r8-state" id="r8-state"></div>
+  <ul class="alerts" id="r8-alerts"></ul>
+</section>
 
 <section class="tiles fadeable" id="tiles"></section>
 
@@ -457,7 +586,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   var el = {}, state = {
     snapshot: null, sessions: [], selected: "latest", network: "loading",
     error: "", timer: null, busy: false, queued: false, generation: 0,
-    series: "power", filter: ""
+    series: "power", filter: "",
+    /* Coolant flow is animated from whether the thermal accumulator is
+       actually advancing, which needs the previous poll to compare against.
+       Kept here rather than recomputed, because a pump that has stopped
+       should stop the animation -- decoration that keeps running while the
+       hardware is idle is exactly the kind of lie a dashboard should not
+       tell. */
+    thermal: { value: null, at: null, rate: 0 },
+    r8: null
   };
 
   function byId(id) { return document.getElementById(id); }
@@ -466,7 +603,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     "module-caveat","map","map-grid","trail","trail-head","map-empty","map-stats",
     "tiles","chart","chart-empty","chart-sub","tab-power","tab-soc","tab-speed",
     "notes","signal-search","signals-body","signal-sub","charge-led",
-    "t-fl","t-fr","t-rl","t-rr","w-fl","w-fr","w-rl","w-rr"
+    "t-fl","t-fr","t-rl","t-rr","w-fl","w-fr","w-rl","w-rr",
+    "loop-front","loop-front-b","loop-pack","loop-pack-b","energy-front","energy-rear",
+    "c-fl","c-fr","c-rl","c-rr","motor-front-core","motor-rear-core-a",
+    "motor-rear-core-b","pack-glow","r8-state","r8-alerts","r8-sub"
   ].forEach(function (id) { el[id] = byId(id); });
 
   /* ---------- small helpers ---------- */
@@ -603,6 +743,73 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         el["t-" + pair[0]].textContent = v === null ? "–" : v.toFixed(0);
         el["w-" + pair[0]].setAttribute("fill", v === null ? "#20262a" : (v > 1 ? "#2f4a35" : "#20262a"));
       });
+
+    /* ---- coolant. Rate from the thermal accumulator's own advance. ---- */
+    var thermalNow = hexBytes(sig("thermal_energy_raw") ? sig("thermal_energy_raw").value : null),
+        thermalVal = thermalNow.length ? thermalNow.reduce(function (a, b) { return a * 256 + b; }, 0) : null,
+        stamp = Date.now();
+    if (thermalVal !== null) {
+      if (state.thermal.value !== null && stamp > state.thermal.at) {
+        var advance = thermalVal - state.thermal.value,
+            minutes = (stamp - state.thermal.at) / 60000;
+        if (advance >= 0 && minutes > 0) {
+          /* Smoothed: a counter that ticks in steps of 10 would otherwise make
+             the animation stutter between "stopped" and "fast" every poll. */
+          state.thermal.rate = state.thermal.rate * 0.6 + (advance / minutes) * 0.4;
+        }
+      }
+      state.thermal.value = thermalVal;
+      state.thermal.at = stamp;
+    }
+    var hvac = sigValue("group_v1_raw"),
+        hvacActive = hvac !== null && Math.abs(hvac - 999) > 150,
+        flowing = state.thermal.rate > 0.5 || hvacActive;
+    [el["loop-front"], el["loop-front-b"], el["loop-pack"], el["loop-pack-b"]].forEach(function (node) {
+      if (!node) return;
+      node.classList.toggle("halted", !flowing);
+      /* Faster counter, faster pump. Clamped so it never becomes a strobe. */
+      var seconds = Math.max(0.7, Math.min(4.5, 3.2 - state.thermal.rate * 0.18));
+      node.style.setProperty("--rate", seconds.toFixed(2) + "s");
+      /* Heat and cooling are different jobs and get different colours: the
+         vehicle's own instrument language uses amber for heat. */
+      node.setAttribute("stroke", hvac !== null && hvac < 999 ? "#ffb454" : "#55d9ed");
+    });
+
+    /* ---- energy between the pack and the axles it drives ---- */
+    var kw = num(derived("pack_kw"));
+    [el["energy-front"], el["energy-rear"]].forEach(function (node) {
+      if (!node) return;
+      var moving = kw !== null && Math.abs(kw) > 0.4;
+      node.classList.toggle("halted", !moving);
+      /* Regen literally runs the other way, and turns green -- which is the
+         colour the vehicle's own power gauge uses for it. */
+      node.classList.toggle("reverse", kw !== null && kw < 0);
+      node.setAttribute("stroke", kw !== null && kw < 0 ? "#7ddc6a" : "#ee521a");
+      var rate = kw === null ? 2 : Math.max(0.25, Math.min(2.4, 60 / (Math.abs(kw) + 25)));
+      node.style.setProperty("--rate", rate.toFixed(2) + "s");
+    });
+    /* Motor cores brighten with the power actually flowing. */
+    var lit = kw === null ? 0 : Math.min(1, Math.abs(kw) / 180),
+        core = kw !== null && kw < 0 ? "#7ddc6a" : "#ee521a";
+    ["motor-front-core", "motor-rear-core-a", "motor-rear-core-b"].forEach(function (id) {
+      if (!el[id]) return;
+      el[id].setAttribute("fill", lit < 0.04 ? "#2c3439" : core);
+      el[id].setAttribute("opacity", String(0.35 + lit * 0.65));
+      if (lit > 0.15) el[id].setAttribute("filter", "url(#glowWarm)");
+      else el[id].removeAttribute("filter");
+    });
+    if (el["pack-glow"]) el["pack-glow"].setAttribute("opacity", String(Math.min(1, lit * 1.4)));
+
+    /* ---- brakes. One system pressure, so all four calipers share it. ---- */
+    var kpa = sigValue("brake_kpa"),
+        heat = kpa === null ? 0 : Math.min(1, kpa / 4000);
+    ["c-fl", "c-fr", "c-rl", "c-rr"].forEach(function (id) {
+      if (!el[id]) return;
+      el[id].setAttribute("fill", heat < 0.03 ? "#39424a" : "#ff5c5c");
+      el[id].setAttribute("opacity", String(0.5 + heat * 0.5));
+      if (heat > 0.12) el[id].setAttribute("filter", "url(#glowWarm)");
+      else el[id].removeAttribute("filter");
+    });
 
     /* charge port */
     var chg = derived("charging"), raw = derived("charger_raw");
@@ -897,6 +1104,65 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     }
   }
 
+  /* ---------- radar ----------
+     A second project on the same Pi logs the detector. Its data is read by
+     this server, not by the browser: the page's CSP allows connections to its
+     own origin only, which is the right default and means anything
+     cross-project comes through here. */
+  function bars(n) {
+    if (typeof n !== "number") return "";
+    var full = Math.max(0, Math.min(8, Math.round(n)));
+    return "\u2588".repeat(full) + "\u2591".repeat(8 - full);
+  }
+  function renderR8() {
+    var d = state.r8;
+    clear(el["r8-state"]); clear(el["r8-alerts"]);
+    if (!d || !d.available) {
+      el["r8-state"].appendChild(document.createTextNode(
+        d && d.reason ? "Detector unavailable: " + d.reason : "Detector unavailable."));
+      return;
+    }
+    function fact(label, value) {
+      var wrap = h("span");
+      wrap.appendChild(document.createTextNode(label + " "));
+      wrap.appendChild(h("b", null, value));
+      wrap.appendChild(document.createTextNode("   "));
+      el["r8-state"].appendChild(wrap);
+    }
+    fact("link", d.connected === true ? "connected"
+                 : d.connected === false ? "disconnected" : "unknown");
+    if (typeof d.voltage === "number") fact("supply", d.voltage.toFixed(1) + " V");
+    /* gps_locked is genuinely tri-state and null must not read as "no". */
+    fact("gps", d.gps_locked === true ? "locked"
+                : d.gps_locked === false ? "no lock" : "not reported");
+    if (typeof d.alert_packets === "number") fact("packets", String(d.alert_packets));
+    el["r8-sub"].textContent = d.stale
+      ? "Last published " + duration(d.age_s) + " ago — the detector's logger has gone quiet."
+      : "Live, published " + duration(d.age_s) + " ago.";
+
+    var live = d.alerts || [], recent = d.recent || [],
+        list = live.length ? live : recent,
+        heading = live.length ? "alerting now" : "most recent";
+    if (!list.length) {
+      el["r8-alerts"].appendChild(h("li", null, "No alerts recorded."));
+      return;
+    }
+    list.slice(0, 8).forEach(function (a) {
+      var li = h("li"),
+          band = h("span", "band band-" + (a.band || "unknown"), a.band || "?");
+      li.appendChild(band);
+      var mid = h("div");
+      mid.appendChild(h("span", "bars", bars(a.strength)));
+      var detail = [a.direction || "unknown"];
+      if (typeof a.frequency_ghz === "number") detail.push(a.frequency_ghz.toFixed(3) + " GHz");
+      if (typeof a.duration_s === "number") detail.push(a.duration_s.toFixed(1) + " s");
+      mid.appendChild(h("div", "prov", detail.join(" · ")));
+      li.appendChild(mid);
+      li.appendChild(h("span", "r8-meta", a.at ? a.at.slice(11, 19) : heading));
+      el["r8-alerts"].appendChild(li);
+    });
+  }
+
   /* ---------- legend + caveat ---------- */
   function renderLegend() {
     clear(el.legend);
@@ -960,6 +1226,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     renderVehicle(vs);
     renderMap();
     renderNotes();
+    renderR8();
     renderSignals(vs);
     drawChart();
   }
@@ -1001,6 +1268,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       }
       state.snapshot = snapshot; state.network = "ok"; state.error = "";
       render();
+      /* The detector is a separate concern and must not be able to break the
+         vehicle view: fetched after the render that matters, and a failure
+         only clears the radar panel. */
+      getJson("/api/r8").then(function (r8) {
+        if (generation !== state.generation) return;
+        state.r8 = r8; renderR8();
+      }).catch(function () {
+        state.r8 = { available: false, reason: "not reachable" }; renderR8();
+      });
     }).catch(function (err) {
       if (generation === state.generation) {
         state.network = "error";
