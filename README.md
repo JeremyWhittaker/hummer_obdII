@@ -279,6 +279,25 @@ the tyres are: a plate that hides the pack defeats the point of looking up at
 it. The rear tie rods are drawn and never animated — four-wheel steer is on
 the spec sheet, and nothing in this project measures a rear angle.
 
+Where a part's position is published, it is used. The charge port sits on the
+rear driver's side because GM's manual says so outright and the Emergency
+Response Guide fixes it independently by putting the manual release loop in
+the left rear wheelhouse; its station — about 810 mm aft of the rear axle,
+950 mm above ground — is scaled off the rescue sheet's side elevation against
+the published wheelbase, carries about 10% error, and is the only figure here
+measured off a drawing rather than read off a page. The port lights blue on
+connection and green while charging, which is GM's own light-ring code. The
+12 V battery is AGM and sits outboard on the passenger side of the front
+compartment, which is what the manual's two apparently contradictory sentences
+both describe.
+
+Where it is not published, nothing is drawn. GM publishes no physical location
+for the inertial sensor that reports lateral and longitudinal g, in any manual,
+brochure, rescue sheet or TechLink article — so there is no sensor in the
+model, and what it measures moves the whole body instead. Brake pressure is
+attributed to the brake control module rather than to a corner, because that
+is where GM measures it.
+
 **Anything whose real location this project has not established is not drawn.**
 An invented position looks exactly as authoritative as a measured one, which is
 the whole problem with drawing a vehicle from memory.

@@ -1281,10 +1281,26 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           t: [2.50, 0.70, 0], s: [0.15, 0.22, 1.72] });
 
     /* --- 12 V and charge port --- */
+    /* AGM, in the front compartment on the passenger side, outboard, under
+       a sight shield -- the manual's two sentences that look contradictory
+       ("under a cover in the underhood compartment", "on the passenger side")
+       describe the same place, and the underhood overview art and the rescue
+       sheet pictogram agree. It is not lithium; the manual says installing a
+       standard battery shortens its life. */
     add({ id: "lv", mesh: "bev", layer: "aux", colour: [0.40, 0.33, 0.16],
-          t: [2.02, 1.10, 0.60], s: [0.32, 0.22, 0.28] });
+          t: [2.02, 1.10, 0.70], s: [0.32, 0.22, 0.28] });
+    /* Rear driver's side, which GM's manual states outright -- "the charge
+       port door is on the rear driver side" -- and the Emergency Response
+       Guide fixes independently by putting the manual release loop in the
+       left rear wheelhouse. The station comes off the 2022 rescue sheet's
+       side elevation, scaled on the published 3,444 mm wheelbase: about
+       810 mm aft of the rear axle and 950 mm above ground, which is just
+       below the bed rail between the arch flare and the taillamp. That
+       scaling carries about 10% error and is the only figure here that is
+       measured off a drawing rather than read off a page. It replaces a
+       position that was 270 mm too far forward and 170 mm too high. */
     add({ id: "charge", mesh: "bev", layer: "aux", colour: [0.20, 0.24, 0.26],
-          t: [-2.26, 1.12, -(W + 0.02)], s: [0.24, 0.20, 0.08] });
+          t: [-2.53, 0.95, -(W + 0.02)], s: [0.24, 0.24, 0.08] });
 
     /* --- the wall end -------------------------------------------------
        Only drawn while the vehicle is actually charging. A cord hanging off
@@ -1610,7 +1626,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                       tint[2] * live.flow * pulse * 0.45];
         }
         if (p.id === "charge" && (live.charging || live.port)) {
-          emissive = [0.35, 0.62, 0.70];
+          /* GM's charge port light: blue on a successful connection, green
+             while actively charging, solid green when complete. Blinking
+             rates carry meaning too, but this project cannot tell "delayed"
+             from "charging" from the state byte, so it does not blink. */
+          emissive = live.charging ? [0.06, 0.55, 0.24] : [0.12, 0.30, 0.72];
         }
         if (p.pulse) {
           /* Brightest in the middle of the run, so each one arrives and fades
@@ -2579,12 +2599,17 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     wheel_fr_kph:   ["tyre-fr", "corner rotation (corner label is a source label)"],
     wheel_rl_kph:   ["tyre-rl", "corner rotation (corner label is a source label)"],
     wheel_rr_kph:   ["tyre-rr", "corner rotation (corner label is a source label)"],
-    brake_kpa:      ["brake-*", "all four discs equally — it is one system pressure"],
+    brake_kpa:      ["brake-*", "all four discs equally. GM measures this in the "
+                                 + "brake control module, not at a corner"],
     regen_field_raw: ["brake-*", "regen indication"],
     steering_deg:   ["tyre-fl", "front wheel angle (the ratio is assumed, not measured)"],
     odometer_km:    ["wheel-*", "distance travelled"],
 
     /* --- chassis attitude --- */
+    /* The sensor itself is not drawn. GM publishes no physical location for
+       the inertial sensor on this truck in any manual, brochure, rescue sheet
+       or TechLink article, so there is nowhere to put it that would be true.
+       What it measures moves the whole body, which is what it is shown as. */
     lateral_g:      ["shell", "body roll"],
     longitudinal_g: ["shell", "body pitch"],
 
