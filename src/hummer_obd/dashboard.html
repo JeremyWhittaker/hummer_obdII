@@ -1124,6 +1124,75 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        and the camera is allowed below the axle line so they can be seen.
        Grounding the object is not worth blindfolding the view. */
 
+    /* --- the cabin ----------------------------------------------------
+       Built so the driver's seat has something to look at. What is here is
+       what GM publishes or draws: the 12.3-inch reconfigurable cluster and
+       the 13.4-inch centre touchscreen -- both standard on every trim, both
+       given as diagonals and only as diagonals. Neither aspect ratio nor
+       resolution is published for either, so 2:1 is a choice, taken because
+       it is what GM's own press photograph from the driver's seat looks
+       closest to. At 2:1 a 12.3-inch diagonal is 279.4 x 139.7 mm and a
+       13.4-inch is 304.4 x 152.2 mm, which is what these are.
+
+       The wheel is round -- not flat-bottomed -- with three spokes at nine,
+       three and six o'clock and a chunky near-square airbag hub, from the
+       manual's line art and the same photograph. The regen paddle is a single
+       blade on the left of the column; GM writes "the steering wheel paddle",
+       singular, so there is one.
+
+       No head-up display. The phrase appears in none of the 2022 Pickup,
+       2024 Pickup or 2024 SUV brochures, so there is nothing to model.
+
+       Positions are a modelling choice throughout. GM publishes no H-point,
+       no eyellipse, no screen coordinates and no windshield rake, so nothing
+       here is placed from a measurement and the driver's-seat caption says
+       so. What is measured is how big the screens are. */
+    var ipX = 1.00, seatZ = -0.40;
+    slab("dash-pad", 0.90, 1.20, 1.38, 1.52, -W + 0.06, W - 0.06,
+         [0.13, 0.14, 0.15], { layer: "cabin" });
+    slab("dash-defrost", 1.13, 1.21, 1.50, 1.55, -W + 0.10, W - 0.10,
+         [0.09, 0.10, 0.11], { layer: "cabin" });
+    [-1, 1].forEach(function (side) {
+      add({ id: "vent-tower-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "cabin",
+            colour: [0.08, 0.09, 0.10],
+            t: [ipX + 0.05, 1.44, side * (W - 0.13)], s: [0.06, 0.21, 0.09] });
+    });
+
+    /* The two screens, at their published diagonals. */
+    add({ id: "cluster-housing", mesh: "bev", layer: "cabin", colour: [0.10, 0.11, 0.12],
+          t: [ipX + 0.02, 1.60, seatZ], s: [0.055, 0.180, 0.325] });
+    add({ id: "cluster-screen", mesh: "bev", layer: "cabin", colour: [0.02, 0.03, 0.04],
+          screen: "cluster", t: [ipX - 0.014, 1.60, seatZ], s: [0.014, 0.1397, 0.2794] });
+    add({ id: "centre-housing", mesh: "bev", layer: "cabin", colour: [0.10, 0.11, 0.12],
+          t: [ipX + 0.02, 1.53, 0.12], s: [0.055, 0.195, 0.350] });
+    add({ id: "centre-screen", mesh: "bev", layer: "cabin", colour: [0.02, 0.03, 0.04],
+          screen: "centre", t: [ipX - 0.014, 1.53, 0.12], s: [0.014, 0.1522, 0.3044] });
+
+    /* The wheel: round, three spokes, chunky hub. */
+    add({ id: "wheel-rim", mesh: "ring", layer: "cabin", colour: [0.07, 0.075, 0.08],
+          t: [0.79, 1.40, seatZ], s: [0.040, 0.370, 0.370], rot: "x" });
+    add({ id: "wheel-hub", mesh: "bev", layer: "cabin", colour: [0.11, 0.12, 0.13],
+          t: [0.81, 1.40, seatZ], s: [0.055, 0.135, 0.135] });
+    add({ id: "wheel-spoke-l", mesh: "bev", layer: "cabin", colour: [0.13, 0.14, 0.15],
+          t: [0.81, 1.40, seatZ - 0.115], s: [0.022, 0.048, 0.130] });
+    add({ id: "wheel-spoke-r", mesh: "bev", layer: "cabin", colour: [0.13, 0.14, 0.15],
+          t: [0.81, 1.40, seatZ + 0.115], s: [0.022, 0.048, 0.130] });
+    add({ id: "wheel-spoke-b", mesh: "bev", layer: "cabin", colour: [0.30, 0.28, 0.22],
+          t: [0.81, 1.285, seatZ], s: [0.022, 0.130, 0.080] });
+    /* One paddle, on the left of the column, and it lights under regen. */
+    add({ id: "regen-paddle", mesh: "bev", layer: "cabin", colour: [0.14, 0.15, 0.16],
+          regen: true, t: [0.86, 1.42, seatZ - 0.185], s: [0.020, 0.095, 0.014] });
+
+    /* Seats, so the cabin reads as a cabin from inside it. */
+    [[seatZ, "driver"], [-seatZ, "passenger"]].forEach(function (seat) {
+      add({ id: "seat-back-" + seat[1], mesh: "bev", layer: "cabin",
+            colour: [0.10, 0.11, 0.12],
+            t: [0.06, 1.35, seat[0]], s: [0.14, 0.66, 0.52] });
+      add({ id: "seat-base-" + seat[1], mesh: "bev", layer: "cabin",
+            colour: [0.10, 0.11, 0.12],
+            t: [0.34, 1.06, seat[0]], s: [0.56, 0.14, 0.52] });
+    });
+
     /* --- the detector, where it actually sits --------------------------
        124.11 x 98.00 x 38.80 mm, from Uniden's own specification, high on the
        centreline of the windshield behind the mirror -- which is where these
@@ -1256,29 +1325,32 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     };
     var meshes = { box: makeMesh(gl, unitBox()), cyl: makeMesh(gl, unitCylinder(28)),
                        bev: makeMesh(gl, bevelBox(0.10)), tyre: makeMesh(gl, tyreMesh(0.58, 30)),
+                       ring: makeMesh(gl, tyreMesh(0.86, 34)),
                        rim: makeMesh(gl, rimMesh(6)) },
         parts = buildScene(),
         /* Two cameras. Orbit is the cutaway; driver is the seat.
            The eye point is a modelling choice and is not pretending
            otherwise -- GM publishes no H-point for this truck -- but it is
-           placed from the model's own cabin: 0.62 m behind the windshield
-           base, 1.60 m up, 0.40 m left of the centreline, which is where a
-           driver's eyes are in a vehicle this shape. */
+           placed from the model's own cabin, and corrected once by rendering
+           it: at 0.62 m the wheel sat 17 cm from the eye and filled half the
+           frame. It is 0.30 m now, which puts the rim about half a metre out
+           and the cluster about 0.7 m -- the distances a driver actually
+           sits at, arrived at by looking rather than by arithmetic. */
         cam = { yaw: -0.72, pitch: 0.34, dist: 8.2, spin: 0,
                 mode: "orbit", dyaw: 0, dpitch: -0.06 },
-        DRIVER_EYE = [0.62, 1.60, -0.40],
+        DRIVER_EYE = [0.30, 1.58, -0.40],
         /* A layer missing from this map resolves to undefined, which becomes
            a NaN alpha and a part that silently does not draw. Every layer a
            part can name has to have a value here. */
         layers = { shell: 0.40, pack: 1, drive: 1, wheels: 1, thermal: 1,
-                   aux: 1, underbody: 1, radar: 1 },
+                   aux: 1, underbody: 1, radar: 1, cabin: 1 },
         /* Every field the draw loop reads has to exist before the first
            snapshot arrives, or a frame renders NaN into the shader and the
            part disappears without an error anywhere. */
         live = { modules: [], kw: 0, brake: 0, flow: 0, speed: 0, steer: 0,
                  corners: {}, charging: false, roll: 0, pitch: 0,
                  fill: null, packTemp: null, lv: null, port: false,
-                 fault: false, chargeKw: 0, radar: [0, 0, 0] },
+                 fault: false, chargeKw: 0, radar: [0, 0, 0], awake: false },
         angle = { fl: 0, fr: 0, rl: 0, rr: 0 }, lastFrame = 0;
 
     gl.enable(gl.DEPTH_TEST);
@@ -1527,6 +1599,16 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         if (p.radar) {
           emissive = live.radar || [0, 0, 0];
         }
+        if (p.regen && live.kw < 0) {
+          var r = Math.min(1, Math.abs(live.kw) / 120);
+          emissive = [0, r * 0.55, r * 0.22];
+        }
+        if (p.screen) {
+          /* Lit only while the powertrain is awake. A dark cabin with two
+             glowing screens in it would be describing a truck that is not
+             switched on. */
+          emissive = live.awake ? [0.05, 0.09, 0.12] : [0, 0, 0];
+        }
         if (p.layer === "shell" && live.fault) {
           emissive = [0.42, 0.05, 0.05];
         }
@@ -1557,7 +1639,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   var LAYER_LABELS = [
     ["shell", "Body"], ["pack", "Battery"], ["drive", "Drive units"],
     ["wheels", "Wheels & brakes"], ["thermal", "Thermal"], ["aux", "12 V & charge"],
-    ["underbody", "Underbody"], ["radar", "Radar"],
+    ["underbody", "Underbody"], ["radar", "Radar"], ["cabin", "Cabin"],
     ];
   function buildLayerControls() {
     clear(el.layers);
@@ -1712,6 +1794,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         return b.length > 0 && b.some(function (x) { return x !== 0; });
       })(),
       fault: sigValue("mil_on") === 1 || (sigValue("dtc_count") || 0) > 0,
+      /* Awake if anything is actually moving or drawing: a live session with
+         power on the bus, or a charge in progress. */
+      awake: vs === "live" || derived("charging") === true,
       radar: (function () {
         /* Same rule the panel's screen follows: lit only when the detector is
            there and talking. Alerting takes the band's colour, idle a low

@@ -315,6 +315,34 @@ class TestSessionSelection(unittest.TestCase):
             self.assertEqual(live.main(["--dir", tmp]), 2)
 
 
+class RegenRatioTests(unittest.TestCase):
+    """A percentage needs a denominator worth dividing by."""
+
+    def rows(self, powers):
+        return [{"utc": f"2026-01-01T12:00:{i * 2:02d}Z", "elapsed_s": i * 2.0,
+                 "hv_power_kw": kw, "speed_kph": 30.0, "pack_v": 390.0,
+                 "pack_a": 10.0, "soc_pct": 80.0, "cell_avg_v": 3.9}
+                for i, kw in enumerate(powers)]
+
+    def test_a_session_that_barely_moved_gets_no_ratio(self):
+        # This shipped: a few microwatt-hours drawn, slightly more returned,
+        # and the tile read "44337.8 %" over the words "0.86 kWh back of 0.00
+        # drawn". The guard was drawn > 0, which this passes.
+        out = live.derive(self.rows([0.0001, -0.02, -0.02, 0.0001]))
+        self.assertIsNone(out.get("regen_pct"),
+                          "a ratio was quoted against a denominator of nothing")
+
+    def test_a_real_drive_still_gets_one(self):
+        # Sustained draw then sustained regen, big enough to mean something.
+        out = live.derive(self.rows([120.0] * 40 + [-60.0] * 20))
+        self.assertIsNotNone(out.get("regen_pct"))
+        self.assertLess(out["regen_pct"], 100.0)
+        self.assertGreater(out["regen_pct"], 0.0)
+
+    def test_the_threshold_is_where_it_says_it_is(self):
+        self.assertGreater(live.MIN_DRAWN_KWH_FOR_RATIO, 0.0)
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
 

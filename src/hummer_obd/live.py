@@ -481,6 +481,16 @@ def pack_resistance(rows: list[dict]) -> Optional[tuple[float, int, float]]:
     return (resistance_mohms, len(steps), r)
 
 
+#: A regen ratio needs something to be a ratio of. `drawn > 0` was the guard,
+#: and it let through a session that had barely moved: a few microwatt-hours
+#: integrated on the way in, slightly more on the way out, and the dashboard
+#: published "44337.8 %" as a headline figure under the words "0.86 kWh back
+#: of 0.00 drawn" -- which is the reader being told the answer and shown the
+#: reason it is wrong, in the same tile. Below this the ratio is dividing by
+#: noise and there is no honest number to give.
+MIN_DRAWN_KWH_FOR_RATIO = 0.05
+
+
 def derive(rows: list[dict]) -> dict:
     """Every quantity this project has established how to compute.
 
@@ -597,7 +607,8 @@ def derive(rows: list[dict]) -> dict:
     out["kwh_regen"] = returned
     out["regen_pct"] = (
         returned / drawn * 100.0
-        if returned is not None and drawn is not None and drawn > 0
+        if returned is not None and drawn is not None
+        and drawn >= MIN_DRAWN_KWH_FOR_RATIO
         else None
     )
 

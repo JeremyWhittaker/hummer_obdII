@@ -294,6 +294,24 @@ and the body rolls and pitches from the vehicle's own `lateral_g` and
 `longitudinal_g`, so it leans in a corner because the accelerometer says it is
 leaning.
 
+**There is a driver's seat.** A toggle moves the camera into the cabin and
+dims the body so you can see out of it. The cabin carries what GM publishes:
+the 12.3-inch reconfigurable cluster and the 13.4-inch centre touchscreen —
+both standard on every trim, both given as diagonals and *only* as diagonals,
+so the 2:1 aspect used here is a choice taken from GM's own press photograph
+and labelled as one. The wheel is round, not flat-bottomed, with three spokes
+at nine, three and six o'clock, and there is one regen paddle on the left of
+the column because GM writes "the steering wheel paddle", singular.
+
+There is **no head-up display**, because this truck does not have one — the
+phrase appears in none of the 2022 Pickup, 2024 Pickup or 2024 SUV brochures.
+The radar detector on the windshield is the only thing in the glass.
+
+GM publishes no H-point, no eyellipse and no windshield rake for this vehicle,
+so the eye position is a modelling choice and the caption says so. It was
+corrected once by rendering it and looking: at the first guess the wheel sat
+17 cm from the eye and filled half the frame.
+
 Two readouts sit over the render, because WebGL has no text and putting the
 number somewhere else on the page makes you look away from the part it is
 about. While charging, one gives pack volts, amps and kilowatts, and names the
