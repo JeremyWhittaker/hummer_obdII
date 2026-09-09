@@ -527,6 +527,38 @@ device, and a device with no fix are three different faults with three
 different remedies, and they look identical to a client that does not check
 gpsd's `DEVICES` report. A cold start is explicitly not a fault.
 
+### Radar
+
+A sibling project on the same Pi logs a Uniden R8 detector. `hummer_obd.r8`
+reads its published state file and SQLite history and the dashboard serves both
+at `/api/r8`, rendering link state, supply voltage, GPS lock and recent alerts
+with band, strength, frequency, direction and duration.
+
+It is read **server-side**. The page's CSP allows connections to its own origin
+only — the right default — so anything cross-project has to come through this
+server rather than being fetched by the browser.
+
+That file belongs to another process, so it is treated as untrusted:
+
+- **The schema is pinned to exactly 1**, never a minimum. The sibling's own
+  tests pin its key sets as literals *because* this project consumes them, so a
+  `>=` would silently accept a schema 2 whose fields had moved.
+- **Staleness is computed here**, from `updated_at` against this machine's
+  clock. The file's own `stale` flag is packet age at write time, so it stops
+  updating when the writer dies — exactly when staleness matters most. A
+  timestamp in the future is refused rather than read as fresh.
+- **`gps_locked` stays tri-state.** `null` means the detector never said, which
+  is not the same as "no lock", and collapsing it would report a fault nobody
+  observed.
+- **Band and direction are allowlisted** before they reach a display.
+- The history is opened `mode=ro` through a URI, so this can never migrate the
+  sibling's database underneath its owner.
+
+Alert coordinates are gated on the **same `--expose-location` switch** as the
+vehicle's own position. That database does record them, and leaking position
+through the radar panel while the telemetry panel withheld it would be a hole
+in one wall of the same room.
+
 ### The clock
 
 `timedatectl` on this Pi reports **`RTC time: n/a`**. There is no battery-backed
