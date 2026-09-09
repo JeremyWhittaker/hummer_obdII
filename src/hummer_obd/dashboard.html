@@ -1589,8 +1589,19 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            and the cluster about 0.7 m -- the distances a driver actually
            sits at, arrived at by looking rather than by arithmetic. */
         cam = { yaw: -0.72, pitch: 0.34, dist: 8.2, spin: 0,
-                mode: "orbit", dyaw: 0, dpitch: -0.06 },
-        DRIVER_EYE = [0.30, 1.58, -0.40],
+                mode: "orbit", dyaw: 0.20, dpitch: 0.035 },
+        /* Framed on the instruments rather than parked in the middle of the
+           cabin. The point of this view is the cluster, the centre screen and
+           the detector on the glass -- the things that carry readings -- not a
+           tour of the interior. So the eye sits closer and slightly inboard of
+           the seat centre, where all three fall inside one frame. */
+        /* 0.85 m back and above the wheel rim. At 0.46 the cluster
+           overflowed the frame; at eye height 1.53 the rim crossed it, which
+           is true of the real truck and useless in a view whose whole purpose
+           is reading the instruments. From here the sight line to the cluster
+           clears the rim by about three centimetres -- which is also what a
+           driver does, rather than a compromise against realism. */
+        DRIVER_EYE = [0.15, 1.66, -0.33],
         /* A layer missing from this map resolves to undefined, which becomes
            a NaN alpha and a part that silently does not draw. Every layer a
            part can name has to have a value here. */
@@ -1666,10 +1677,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         var cy = Math.cos(cam.dyaw), sy = Math.sin(cam.dyaw),
             cp = Math.cos(cam.dpitch), sp = Math.sin(cam.dpitch);
         eye = DRIVER_EYE;
-        /* Wider field and a near plane that clears the windshield, which is
-           about half a metre from the eye -- the orbit camera's 0.1 m near
-           plane would slice the dashboard off. */
-        proj = m4persp(0.95, w / h, 0.04, 120);
+        /* Narrower than the orbit camera's, because this view is reading
+           instruments rather than surveying a cabin -- a wide angle pushes
+           the cluster into the distance and fills the frame with door card.
+           The near plane clears the windshield, about half a metre from the
+           eye; the orbit camera's 0.1 m would slice the dashboard off. */
+        proj = m4persp(0.82, w / h, 0.04, 120);
         view = m4look(eye, [eye[0] + cp * cy, eye[1] + sp, eye[2] + cp * sy],
                       [0, 1, 0]);
       } else {
@@ -1913,7 +1926,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       layers: layers,
       setView: function (key) {
         if (key === "driver") {
-          cam.mode = "driver"; cam.dyaw = 0; cam.dpitch = -0.06;
+          /* Pitched up so the detector at the top of the windshield is in
+             shot alongside the cluster. Looking dead level put it above the
+             frame, which made the view about the steering wheel. */
+          /* Yawed inboard so all three instruments sit inside the frame: the
+             cluster falls left of centre, the centre screen right of it, the
+             detector between and above. Looking dead ahead put the centre
+             screen past the edge. */
+          cam.mode = "driver"; cam.dyaw = 0.20; cam.dpitch = 0.035;
           /* Dimmed harder than the cutaway default: at 0.40 the windshield
              and the door card sit between the eye and everything worth
              looking at. */
@@ -2120,9 +2140,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     { key: "exterior", label: "Exterior",
       sub: "Drag to orbit, scroll to zoom." },
     { key: "driver", label: "Driver's seat",
-      sub: "Looking forward from the seat. Drag to look around. The eye point "
-         + "is placed from the model's cabin, not from a published H-point "
-         + "\u2014 GM does not publish one for this truck." },
+      sub: "Framed on the instruments: the 12.3-inch cluster, the 13.4-inch "
+         + "centre screen and the detector on the glass. Drag to look around "
+         + "if you want to. The eye point is placed from the model's cabin, "
+         + "not from a published H-point \u2014 GM does not publish one for "
+         + "this truck." },
     { key: "underside", label: "Underside",
       sub: "Looking up from below. There is no ground plane, so the pack, the "
          + "skid plates and the coolant runs are all visible." }

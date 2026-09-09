@@ -368,6 +368,14 @@ it is. They move only while the thermal accumulator is advancing, at a speed
 taken from that same signal, and they vanish rather than parking mid-pipe when
 it stops — a stopped pump has to look stopped.
 
+The driver's seat view is framed on the instruments rather than parked in the
+middle of the cabin: the cluster left of centre, the centre screen right of
+it, the detector between and above. The eye sits 0.85 m back and above the
+wheel rim, so the sight line to the cluster clears the rim by about three
+centimetres — which is what a driver does, not a compromise against realism.
+Looking dead ahead from a lower eye put the rim across the cluster and the
+centre screen past the frame edge.
+
 **There is a driver's seat.** A toggle moves the camera into the cabin and
 dims the body so you can see out of it. The cabin carries what GM publishes:
 the 12.3-inch reconfigurable cluster and the 13.4-inch centre touchscreen —
