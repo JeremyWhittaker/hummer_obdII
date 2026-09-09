@@ -437,8 +437,16 @@ reopening could never have helped: the RFCOMM binding had gone stale, and
 rebinding needs privileges the recorder does not have and should not have.
 
 `hummer-obd-btwatch` runs as root on a timer and climbs a ladder — reconnect,
-then reset the controller, then restart the daemon — one rung at a time, only
-when *both* devices are known down. Both, not either: the OBD adapter drops
+reset the controller, restart the daemon, then reload the UART driver — one
+rung at a time, only when *both* devices are known down.
+
+That last rung was added after the first three were tried by hand and all
+three failed. The chip had stopped answering `HCI_Reset` — the kernel says
+`Bluetooth: hci0: Opcode 0x0c03 failed: -110` — and every remedy above the
+driver is restarting something that has no working controller to talk to.
+Reloading `hci_uart` is the first rung that touches the layer the fault is
+actually at. `scripts/bt-recover.sh` walks the same ladder by hand and stops
+at whichever rung works. Both, not either: the OBD adapter drops
 every time the vehicle sleeps, which is most of every day, and a watchdog that
 reset the controller each time would spend its life fighting normal behaviour.
 The tests are mostly about that restraint, and one of them parses the module's

@@ -45,6 +45,14 @@ RADAR_DETECTOR = "E0:00:00:00:2C:A7"
 RECONNECT_AFTER = 1
 RESET_AFTER = 3
 RESTART_AFTER = 6
+#: The rung that actually repairs a wedged controller, and the reason the
+#: three above it are not enough. When the chip stops answering HCI_Reset --
+#: ``Bluetooth: hci0: Opcode 0x0c03 failed: -110`` in the kernel log -- every
+#: remedy above the driver is restarting something that has no working
+#: controller to talk to. All three were tried on 2026-09-09 and all three
+#: failed. Reloading the UART driver is the first rung that touches the layer
+#: the fault is at.
+RELOAD_AFTER = 9
 
 #: Nothing is attempted more often than this, whatever the timer does.
 MIN_INTERVAL_S = 45.0
@@ -106,6 +114,9 @@ class Health:
     def any_connected(self) -> bool:
         return self.obd is True or self.radar is True
 
+    #: True when the controller itself is not up, whatever the devices say.
+    controller: Optional[bool] = None
+
     @property
     def all_known_down(self) -> bool:
         """True only when both devices are *known* to be disconnected.
@@ -120,12 +131,21 @@ class Health:
     def describe(self) -> str:
         def say(value):
             return "?" if value is None else ("up" if value else "down")
-        return (f"obd={say(self.obd)} radar={say(self.radar)} "
-                f"rfcomm={self.rfcomm or '?'}")
+        return (f"controller={say(self.controller)} obd={say(self.obd)} "
+                f"radar={say(self.radar)} rfcomm={self.rfcomm or '?'}")
+
+
+def controller_up() -> Optional[bool]:
+    """Whether hci0 is UP RUNNING, or None if that cannot be determined."""
+    code, out = _run(["hciconfig", "hci0"], timeout=6.0)
+    if code != 0:
+        return None
+    return "UP RUNNING" in out
 
 
 def look(obd: str = OBD_ADAPTER, radar: str = RADAR_DETECTOR) -> Health:
-    return Health(obd=connected(obd), radar=connected(radar), rfcomm=rfcomm_state())
+    return Health(obd=connected(obd), radar=connected(radar),
+                  rfcomm=rfcomm_state(), controller=controller_up())
 
 
 @dataclass
@@ -165,6 +185,18 @@ class Watchdog:
 
         self.strikes += 1
         self.say(f"both links down, strike {self.strikes} ({state.describe()})")
+
+        if self.strikes >= RELOAD_AFTER:
+            # The controller is not answering its own reset. Everything above
+            # the driver has been tried and failed, repeatedly, so reload the
+            # driver. Bluetooth has to be stopped first or the module is busy.
+            self._act("stop-bluetoothd", ["systemctl", "stop", "bluetooth"])
+            self._act("unload-hci-uart", ["modprobe", "-r", "hci_uart"])
+            self._act("load-hci-uart", ["modprobe", "hci_uart"])
+            self._act("start-bluetoothd", ["systemctl", "start", "bluetooth"])
+            self._act("bring-up-controller", ["hciconfig", "hci0", "up"])
+            self._act("rebind-rfcomm", ["systemctl", "restart", "hummer-rfcomm"])
+            return state
 
         if self.strikes >= RESTART_AFTER:
             # Last rung. Everything below it has failed repeatedly, so the
@@ -220,6 +252,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(json.dumps({
                 "utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                 "obd": state.obd, "radar": state.radar, "rfcomm": state.rfcomm,
+                "controller": state.controller,
                 "strikes": dog.strikes, "actions": list(dog.actions),
                 "log": list(lines),
             }, allow_nan=False), flush=True)

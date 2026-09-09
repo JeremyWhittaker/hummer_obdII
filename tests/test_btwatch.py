@@ -133,13 +133,28 @@ class LadderTests(unittest.TestCase):
         self.assertIn("reset-controller", done)
         self.assertNotIn("restart-bluetoothd", done)
 
-    def test_the_daemon_is_restarted_only_at_the_top(self):
+    def test_the_daemon_is_restarted_before_the_driver_is_reloaded(self):
         done = self.climb(btwatch.RESTART_AFTER)
         self.assertIn("restart-bluetoothd", done)
+        self.assertNotIn("unload-hci-uart", done)
+
+    def test_the_driver_reload_is_the_top_rung(self):
+        # The rung that actually repairs a controller which has stopped
+        # answering HCI_Reset. Every rung below it restarts something that has
+        # no working controller to talk to -- proven on 2026-09-09, when all
+        # three were tried by hand and all three failed.
+        done = self.climb(btwatch.RELOAD_AFTER)
+        self.assertIn("unload-hci-uart", done)
+        self.assertIn("load-hci-uart", done)
+        self.assertLess(done.index("stop-bluetoothd"), done.index("unload-hci-uart"),
+                        "the module is busy while bluetoothd holds it")
+        self.assertLess(done.index("load-hci-uart"), done.index("start-bluetoothd"),
+                        "starting the daemon before the driver exists is pointless")
 
     def test_the_ladder_is_ordered_and_spaced(self):
         self.assertLess(btwatch.RECONNECT_AFTER, btwatch.RESET_AFTER)
         self.assertLess(btwatch.RESET_AFTER, btwatch.RESTART_AFTER)
+        self.assertLess(btwatch.RESTART_AFTER, btwatch.RELOAD_AFTER)
 
     def test_rebinding_accompanies_every_stack_level_repair(self):
         # A controller reset or a daemon restart leaves the RFCOMM binding
@@ -172,7 +187,7 @@ class SafetyTests(unittest.TestCase):
                        or isinstance(e, ast.Name) or isinstance(e, ast.Call)
                        for e in node.elts):
                     executables.add(first.value)
-        allowed = {"bluetoothctl", "rfcomm", "hciconfig", "systemctl"}
+        allowed = {"bluetoothctl", "rfcomm", "hciconfig", "systemctl", "modprobe"}
         stray = {e for e in executables if "/" in e or e.startswith("AT")}
         self.assertEqual(stray, set(), f"non-Bluetooth executable: {stray}")
         self.assertTrue(executables <= allowed | {"connected", "clean", "closed",
@@ -182,7 +197,8 @@ class SafetyTests(unittest.TestCase):
     def test_the_only_services_it_touches_are_the_nodes_own(self):
         source = pathlib.Path(btwatch.__file__).read_text(encoding="utf-8")
         import re as _re
-        units = set(_re.findall(r'"systemctl", "restart", "([a-z0-9-]+)"', source))
+        units = set(_re.findall(r'"systemctl", "(?:restart|stop|start)", "([a-z0-9-]+)"',
+                                source))
         self.assertEqual(units, {"bluetooth", "hummer-rfcomm"},
                          "the watchdog restarts a service it was not meant to")
         self.assertNotIn("hummer-drive", units,
