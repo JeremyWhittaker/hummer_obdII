@@ -1071,8 +1071,13 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         parts = buildScene(),
         cam = { yaw: -0.72, pitch: 0.34, dist: 8.2, spin: 0 },
         layers = { shell: 0.40, pack: 1, drive: 1, wheels: 1, thermal: 1, aux: 1 },
+        /* Every field the draw loop reads has to exist before the first
+           snapshot arrives, or a frame renders NaN into the shader and the
+           part disappears without an error anywhere. */
         live = { modules: [], kw: 0, brake: 0, flow: 0, speed: 0, steer: 0,
-                 corners: {}, charging: false },
+                 corners: {}, charging: false, roll: 0, pitch: 0,
+                 fill: null, packTemp: null, lv: null, port: false,
+                 fault: false },
         angle = { fl: 0, fr: 0, rl: 0, rr: 0 }, lastFrame = 0;
 
     gl.enable(gl.DEPTH_TEST);
@@ -1132,6 +1137,22 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       gl.uniformMatrix4fv(loc.view, false, view);
       gl.uniform3fv(loc.eye, new Float32Array(eye));
 
+      /* Body attitude, from the vehicle's own accelerometer. +X is forward
+         and Y is up, so a lateral reading rolls the body about X and a
+         longitudinal one pitches it about Z -- the truck leans in a corner
+         and squats under braking because that is what the sensor says it is
+         doing, not because an animation was written to make it look busy.
+         The gain and the quarter-radian clamp are presentation choices; the
+         two readings underneath them are measured. */
+      var roll = Math.max(-0.22, Math.min(0.22, (num(live.roll) || 0) * 0.16)),
+          pitchB = Math.max(-0.22, Math.min(0.22, (num(live.pitch) || 0) * 0.16)),
+          cr = Math.cos(roll), sr = Math.sin(roll),
+          cp = Math.cos(pitchB), sp = Math.sin(pitchB),
+          rollM = m4(), pitchM = m4();
+      rollM[5] = cr; rollM[6] = sr; rollM[9] = -sr; rollM[10] = cr;   /* about X */
+      pitchM[0] = cp; pitchM[1] = sp; pitchM[4] = -sp; pitchM[5] = cp; /* about Z */
+      var attitude = m4mul(pitchM, rollM);
+
       /* Opaque first, then the translucent shell back-to-front, or the
          shell writes depth and hides everything it is meant to reveal. */
       var order = parts.slice().sort(function (a, b) {
@@ -1184,7 +1205,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           rot[0] = ca; rot[1] = sa; rot[4] = -sa; rot[5] = ca;
           model = m4mul(model, rot);
         }
-        gl.uniformMatrix4fv(loc.model, false, model);
+        gl.uniformMatrix4fv(loc.model, false, m4mul(attitude, model));
 
         var colour = p.colour, emissive = [0, 0, 0];
         if (p.index !== undefined && live.modules.length === 24) {
@@ -1201,7 +1222,30 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           var pulse = 0.5 + 0.5 * Math.sin(now * 0.004 + p.t[2]);
           emissive = [0, live.flow * pulse * 0.35, live.flow * pulse * 0.45];
         }
-        if (p.id === "charge" && live.charging) emissive = [0.35, 0.62, 0.70];
+        if (p.id === "charge" && (live.charging || live.port)) {
+          emissive = [0.35, 0.62, 0.70];
+        }
+        if (p.id === "pack-case") {
+          /* Two readings on one part: how full it is, and how warm. The tint
+             is a relative ramp over the range this pack is actually seen in
+             -- there is no absolute scale to claim. */
+          if (typeof live.fill === "number") {
+            emissive = [live.fill * 0.10, live.fill * 0.26, live.fill * 0.16];
+          }
+          if (typeof live.packTemp === "number") {
+            var warm = Math.max(0, Math.min(1, (live.packTemp - 50) / 60));
+            colour = [0.09 + warm * 0.26, 0.11 + warm * 0.03, 0.12 + warm * 0.02];
+          }
+        }
+        if (p.id === "lv" && typeof live.lv === "number") {
+          /* One rail, three sense points. Bright while it holds, red as it
+             sags -- the drop under load is real and decoupled from traction. */
+          var rail = Math.max(0, Math.min(1, (live.lv - 11.8) / 1.6));
+          emissive = [(1 - rail) * 0.55, rail * 0.30, 0];
+        }
+        if (p.layer === "shell" && live.fault) {
+          emissive = [0.42, 0.05, 0.05];
+        }
         gl.uniform3fv(loc.colour, new Float32Array(colour));
         gl.uniform3fv(loc.emissive, new Float32Array(emissive));
         gl.uniform1f(loc.alpha, alpha);
@@ -1300,6 +1344,23 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       flow: (state.thermal.rate > 0.5 || hvacActive) ? 1 : 0,
       speed: speed === null ? 0 : speed,
       steer: sigValue("steering_deg") || 0,
+      roll: sigValue("lateral_g") || 0,
+      pitch: sigValue("longitudinal_g") || 0,
+      fill: (function () {
+        /* energy_kwh, not soc_pct: SoC steps and freezes -- 2.5 kWh drained
+           across 45 minutes parked while it did not move at all. */
+        var e = sigValue("energy_kwh"), cap = num(derived("implied_kwh"));
+        if (e === null) return null;
+        return Math.max(0, Math.min(1, e / (cap && cap > 20 ? cap : 205)));
+      })(),
+      packTemp: sigValue("temp_f"),
+      lv: sigValue("module_voltage") !== null ? sigValue("module_voltage")
+          : sigValue("volts"),
+      port: (function () {
+        var b = hexBytes(sig("charger_5401_raw") ? sig("charger_5401_raw").value : null);
+        return b.length > 0 && b.some(function (x) { return x !== 0; });
+      })(),
+      fault: sigValue("mil_on") === 1 || (sigValue("dtc_count") || 0) > 0,
       corners: {
         fl: sigValue("wheel_fl_kph"), fr: sigValue("wheel_fr_kph"),
         rl: sigValue("wheel_rl_kph"), rr: sigValue("wheel_rr_kph")

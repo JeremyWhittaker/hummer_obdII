@@ -236,7 +236,36 @@ Live readings drive the render rather than decorating it: module colour from
 deviation across the 24, motor glow from pack power — green and reversed under
 regen — brake discs lit by `brake_kpa`, coolant pipes pulsing only while
 `0x27BB` is actually advancing, wheels turning at road speed, and the charge
-port lit when `0x5401` says charging.
+port lit when `0x5401` says charging. The pack case carries its own charge
+level from `energy_kwh` (not `soc_pct`, which steps and freezes) and a warmth
+tint from `temp_f`; the frunk pod tracks the 12 V rail and reddens as it sags;
+and the body rolls and pitches from the vehicle's own `lateral_g` and
+`longitudinal_g`, so it leans in a corner because the accelerometer says it is
+leaning.
+
+**Every recorded column says which part shows it.** The signals table carries a
+*Shown on* column, and 47 of the 62 name a part. The other 15 say plainly that
+they are not drawn, and why — there is no front- or rear-axle telemetry on this
+vehicle, so the three motors glow together or not at all; `0x2B43` returns 26
+values against 24 modules and the gap is unexplained, so it never touches
+module geometry; `evse_current_raw` was falsified as charge-port current twice.
+Three tests in `tests/test_dashboard.py` hold that index to the real column
+list, because the README's own column count, the drive unit's identifier list
+and the enhanced registry all drifted before anyone put a test on them.
+
+**The radar panel is the detector's front panel.** Live, it draws the Uniden
+R8's face to the published 98.00 × 38.80 mm envelope — bezel, display glass,
+wordmark, the MUTE/DIM and MARK keys — with the screen showing what the
+detector shows: the status box carrying speed on a GPS fix and supply volts
+without one, the eight strength segments in the eight colours from the owner's
+manual, and laser drawn as the word, a beam and a starburst rather than bars,
+because laser carries no strength reading. Alert *history* is plotted on the
+map at the coordinate each alert was recorded at, not listed as frequencies.
+
+**Past trips play back.** Pick a session and the marker walks the route with a
+trip clock and a scrub bar. A five-second poll used to rebuild the map and
+reset the marker with it; the track is compared before it is touched, so a
+playback in progress is left alone.
 
 The geometry is boxes and cylinders, so it reads as an engineering cutaway
 rather than a rendered game asset. The renderer takes vertex data, so a real
