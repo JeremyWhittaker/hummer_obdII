@@ -138,6 +138,20 @@ class OriginTests(unittest.TestCase):
                          "http://ha.local:8123")
 
 
+class CacheTests(unittest.TestCase):
+    def test_the_same_page_and_api_render_identically(self):
+        # The version is a content hash, so it has to be stable for an
+        # unchanged input or every deploy busts the cache for no reason.
+        a = hapanel.render("http://node:8765", PAGE)
+        b = hapanel.render("http://node:8765", PAGE)
+        self.assertEqual(a, b)
+
+    def test_a_changed_page_renders_differently(self):
+        a = hapanel.render("http://node:8765", PAGE)
+        b = hapanel.render("http://node:8765", PAGE.replace("hi", "changed"))
+        self.assertNotEqual(a, b)
+
+
 class RealPageTests(unittest.TestCase):
     def test_the_shipped_page_can_actually_be_stamped(self):
         # Guards the anchor: if dashboard.html ever loses its <head>, or gains

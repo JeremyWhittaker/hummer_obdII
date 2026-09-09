@@ -19,6 +19,7 @@ end can be talked into a wildcard.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import sys
 from importlib.resources import files
@@ -137,6 +138,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 2
 
+    version = hashlib.sha256(body.encode("utf-8")).hexdigest()[:12]
     if args.out == "-":
         sys.stdout.write(body)
     else:
@@ -144,6 +146,13 @@ def main(argv: list[str] | None = None) -> int:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(body, encoding="utf-8")
         print(f"wrote {target} ({len(body)} bytes), reading {args.api}", file=sys.stderr)
+    # Home Assistant serves /local/ with max-age=2678400 -- thirty-one days.
+    # A redeployed panel is therefore invisible to anyone who has opened it
+    # before, which looks exactly like a deploy that did not work. The card's
+    # URL carries this, so a new build is a new URL and the cache is answered
+    # rather than argued with.
+    print(f"version {version}", file=sys.stderr)
+    print(f"card url: /local/hummer/index.html?v={version}", file=sys.stderr)
     return 0
 
 

@@ -179,6 +179,7 @@ select:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid 
 .scene-swatch{display:inline-block;width:9px;height:9px;border-radius:2px;
   vertical-align:baseline;margin-right:5px}
 .layers{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
+.seat-toggle{border-color:var(--ev-orange)!important;color:var(--ev-orange)!important}
 .layers button{
   background:var(--bg);border:1px solid var(--line);color:var(--ink-3);
   font:inherit;font-size:12px;padding:6px 12px;border-radius:999px;cursor:pointer;
@@ -1257,7 +1258,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                        bev: makeMesh(gl, bevelBox(0.10)), tyre: makeMesh(gl, tyreMesh(0.58, 30)),
                        rim: makeMesh(gl, rimMesh(6)) },
         parts = buildScene(),
-        cam = { yaw: -0.72, pitch: 0.34, dist: 8.2, spin: 0 },
+        /* Two cameras. Orbit is the cutaway; driver is the seat.
+           The eye point is a modelling choice and is not pretending
+           otherwise -- GM publishes no H-point for this truck -- but it is
+           placed from the model's own cabin: 0.62 m behind the windshield
+           base, 1.60 m up, 0.40 m left of the centreline, which is where a
+           driver's eyes are in a vehicle this shape. */
+        cam = { yaw: -0.72, pitch: 0.34, dist: 8.2, spin: 0,
+                mode: "orbit", dyaw: 0, dpitch: -0.06 },
+        DRIVER_EYE = [0.62, 1.60, -0.40],
         /* A layer missing from this map resolves to undefined, which becomes
            a NaN alpha and a part that silently does not draw. Every layer a
            part can name has to have a value here. */
@@ -1285,6 +1294,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     });
     canvas.addEventListener("pointermove", function (e) {
       if (!drag) return;
+      if (cam.mode === "driver") {
+        /* Looking around from a fixed seat, so the drag turns the head
+           rather than swinging the vehicle. Clamped so you cannot end up
+           looking through the back of your own skull. */
+        cam.dyaw = Math.max(-1.5, Math.min(1.5, cam.dyaw - (e.clientX - drag.x) * 0.006));
+        cam.dpitch = Math.max(-0.8, Math.min(0.6, cam.dpitch - (e.clientY - drag.y) * 0.005));
+        drag.x = e.clientX; drag.y = e.clientY;
+        return;
+      }
       cam.yaw += (e.clientX - drag.x) * 0.008;
       /* Below the axle line on purpose: the underside is the half of an
              EV that has anything on it. */
@@ -1318,13 +1336,26 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                   ? live.corners[corner] : live.speed;
         angle[corner] += (kph / 3.6) / VEH.wheelRadius * dt;
       });
-      if (!drag) cam.spin += 0.0013;              /* a slow idle orbit */
-      var yaw = cam.yaw + cam.spin,
-          eye = [Math.cos(yaw) * Math.cos(cam.pitch) * cam.dist,
-                 Math.sin(cam.pitch) * cam.dist + 0.9,
-                 Math.sin(yaw) * Math.cos(cam.pitch) * cam.dist],
-          proj = m4persp(0.72, w / h, 0.1, 120),
-          view = m4look(eye, [0, 0.85, 0], [0, 1, 0]);
+      if (!drag && cam.mode === "orbit") cam.spin += 0.0013;   /* slow idle orbit */
+      var eye, proj, view;
+      if (cam.mode === "driver") {
+        var cy = Math.cos(cam.dyaw), sy = Math.sin(cam.dyaw),
+            cp = Math.cos(cam.dpitch), sp = Math.sin(cam.dpitch);
+        eye = DRIVER_EYE;
+        /* Wider field and a near plane that clears the windshield, which is
+           about half a metre from the eye -- the orbit camera's 0.1 m near
+           plane would slice the dashboard off. */
+        proj = m4persp(0.95, w / h, 0.04, 120);
+        view = m4look(eye, [eye[0] + cp * cy, eye[1] + sp, eye[2] + cp * sy],
+                      [0, 1, 0]);
+      } else {
+        var yaw = cam.yaw + cam.spin;
+        eye = [Math.cos(yaw) * Math.cos(cam.pitch) * cam.dist,
+               Math.sin(cam.pitch) * cam.dist + 0.9,
+               Math.sin(yaw) * Math.cos(cam.pitch) * cam.dist];
+        proj = m4persp(0.72, w / h, 0.1, 120);
+        view = m4look(eye, [0, 0.85, 0], [0, 1, 0]);
+      }
       gl.uniformMatrix4fv(loc.proj, false, proj);
       gl.uniformMatrix4fv(loc.view, false, view);
       gl.uniform3fv(loc.eye, new Float32Array(eye));
@@ -1354,6 +1385,13 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
          It is decoration, and it is decoration that stops the moment the
          charge does, so it cannot imply activity that is not happening. */
+      if (cam.mode === "driver") {
+        /* A driver does not watch their own truck lean; they lean with it.
+           Rolling the model under a camera fixed in the cabin would slide the
+           dashboard out from under them, which is the opposite of what the
+           accelerometer is describing. */
+        attitude = m4();
+      }
       var breath = 0;
       if (live.charging) {
         var load = Math.min(1, Math.abs(live.chargeKw || 0) / 19.2),
@@ -1503,6 +1541,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     return {
       setLayer: function (name, value) { layers[name] = value; },
       layers: layers,
+      setCamera: function (mode) {
+        cam.mode = mode === "driver" ? "driver" : "orbit";
+        if (cam.mode === "driver") { cam.dyaw = 0; cam.dpitch = -0.06; }
+        return cam.mode;
+      },
+      camera: function () { return cam.mode; },
       update: function (data) { live = data; }
     };
   }
@@ -1517,6 +1561,28 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     ];
   function buildLayerControls() {
     clear(el.layers);
+    /* The seat, first, because it changes what all the other buttons mean.
+       From outside they strip a cutaway; from inside they are the difference
+       between seeing the dashboard and seeing through it. */
+    var seat = h("button", "seat-toggle", "Driver's seat");
+    seat.setAttribute("aria-pressed", "false");
+    seat.addEventListener("click", function () {
+        if (!viewer) return;
+        var mode = viewer.setCamera(viewer.camera() === "driver" ? "orbit" : "driver"),
+            inside = mode === "driver";
+        seat.textContent = inside ? "Back outside" : "Driver's seat";
+        seat.setAttribute("aria-pressed", String(inside));
+        /* The body is dimmed further from inside: at 0.40 the windshield and
+           the door card sit between the eye and everything worth looking at.
+           Restored on the way out so the cutaway is as it was. */
+        viewer.setLayer("shell", inside ? 0.14 : 0.40);
+        el["vehicle-sub"].textContent = inside
+          ? "Driver's seat, looking forward. Drag to look around. The eye "
+            + "point is placed from the model's cabin, not from a published "
+            + "H-point \u2014 GM does not publish one for this truck."
+          : "Drag to orbit, scroll to zoom.";
+      });
+    el.layers.appendChild(seat);
     LAYER_LABELS.forEach(function (pair) {
       var name = pair[0], on = viewer ? viewer.layers[name] > 0.5 : true,
           b = h("button", null, pair[1]);
