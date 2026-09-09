@@ -210,13 +210,37 @@ PYTHONPATH=src python3 -m hummer_obd.dashboard --dir evidence/sessions
 Open `http://127.0.0.1:8765`. It never opens the OBD adapter — it reads the
 CSVs the recorder already wrote.
 
-**The page is the vehicle.** A plan view, nose left and driver's side at the
-bottom, with the readings drawn on the parts they come from: the 24 battery
-modules in the floor in their real arrangement (two layers of twelve, two
-across and six front-to-back, between the axles), the three motors on the axles
-they drive, the charge port on the driver's-side rear quarter, the 12 V battery
-in the frunk pod, wheel speeds at their four corners. Placement follows GM's
-published pack architecture.
+**The page is the vehicle, in live 3D.** Drag to orbit, scroll to zoom, and
+six toggles dim or remove the body, battery, drive units, wheels, thermal and
+auxiliary groups. The body is translucent rather than hidden by default, so the
+hardware reads as being inside a vehicle rather than floating.
+
+It is hand-written WebGL with **no library**: the CSP forbids external scripts,
+so three.js was never available, and WebGL being a canvas API rather than a
+fetch is what makes raw GL possible at all. The matrix maths, shaders and
+geometry are the cost of that, and the whole page remains one self-contained
+file with no external anything.
+
+Everything is modelled in metres from published dimensions, origin on the
+ground at the centre of the wheelbase: 5.507 m long on a 3.444 m wheelbase, the
+2.135 × 1.420 m pack between the axles, 24 modules in two layers of twelve (two
+across, six front-to-back), one motor on the front axle and two on the rear,
+plus wheels, brake discs, thermal hardware, the frunk 12 V pod and the
+driver's-side rear charge port.
+
+**Anything whose real location this project has not established is not drawn.**
+An invented position looks exactly as authoritative as a measured one, which is
+the whole problem with drawing a vehicle from memory.
+
+Live readings drive the render rather than decorating it: module colour from
+deviation across the 24, motor glow from pack power — green and reversed under
+regen — brake discs lit by `brake_kpa`, coolant pipes pulsing only while
+`0x27BB` is actually advancing, wheels turning at road speed, and the charge
+port lit when `0x5401` says charging.
+
+The geometry is boxes and cylinders, so it reads as an engineering cutaway
+rather than a rendered game asset. The renderer takes vertex data, so a real
+modelled mesh is the next step rather than a rewrite.
 
 Modules are shaded by **distance from the median of the 24**, not by absolute
 value. `0x2AF1` returns 24 bytes and the pack has 24 modules; that
