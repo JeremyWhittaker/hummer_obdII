@@ -199,6 +199,47 @@ including while driving. Everything else needs `hummer-drive` stopped first,
 and the sessions pulled to a workstation before that. See the
 [runbook](docs/RUNBOOK.md#drive-recorder).
 
+### Hosting the page on Home Assistant
+
+The node is a Pi Zero 2 W. Rendering a page for a browser it cannot see is not
+the best use of it, so the interface can be hosted elsewhere while the node
+keeps doing the thing it is well placed to do — sit on the OBD port and record.
+
+```bash
+# On the node: serve data only, and name the origins allowed to read it.
+python3 -m hummer_obd.dashboard --host <node-ip> --port 8765 --expose-location \
+    --api-only --allow-origin http://homeassistant.local:8123
+
+# On a machine with the repository: stamp the node's address into the page.
+python3 -m hummer_obd.hapanel --api http://<node-ip>:8765 --out dist/index.html
+
+# Home Assistant's SSH add-on disables sftp, so pipe it in.
+ssh homeassistant 'sudo mkdir -p /config/www/hummer && sudo chown $USER /config/www/hummer'
+ssh homeassistant 'cat > /config/www/hummer/index.html' < dist/index.html
+```
+
+It is then at `/local/hummer/index.html`, which an `iframe` card can point at.
+
+**There is exactly one `dashboard.html` in this repository.** The panel is
+generated from it rather than maintained beside it, because two copies of an
+interface both render and only one of them is right, with nothing to say
+which. `hummer-obd-hapanel` stamps in the node's address and widens the page's
+own `connect-src` and `img-src` to reach it — without that last part the panel
+loads, fetches nothing, and shows its empty state with only a console message
+to explain why.
+
+**`--allow-origin` is not optional and is never `*`.** A browser hands any
+page on an allowed origin whatever this API answers, and what it answers
+includes where the vehicle is. Origins are named exactly, echoed rather than
+wildcarded, and `*` is refused at construction.
+
+**What lands in `/config/www/` is world-readable** — Home Assistant serves it
+at `/local/...` with no authentication, and an instance reachable through Nabu
+Casa serves it to the internet. The generated panel is code and one address:
+no coordinates, no session names, no VIN. Keep it that way. Session data stays
+on the node, behind whatever network the node is on, and a viewer who cannot
+reach the node gets an empty page rather than someone else's driving history.
+
 ### Browser dashboard
 
 ```bash
