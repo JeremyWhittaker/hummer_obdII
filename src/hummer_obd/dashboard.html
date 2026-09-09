@@ -1024,6 +1024,59 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        and the camera is allowed below the axle line so they can be seen.
        Grounding the object is not worth blindfolding the view. */
 
+    /* --- underbody ---------------------------------------------------
+       The camera is allowed below the axle line, so the underside has to be
+       worth arriving at. Everything here is on GM's own published feature
+       list for this truck: Air Ride Adaptive Suspension, four-wheel steer
+       with CrabWalk, a front steel skid protector with the full underbody
+       plate set as an option, and rocker protectors. Existence and rough
+       station are sourced; exact geometry is not published for any of them,
+       so these are drawn as the plain shapes they are rather than as
+       detailed parts pretending to be measured.
+
+       The rear tie rods are drawn and never animated. Four-wheel steer is on
+       the spec sheet, and no signal in this project reports a rear angle --
+       an animated rear axle would be an invention with nothing behind it. */
+    [["fl", AXLE, -1], ["fr", AXLE, 1], ["rl", -AXLE, -1], ["rr", -AXLE, 1]]
+      .forEach(function (w) {
+        /* The black bellows standing inboard of each wheel is the most
+           recognisable thing under this truck after the pack. */
+        add({ id: "airspring-" + w[0], mesh: "cyl", layer: "underbody",
+              colour: [0.07, 0.07, 0.08],
+              t: [w[1], 0.62, w[2] * (W - 0.46)],
+              s: [0.30, 0.54, 0.30], rot: "y" });
+      });
+
+    /* Four plates: front underbody, front battery, rear battery, rear
+       underbody. Translucent for the same reason the tyres are -- a plate
+       that hides the pack defeats the point of being able to look up at it. */
+    [[1.88, 0.92], [0.60, 1.28], [-0.62, 1.28], [-1.90, 0.88]]
+      .forEach(function (plate, i) {
+        add({ id: "skid-" + i, mesh: "bev", layer: "underbody",
+              colour: [0.17, 0.18, 0.19], alpha: 0.42,
+              t: [plate[0], VEH.packBottom - 0.07, 0],
+              s: [plate[1], 0.05, VEH.packWidth + 0.12] });
+      });
+
+    [-1, 1].forEach(function (side) {
+      add({ id: "rocker-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "underbody",
+            colour: [0.13, 0.14, 0.15],
+            t: [0, 0.47, side * (W + 0.02)], s: [2.34, 0.13, 0.15] });
+      /* Rear tie rod: drawn because four-wheel steer is real on this truck,
+         static because nothing here measures the angle. */
+      add({ id: "tierod-" + (side < 0 ? "l" : "r"), mesh: "cyl", layer: "underbody",
+            colour: [0.31, 0.33, 0.35],
+            t: [-AXLE - 0.26, 0.45, side * (W - 0.34) / 2],
+            s: [0.06, 0.06, W - 0.34], rot: "z" });
+      add({ id: "towloop-" + (side < 0 ? "l" : "r"), mesh: "cyl", layer: "underbody",
+            colour: [0.06, 0.06, 0.07],
+            t: [2.55, 0.66, side * 0.40], s: [0.17, 0.17, 0.09], rot: "z" });
+    });
+    add({ id: "steer-rear", mesh: "bev", layer: "underbody", colour: [0.22, 0.24, 0.26],
+          t: [-AXLE - 0.26, 0.45, 0], s: [0.16, 0.14, 0.46] });
+    add({ id: "bumper-beam", mesh: "bev", layer: "underbody", colour: [0.19, 0.20, 0.21],
+          t: [2.50, 0.70, 0], s: [0.15, 0.22, 1.72] });
+
     /* --- 12 V and charge port --- */
     add({ id: "lv", mesh: "bev", layer: "aux", colour: [0.40, 0.33, 0.16],
           t: [2.02, 1.10, 0.60], s: [0.32, 0.22, 0.28] });
@@ -1070,7 +1123,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                        rim: makeMesh(gl, rimMesh(6)) },
         parts = buildScene(),
         cam = { yaw: -0.72, pitch: 0.34, dist: 8.2, spin: 0 },
-        layers = { shell: 0.40, pack: 1, drive: 1, wheels: 1, thermal: 1, aux: 1 },
+        /* A layer missing from this map resolves to undefined, which becomes
+           a NaN alpha and a part that silently does not draw. Every layer a
+           part can name has to have a value here. */
+        layers = { shell: 0.40, pack: 1, drive: 1, wheels: 1, thermal: 1,
+                   aux: 1, underbody: 1 },
         /* Every field the draw loop reads has to exist before the first
            snapshot arrives, or a frame renders NaN into the shader and the
            part disappears without an error anywhere. */
@@ -1190,7 +1247,13 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           model = m4mul(m4trs(p.t[0], p.t[1], p.t[2], 1, 1, 1),
                         m4mul(yaw, m4trs(0, 0, 0, p.s[0], p.s[1], p.s[2])));
         }
-        if (p.rot === "x") {
+        if (p.rot === "y") {
+          /* Cylinders are built on Z; an air spring stands up, so its axis is
+             turned onto Y by a quarter turn about X. */
+          var rx = m4();
+          rx[5] = 0; rx[6] = 1; rx[9] = -1; rx[10] = 0;
+          model = m4mul(model, rx);
+        } else if (p.rot === "x") {
           /* Cylinders are built on Z; a pipe running fore-and-aft needs its
              axis on X, so it is turned about Y. */
           var ry = m4();
@@ -1267,6 +1330,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   var LAYER_LABELS = [
     ["shell", "Body"], ["pack", "Battery"], ["drive", "Drive units"],
     ["wheels", "Wheels & brakes"], ["thermal", "Thermal"], ["aux", "12 V & charge"],
+    ["underbody", "Underbody"],
     ];
   function buildLayerControls() {
     clear(el.layers);

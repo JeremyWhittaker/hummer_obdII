@@ -383,6 +383,35 @@ class PartIndexTests(unittest.TestCase):
             f"part index entries for columns nothing records any more: {stray}",
         )
 
+    def test_every_layer_a_part_names_has_an_opacity(self):
+        # A layer missing from the renderer's opacity map resolves to
+        # undefined, which becomes a NaN alpha, and the part simply does not
+        # draw -- no error, no warning, just absent geometry. This is the same
+        # shape of failure as an unguarded reading reaching the shader.
+        page = self.PAGE.read_text(encoding="utf-8")
+        declared = {
+            entry.split(":")[0].strip()
+            for entry in re.search(r"layers = \{([^}]*)\}", page).group(1).split(",")
+            if ":" in entry
+        }
+        used = set(re.findall(r'layer:\s*"(\w+)"', page))
+        self.assertEqual(
+            sorted(used - declared), [],
+            "parts name a layer the renderer has no opacity for, so they "
+            "would silently fail to draw",
+        )
+
+    def test_every_layer_can_be_toggled(self):
+        # A layer with no button is a part of the vehicle a viewer cannot get
+        # out of the way, which is the entire purpose of the cutaway.
+        page = self.PAGE.read_text(encoding="utf-8")
+        block = page[page.index("var LAYER_LABELS = ["):]
+        labelled = set(re.findall(r'\["(\w+)",\s*"[^"]+"\]',
+                                  block[:block.index("];")]))
+        used = set(re.findall(r'layer:\s*"(\w+)"', page))
+        self.assertEqual(sorted(used - labelled), [],
+                         "layers with no toggle button")
+
     def test_each_column_is_claimed_once(self):
         mapped = self.entries()
         duplicates = sorted({name for name in mapped if mapped.count(name) > 1})

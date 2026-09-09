@@ -228,6 +228,16 @@ across, six front-to-back), one motor on the front axle and two on the rear,
 plus wheels, brake discs, thermal hardware, the frunk 12 V pod and the
 driver's-side rear charge port.
 
+There is **no ground plane**, so the camera can go below the axle line and the
+underside — the half of this vehicle worth looking at — is reachable. What is
+down there comes from GM's own published feature list for this truck: the Air
+Ride air springs standing inboard of each wheel, the four-plate skid shield,
+the rocker protectors, the four-wheel-steer tie rods and the front bumper beam
+with its two tow loops. The skid plates are translucent for the same reason
+the tyres are: a plate that hides the pack defeats the point of looking up at
+it. The rear tie rods are drawn and never animated — four-wheel steer is on
+the spec sheet, and nothing in this project measures a rear angle.
+
 **Anything whose real location this project has not established is not drawn.**
 An invented position looks exactly as authoritative as a measured one, which is
 the whole problem with drawing a vehicle from memory.
