@@ -491,6 +491,13 @@ def pack_resistance(rows: list[dict]) -> Optional[tuple[float, int, float]]:
 MIN_DRAWN_KWH_FOR_RATIO = 0.05
 
 
+#: Pack power, in kilowatts *into* the pack, below which "plugged in" is not
+#: yet "charging".  A cordset that is connected but idle, and a pack running
+#: accessories while plugged, are both real states this vehicle sits in, and
+#: neither is charging.
+CHARGING_KW = 0.2
+
+
 def derive(rows: list[dict]) -> dict:
     """Every quantity this project has established how to compute.
 
@@ -646,7 +653,33 @@ def derive(rows: list[dict]) -> dict:
             charger = str(value).strip()
             break
     out["charger_raw"] = charger
-    out["charging"] = (charger not in (None, "", "00")) if charger is not None else None
+    # `0x5401` is a state, not a current, and its non-zero values do not all
+    # mean charging.  Reading "not 00" as "charging" was wrong, and the
+    # vehicle said so the first time it was watched in Ready mode rather than
+    # parked: state 0x1E, 392.9 V, 0.0 A, and the dashboard breathing away as
+    # though 8 kW were going in.
+    #
+    # Across the whole corpus, by state and pack power:
+    #
+    #     00   7213 rows   505 in   4089 out   919 idle   1447 moving
+    #     9x   ~2000 rows  power in or nothing, never out, never moving
+    #     0C/0D 1440 rows  75 in    14 out     75 idle    0 moving
+    #     1E     22 rows    0 in     0 out     22 idle    0 moving
+    #     17      8 rows    0 in     0 out      8 idle    0 moving
+    #
+    # Two things fall out.  `00` is the only state ever seen while moving, so
+    # requiring a non-zero state cannot mistake regen for charging.  And 0x1E
+    # and 0x17 carry no power in any row they appear in -- they are states the
+    # vehicle is in, not states the charger is in.
+    #
+    # So charging means plugged *and* energy actually arriving.  The two are
+    # reported separately because they are different facts and the project
+    # already has a word for the gap between them: `plugged-idle`.
+    out["plugged"] = (charger not in (None, "", "00")) if charger is not None else None
+    pack_kw = out.get("pack_kw")
+    out["charging"] = (
+        bool(out["plugged"]) and pack_kw is not None and pack_kw <= -CHARGING_KW
+    ) if charger is not None else None
 
     # -- since-last-charge accumulators --------------------------------------
     out["thermal_energy"] = _last_hex(rows, "thermal_energy_raw")

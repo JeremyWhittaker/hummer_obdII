@@ -1650,9 +1650,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         }
         if (p.id === "charge" && (live.charging || live.port)) {
           /* GM's charge port light: blue on a successful connection, green
-             while actively charging, solid green when complete. Blinking
-             rates carry meaning too, but this project cannot tell "delayed"
-             from "charging" from the state byte, so it does not blink. */
+             while actively charging. That is exactly the plugged/charging
+             distinction, which is why it is worth having: the port used to go
+             green whenever the state byte was non-zero, including for states
+             that carry no current at all. Blink rates carry meaning too, and
+             this project cannot tell "delayed" from "charging" apart, so it
+             does not blink. */
           emissive = live.charging ? [0.06, 0.55, 0.24] : [0.12, 0.30, 0.72];
         }
         if (p.pulse) {
@@ -2056,10 +2059,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       packTemp: sigValue("temp_f"),
       lv: sigValue("module_voltage") !== null ? sigValue("module_voltage")
           : sigValue("volts"),
-      port: (function () {
-        var b = hexBytes(sig("charger_5401_raw") ? sig("charger_5401_raw").value : null);
-        return b.length > 0 && b.some(function (x) { return x !== 0; });
-      })(),
+      /* Plugged and charging are separate facts now. The node works out the
+         difference; the page just draws it. */
+      port: derived("plugged") === true,
       fault: sigValue("mil_on") === 1 || (sigValue("dtc_count") || 0) > 0,
       /* Lit whenever the session being shown has readings in it. The first
          rule here was "live or charging", which is a fair description of the
@@ -2150,11 +2152,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     var chargeBadge = el["charge-badge"], packV = sigValue("pack_v"),
         packA = sigValue("pack_a"), packKw = num(derived("pack_kw")),
         stateByte = hexBytes(sig("charger_5401_raw") ? sig("charger_5401_raw").value : null),
-        charging = derived("charging") === true;
+        charging = derived("charging") === true,
+        plugged = derived("plugged") === true;
     clear(chargeBadge);
-    chargeBadge.hidden = !charging;
-    if (charging) {
-      var head = h("span", "k", "at the pack");
+    chargeBadge.hidden = !plugged;
+    if (plugged) {
+      var head = h("span", "k", charging ? "charging" : "connected, idle");
       chargeBadge.appendChild(head);
       var line = h("div");
       line.appendChild(h("b", null,

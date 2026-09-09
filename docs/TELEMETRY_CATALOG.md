@@ -98,6 +98,38 @@ published two-byte `/4350` charger-power scaling remains wrong here — it answe
 with a single byte and plateaus across a ninefold power range — and is still not
 applied. Why it alternates between `0x93` and `0x96` while charging is unknown.
 
+#### But "not `0x00`" is not "charging" — 2026-09-09
+
+The two states above were the only ones the corpus had seen, and reading
+anything else as charging was a generalisation waiting to fail. It failed the
+first time the vehicle was watched in Ready mode rather than parked or
+charging: state `0x1E`, 392.9 V, 0.0 A, and the dashboard breathing as though
+eight kilowatts were arriving.
+
+Every state in the corpus, against pack power and movement:
+
+| state | rows | power in | power out | ~zero | moving |
+|---|---|---|---|---|---|
+| `00` | 7213 | 505 | 4089 | 919 | **1447** |
+| `0D` | 1230 | 42 | 14 | 53 | 0 |
+| `93` `94` `95` `96` `97` `98` `91` `99` | ~2500 | most | **0** | few | 0 |
+| `0C` | 210 | 33 | 0 | 22 | 0 |
+| `10` | 24 | 1 | 0 | 23 | 0 |
+| `1E` | 22 | **0** | **0** | 22 | 0 |
+| `17` | 8 | **0** | **0** | 8 | 0 |
+
+Two things fall out. `00` is the **only** state ever observed while the vehicle
+is moving, across 1447 moving rows — which is what stops regen, pouring power
+into the pack under braking, from reading as a charge. And `0x1E` and `0x17`
+carry no pack power in any row they appear in: they are states the *vehicle*
+is in, not states the *charger* is in.
+
+So the derivation is now plugged **and** energy actually arriving, reported as
+two separate facts because they are two separate facts — and because the gap
+between them already had a name in this project, `plugged-idle`. A pack
+running accessories while connected is real (14 rows on the 120 V cordset) and
+is not charging either.
+
 ### What a charge does to state of charge, range and energy
 
 Measured across 101 samples of the 2026-09-04 AC charge, and they behave

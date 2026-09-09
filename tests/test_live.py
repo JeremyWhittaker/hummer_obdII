@@ -315,6 +315,64 @@ class TestSessionSelection(unittest.TestCase):
             self.assertEqual(live.main(["--dir", tmp]), 2)
 
 
+class ChargingStateTests(unittest.TestCase):
+    """Plugged in and charging are different facts.
+
+    `charging` used to mean "the 0x5401 state byte is not 00", and the vehicle
+    disproved it the first time it was watched in Ready mode rather than
+    parked: state 0x1E, 392.9 V, 0.0 A, and the page breathing as though 8 kW
+    were arriving. Across the corpus 0x1E carries no pack power in any of the
+    22 rows it appears in, and 0x17 none in its 8 -- they are states the
+    vehicle is in, not states the charger is in.
+    """
+
+    def row(self, state, amps, **extra):
+        row = {"utc": "2026-01-01T12:00:00Z", "elapsed_s": 0.0,
+               "charger_5401_raw": state, "pack_v": 392.9, "pack_a": amps,
+               "soc_pct": 90.0, "cell_avg_v": 4.09}
+        row.update(extra)
+        return row
+
+    def rows(self, state, amps):
+        return [dict(self.row(state, amps), elapsed_s=i * 2.0) for i in range(4)]
+
+    def test_a_state_byte_with_no_current_is_not_charging(self):
+        # The exact reading that exposed this: Ready mode, nothing plugged in.
+        out = live.derive(self.rows("1E", 0.0))
+        self.assertTrue(out["plugged"], "the byte is non-zero, so plugged is true")
+        self.assertFalse(out["charging"], "no current is arriving")
+
+    def test_current_arriving_is_charging(self):
+        out = live.derive(self.rows("96", -22.0))
+        self.assertTrue(out["plugged"])
+        self.assertTrue(out["charging"])
+
+    def test_plugged_but_drawing_is_not_charging(self):
+        # A pack running accessories while plugged in. Real: 14 such rows on
+        # the 120 V cordset.
+        out = live.derive(self.rows("0D", 4.0))
+        self.assertTrue(out["plugged"])
+        self.assertFalse(out["charging"])
+
+    def test_unplugged_is_neither(self):
+        out = live.derive(self.rows("00", 0.0))
+        self.assertFalse(out["plugged"])
+        self.assertFalse(out["charging"])
+
+    def test_regen_while_driving_is_not_charging(self):
+        # Power pours into the pack under regen. The state byte is 00 in every
+        # one of the 1447 moving rows in the corpus, which is what keeps this
+        # from reading as a charge.
+        out = live.derive([dict(self.row("00", -60.0), elapsed_s=i * 2.0,
+                                speed_kph=70.0) for i in range(4)])
+        self.assertFalse(out["charging"])
+
+    def test_a_missing_state_byte_answers_neither_way(self):
+        out = live.derive([dict(self.row(None, 0.0), elapsed_s=i * 2.0) for i in range(4)])
+        self.assertIsNone(out["charging"])
+        self.assertIsNone(out["plugged"])
+
+
 class RegenRatioTests(unittest.TestCase):
     """A percentage needs a denominator worth dividing by."""
 
