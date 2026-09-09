@@ -378,10 +378,17 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   <!-- ================= THE MAP ================= -->
   <div class="card bracket fadeable">
     <h2>Track</h2>
-    <p class="sub" id="map-sub">Drawn from the recorder's own fixes. No tiles, no third party.</p>
+    <p class="sub" id="map-sub">Drawn from the recorder's own fixes.</p>
     <div class="map-wrap">
       <svg id="map" viewBox="0 0 500 340" role="img" aria-labelledby="map-title">
         <title id="map-title">Path travelled during this session</title>
+        <!-- The standard OSM raster style is drawn for a white page. Inverted
+             and hue-rotated it becomes a dark map with the roads still light
+             and the greens still green, which is the usual way to put that
+             style on a dark surface without recolouring anyone's cartography
+             or needing a second tile source. -->
+        <g id="map-tiles" style="filter:invert(1) hue-rotate(180deg)
+             saturate(.72) brightness(.92) contrast(1.06)"></g>
         <g id="map-grid"></g>
         <path id="trail" fill="none" stroke="#55d9ed" stroke-width="2.4"
               stroke-linejoin="round" stroke-linecap="round" opacity=".85"/>
@@ -463,6 +470,25 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 <script>
 "use strict";
 (function () {
+  /* Where the data lives. Empty means "the server that sent this page",
+     which is how it behaves when the node serves it directly. Hosted
+     somewhere else -- a Home Assistant panel, say -- the deploy step writes
+     a meta tag naming the node into the head, and everything below follows
+     it. (Spelled out rather than shown: a literal example of the tag here is
+     indistinguishable from the tag itself to anything scanning the file.)
+
+     Deliberately one file rather than two. A copy of this page living on
+     another host is a copy that drifts, and the drift is silent: both render,
+     one is wrong. The node has to name that origin in --allow-origin before
+     a browser will let this read anything, so the permission is explicit at
+     both ends. */
+  var API = (function () {
+    var tag = document.querySelector('meta[name="hummer-api"]'),
+        base = tag ? String(tag.content || "").trim() : "";
+    if (!base) return "";
+    return base.replace(/\/+$/, "");
+  })();
+
   var POLL_MS = 5000, TIMEOUT_MS = 4500;
   /* A snapshot of a past trip is the one genuinely expensive request here --
      the node parses and analyses the whole session. On the Pi Zero 2 W that
@@ -474,6 +500,21 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   /* Below this much spread across the whole session, the "track" is receiver
      noise rather than travel. A stationary BU-353S4 wanders tens of metres. */
   var STATIONARY_M = 120;
+  /* When the vehicle has not moved, the frame holds this many metres across
+     instead of zooming to fit. Fitting a parked session means magnifying
+     receiver noise until it fills the view; a fixed span shows the truck
+     where it is and the scatter at the size it really is. */
+  /* Zoom bounds mirror the server's, which mirror the tile usage policy: high
+     zoom over a wide area is the shape that policy calls a scan. Parked sits
+     close enough to show which side of the street the truck is on. */
+  var MIN_TILE_ZOOM = 3, MAX_TILE_ZOOM = 17, PARKED_ZOOM = 17;
+  /* Tiles are 256 px and the map's viewBox is 500 units wide, so at its usual
+     rendered size they land near 1:1 and look right. On a wide display the
+     same frame is drawn much larger and a 1:1 tile turns to mush. Drawing
+     each tile at half size and going one zoom deeper keeps it sharp there,
+     at four times the tiles for a given view -- still one screenful, which
+     is what the usage policy calls normal interactive viewing. */
+  var TILE_OVERSAMPLE = 2;
 
   /* The pack, as it is actually built: 24 modules in two layers of twelve,
      each layer two across the width and six front to back. In a plan view the
@@ -499,7 +540,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   function byId(id) { return document.getElementById(id); }
   [ "status-primary","status-secondary","banner","session-select","f-samples",
     "f-duration","f-period","f-age","vehicle-sub","legend",
-    "module-caveat","map","map-grid","trail","trail-head","map-empty","map-stats",
+    "module-caveat","map","map-tiles","map-grid","trail","trail-head","map-empty","map-stats",
     "alert-marks","playback","play","scrub","play-time",
     "tiles","chart","chart-empty","chart-sub","tab-power","tab-soc","tab-speed",
     "notes","signal-search","signals-body","signal-sub","scene","scene-status","layers","r8-state","r8-face","r8-history","r8-sub"
@@ -997,9 +1038,46 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
               t: [w[1], VEH.wheelRadius, z],
               s: [d * 0.98, d * 0.98, VEH.wheelWidth * (w[2] < 0 ? -1.02 : 1.02)],
               rot: "z" });
-        add({ id: "brake-" + w[0], mesh: "cyl", layer: "wheels", colour: [0.24, 0.27, 0.30],
-              brake: true, t: [w[1], VEH.wheelRadius, z - w[2] * 0.10],
-              s: [0.60, 0.60, 0.06], rot: "z" });
+        /* A brake is a rotor and a caliper, and this model had only the
+           rotor -- which is half of the thing the translucent tyre was made
+           translucent for.
+
+           GM's own brochure settles the type: "front- and rear-sliding
+           caliper disc brakes with Duralife rotors". So a floating body with
+           a separate anchor bracket and pistons on the inboard side only, not
+           the six-piston Brembo fixed caliper that turns up in Silverado EV
+           coverage and contradicts GMC's spec sheet for this truck. Cast
+           iron, unpainted: there is no painted-caliper option on it.
+
+           Rotor diameter is published nowhere -- every aftermarket catalogue
+           lists fitment and withholds the OD. It has to clear an 18x9J rim at
+           457 mm, which puts it in the 350-380 mm class, so 0.37 m here is
+           derived from that clearance and is not a measured figure.
+
+           Duralife is ferritic nitro-carburised, which is why the hat and
+           edges are dark and the swept band is bright, and why these rotors
+           do not rust. Most renders get that exactly backwards.
+
+           The caliper's clock position is a modelling choice. No source
+           resolves it and the factory wheels are too closed to read it off a
+           photograph. */
+        var inboard = z - w[2] * 0.10;
+        add({ id: "brake-rotor-" + w[0], mesh: "cyl", layer: "wheels",
+              colour: [0.52, 0.55, 0.58], brake: true,
+              t: [w[1], VEH.wheelRadius, inboard],
+              s: [0.37, 0.37, 0.028], rot: "z" });
+        add({ id: "brake-hat-" + w[0], mesh: "cyl", layer: "wheels",
+              colour: [0.13, 0.14, 0.15],
+              t: [w[1], VEH.wheelRadius, inboard],
+              s: [0.16, 0.16, 0.07], rot: "z" });
+        add({ id: "brake-caliper-" + w[0], mesh: "bev", layer: "wheels",
+              colour: [0.21, 0.18, 0.16], brake: true,
+              t: [w[1] - 0.115, VEH.wheelRadius + 0.115, inboard],
+              s: [0.11, 0.15, 0.115] });
+        add({ id: "brake-bracket-" + w[0], mesh: "bev", layer: "wheels",
+              colour: [0.17, 0.15, 0.14],
+              t: [w[1] - 0.115, VEH.wheelRadius + 0.115, inboard + w[2] * 0.055],
+              s: [0.13, 0.17, 0.03] });
       });
 
     /* --- thermal --- */
@@ -1082,6 +1160,25 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           t: [2.02, 1.10, 0.60], s: [0.32, 0.22, 0.28] });
     add({ id: "charge", mesh: "bev", layer: "aux", colour: [0.20, 0.24, 0.26],
           t: [-2.26, 1.12, -(W + 0.02)], s: [0.24, 0.20, 0.08] });
+
+    /* --- the wall end -------------------------------------------------
+       Only drawn while the vehicle is actually charging. A cord hanging off
+       a truck doing 70 mph would be a lie told for the sake of an animation.
+       The wall box's position is a stage prop, not a claim about the garage;
+       what is real is which side the port is on and whether energy is moving.
+       Pulses run from the box to the port, and their speed comes from the
+       measured charge power -- so a 1.4 kW cordset trickles and a 240 V feed
+       runs, which is a difference you can see across the room. */
+    add({ id: "evse-box", mesh: "bev", layer: "aux", colour: [0.16, 0.18, 0.20],
+          chargeOnly: true, t: [-2.26, 1.00, -2.34], s: [0.26, 0.44, 0.16] });
+    add({ id: "evse-cord", mesh: "cyl", layer: "aux", colour: [0.12, 0.14, 0.15],
+          chargeOnly: true, t: [-2.26, 1.06, -1.75], s: [0.05, 0.05, 1.12] });
+    for (var pulse = 0; pulse < 5; pulse++) {
+      add({ id: "evse-pulse-" + pulse, mesh: "bev", layer: "aux",
+            colour: [0.30, 0.70, 0.80], chargeOnly: true, pulse: true,
+            travel: { from: -2.30, to: -1.18, phase: pulse / 5 },
+            t: [-2.26, 1.06, -2.30], s: [0.09, 0.09, 0.10] });
+    }
     return parts;
   }
 
@@ -1134,7 +1231,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         live = { modules: [], kw: 0, brake: 0, flow: 0, speed: 0, steer: 0,
                  corners: {}, charging: false, roll: 0, pitch: 0,
                  fill: null, packTemp: null, lv: null, port: false,
-                 fault: false },
+                 fault: false, chargeKw: 0 },
         angle = { fl: 0, fr: 0, rl: 0, rr: 0 }, lastFrame = 0;
 
     gl.enable(gl.DEPTH_TEST);
@@ -1210,6 +1307,28 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       pitchM[0] = cp; pitchM[1] = sp; pitchM[4] = -sp; pitchM[5] = cp; /* about Z */
       var attitude = m4mul(pitchM, rollM);
 
+      /* Breathing. While the pack is taking charge the whole vehicle swells
+         and settles, faster and deeper the more power is going in -- an idle
+         120 V cordset barely stirs, a 240 V feed heaves. The waveform is
+         deliberately not a sine: a quick draw in over about a third of the
+         cycle and a long fall out, which is how a large animal actually
+         breathes and why a sine reads as machinery instead.
+
+         It is decoration, and it is decoration that stops the moment the
+         charge does, so it cannot imply activity that is not happening. */
+      var breath = 0;
+      if (live.charging) {
+        var load = Math.min(1, Math.abs(live.chargeKw || 0) / 19.2),
+            rate = 0.20 + load * 0.55,
+            phase = (now * 0.001 * rate) % 1;
+        breath = phase < 0.35
+          ? Math.sin(phase / 0.35 * Math.PI / 2)
+          : Math.cos((phase - 0.35) / 0.65 * Math.PI / 2);
+        var swell = 1 + (0.006 + load * 0.020) * breath, sc = m4();
+        sc[0] = swell; sc[5] = swell; sc[10] = swell;
+        attitude = m4mul(sc, attitude);
+      }
+
       /* Opaque first, then the translucent shell back-to-front, or the
          shell writes depth and hides everything it is meant to reveal. */
       var order = parts.slice().sort(function (a, b) {
@@ -1226,7 +1345,16 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
       order.forEach(function (p) {
         var alpha = p.alpha !== undefined ? p.alpha * layers[p.layer] : layers[p.layer];
+        if (p.chargeOnly && !live.charging) return;
         if (alpha <= 0.01) return;
+        if (p.travel) {
+          /* Position is a function of the clock, so it is computed here
+             rather than stored: the parts list stays a description of the
+             vehicle and not a place animation state accumulates. */
+          var speed = 0.20 + Math.min(1, Math.abs(live.chargeKw || 0) / 19.2) * 0.55,
+              along = ((now * 0.001 * speed + p.travel.phase) % 1);
+          p.t[2] = p.travel.from + (p.travel.to - p.travel.from) * along;
+        }
         var mesh = meshes[p.mesh] || meshes.box;
         gl.bindBuffer(gl.ARRAY_BUFFER, mesh.position);
         gl.enableVertexAttribArray(loc.pos);
@@ -1288,12 +1416,21 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         if (p.id === "charge" && (live.charging || live.port)) {
           emissive = [0.35, 0.62, 0.70];
         }
+        if (p.pulse) {
+          /* Brightest in the middle of the run, so each one arrives and fades
+             into the port rather than snapping out of existence. */
+          var t01 = (p.t[2] - p.travel.from) / (p.travel.to - p.travel.from),
+              lit = Math.sin(Math.max(0, Math.min(1, t01)) * Math.PI);
+          emissive = [0.10 * lit, 0.75 * lit, 0.85 * lit];
+        }
         if (p.id === "pack-case") {
           /* Two readings on one part: how full it is, and how warm. The tint
              is a relative ramp over the range this pack is actually seen in
              -- there is no absolute scale to claim. */
           if (typeof live.fill === "number") {
-            emissive = [live.fill * 0.10, live.fill * 0.26, live.fill * 0.16];
+            var lift = live.charging ? 1 + breath * 0.9 : 1;
+            emissive = [live.fill * 0.10 * lift, live.fill * 0.26 * lift,
+                        live.fill * 0.16 * lift];
           }
           if (typeof live.packTemp === "number") {
             var warm = Math.max(0, Math.min(1, (live.packTemp - 50) / 60));
@@ -1429,7 +1566,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         fl: sigValue("wheel_fl_kph"), fr: sigValue("wheel_fr_kph"),
         rl: sigValue("wheel_rl_kph"), rr: sigValue("wheel_rr_kph")
       },
-      charging: derived("charging") === true
+      charging: derived("charging") === true,
+      chargeKw: Math.abs(num(derived("pack_kw")) || 0)
     });
 
     el["vehicle-sub"].textContent = usable
@@ -1455,18 +1593,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     car.setAttribute("transform", "translate(" + here[0].toFixed(1) + "," +
                      here[1].toFixed(1) + ") rotate(" + heading.toFixed(1) + ")");
     var halo = make("circle");
-    halo.setAttribute("r", "13"); halo.setAttribute("fill", "rgba(238,82,26,.18)");
+    halo.setAttribute("r", "15"); halo.setAttribute("fill", "rgba(238,82,26,.18)");
     car.appendChild(halo);
-    var body = make("path");
-    body.setAttribute("d", "M-6,-10 L6,-10 L7,6 L-7,6 Z");
-    body.setAttribute("fill", "#ee521a");
-    body.setAttribute("stroke", "#ffd4c2"); body.setAttribute("stroke-width", "1");
-    car.appendChild(body);
-    var cab = make("rect");
-    cab.setAttribute("x", "-4.5"); cab.setAttribute("y", "-4");
-    cab.setAttribute("width", "9"); cab.setAttribute("height", "7");
-    cab.setAttribute("rx", "1.5"); cab.setAttribute("fill", "#7a2a0d");
-    car.appendChild(cab);
+    car.appendChild(truckMarker(1));
     el["trail-head"].appendChild(car);
 
     var speed = num(row.speed_kph), elapsed = num(row.elapsed_s), parts = [];
@@ -1499,6 +1628,37 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     }, 90);
   }
 
+  /* A plan-view Hummer, nose up, so a rotate() on the parent group reads
+     straight off as a compass bearing. Proportioned from the real vehicle --
+     5.507 m long on a 2.202 m body -- which is why it sits squarer and
+     blunter than a generic car marker, and why the light bar across the nose
+     is the thing that makes it read as this truck and not any truck. */
+  function truckMarker(size) {
+    var g = make("g"), k = size || 1;
+    function box(x, y, w, hh, fill, rx, stroke) {
+      var r = make("rect");
+      r.setAttribute("x", (x * k).toFixed(2)); r.setAttribute("y", (y * k).toFixed(2));
+      r.setAttribute("width", (w * k).toFixed(2));
+      r.setAttribute("height", (hh * k).toFixed(2));
+      if (rx) r.setAttribute("rx", (rx * k).toFixed(2));
+      r.setAttribute("fill", fill);
+      if (stroke) {
+        r.setAttribute("stroke", stroke);
+        r.setAttribute("stroke-width", (0.9 * k).toFixed(2));
+      }
+      g.appendChild(r);
+    }
+    /* Wheels first so the body sits over them, as it does. */
+    [[-6.5, -8.8], [4.7, -8.8], [-6.5, 4.2], [4.7, 4.2]].forEach(function (w) {
+      box(w[0], w[1], 1.8, 4.6, "#07090a", 0.6);
+    });
+    box(-5.0, -12.0, 10.0, 24.0, "#ee521a", 2.0, "#ffd9c6");
+    box(-4.2, -11.4, 8.4, 1.9, "#ffe9b0", 0.5);      /* the light bar */
+    box(-4.0, -5.2, 8.0, 8.6, "#8f3212", 1.4);       /* cab */
+    box(-3.4, 4.4, 6.8, 6.2, "#c4451a", 0.9);        /* bed */
+    return g;
+  }
+
   /* ---------- the map ----------
      Drawn from the recorder's own fixes. No tile server: the CSP forbids it,
      and asking one for tiles would hand a stranger the coordinates this
@@ -1523,7 +1683,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     if (state.map && state.map.signature === signature) return;
     stopPlayback();
 
-    clear(el["map-grid"]); clear(el["trail-head"]); clear(el["alert-marks"]);
+    clear(el["map-tiles"]); clear(el["map-grid"]);
+    clear(el["trail-head"]); clear(el["alert-marks"]);
     el.trail.setAttribute("d", "");
     clear(el["map-stats"]);
     state.map = null;
@@ -1541,51 +1702,158 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     var lats = pts.map(function (p) { return p[0]; }), lons = pts.map(function (p) { return p[1]; }),
         minLa = Math.min.apply(null, lats), maxLa = Math.max.apply(null, lats),
         minLo = Math.min.apply(null, lons), maxLo = Math.max.apply(null, lons),
-        midLa = (minLa + maxLa) / 2,
-        /* metres per degree, good enough at any one drive's scale */
+        midLa = (minLa + maxLa) / 2, midLo = (minLo + maxLo) / 2,
+        /* metres per degree, good enough for spans and the stationary test */
         mPerLat = 111320, mPerLon = 111320 * Math.cos(midLa * Math.PI / 180),
         spanX = Math.max(1, (maxLo - minLo) * mPerLon),
         spanY = Math.max(1, (maxLa - minLa) * mPerLat),
         pad = 26, W = 500 - pad * 2, H = 340 - pad * 2;
 
-    /* A parked vehicle still produces fixes, and they wander. Auto-scaling
-       that to fill the frame draws tens of metres of receiver scatter as
-       though it were a journey -- which is exactly what it looked like the
-       first time this ran: 35 m by 19 m of jitter rendered as a convincing
-       route. Below a threshold, say so instead of drawing a lie. */
-    var extent = Math.max(spanX, spanY);
-    if (extent < STATIONARY_M) {
-      el["map-empty"].style.display = "grid";
-      el["map-empty"].textContent =
-        "Stationary. " + pts.length + " fixes spread over " + extent.toFixed(0) +
-        " m, which is the receiver wandering, not the vehicle moving.";
-      return;
+    /* Web Mercator, because the background is Web Mercator. The projection
+       here used to be flat metres-per-degree, which is perfectly fine on an
+       empty frame and wrong the moment a real map is drawn underneath it --
+       the trail would sit beside the road instead of on it. Tiles and track
+       have to come out of the same projection or neither is worth drawing. */
+    function world(la, lo, z) {
+      var side = 256 * Math.pow(2, z),
+          phi = Math.max(-85.05112878, Math.min(85.05112878, la)) * Math.PI / 180;
+      return [(lo + 180) / 360 * side,
+              (1 - Math.asinh(Math.tan(phi)) / Math.PI) / 2 * side];
     }
+    /* Tile pixels to frame units. Everything below works in tile pixels so
+       the tile grid and the track cannot disagree; only the last step divides. */
+    var UNIT = TILE_OVERSAMPLE, TILE_UNITS = 256 / TILE_OVERSAMPLE;
 
-    var scale = Math.min(W / spanX, H / spanY),
-        offX = pad + (W - spanX * scale) / 2, offY = pad + (H - spanY * scale) / 2;
+    /* The answer to a parked session is not to refuse to draw it. It is to
+       stop auto-scaling. Fitting the extent magnifies a few metres of
+       receiver wander until it fills the frame and reads as a journey --
+       which is exactly what happened the first time this ran, 35 m by 19 m
+       of jitter rendered as a convincing route. A fixed close zoom instead
+       puts the truck where it is parked, on the street it is parked in, and
+       shows the scatter at the size it actually is. */
+    var extent = Math.max(spanX, spanY),
+        stationary = extent < STATIONARY_M,
+        zoom, offX, offY;
+    if (stationary) {
+      zoom = PARKED_ZOOM;
+      var centre = world(midLa, midLo, zoom);
+      offX = (pad + W / 2) * UNIT - centre[0];
+      offY = (pad + H / 2) * UNIT - centre[1];
+    } else {
+      /* The closest zoom whose bounding box still fits the frame. Closest,
+         not "one that works": every step out is four times less detail. */
+      zoom = MIN_TILE_ZOOM;
+      for (var z = MAX_TILE_ZOOM; z >= MIN_TILE_ZOOM; z--) {
+        var a = world(maxLa, minLo, z), b = world(minLa, maxLo, z);
+        if (b[0] - a[0] <= W * UNIT && b[1] - a[1] <= H * UNIT) { zoom = z; break; }
+      }
+      var tl = world(maxLa, minLo, zoom), br = world(minLa, maxLo, zoom);
+      offX = (pad + W / 2) * UNIT - (tl[0] + br[0]) / 2;
+      offY = (pad + H / 2) * UNIT - (tl[1] + br[1]) / 2;
+    }
+    /* Metres on the ground per drawn pixel, which the scale bar needs and
+       which only Mercator can tell us honestly. */
+    var mPerPx = 156543.03392 * Math.cos(midLa * Math.PI / 180) /
+                 Math.pow(2, zoom) * UNIT;
 
     function project(la, lo) {
-      return [offX + (lo - minLo) * mPerLon * scale,
-              offY + (maxLa - la) * mPerLat * scale];   /* north is up */
+      var w = world(la, lo, zoom);
+      return [(w[0] + offX) / UNIT, (w[1] + offY) / UNIT];
     }
+    /* --- the ground under the track -----------------------------------
+       Only the tiles this view actually shows, requested from our own server
+       rather than from the tile server: the page's CSP allows images from its
+       own origin only, and routing them through the node keeps the tile
+       server's picture of this vehicle down to ground it has already covered.
+       A missing tile is left blank rather than retried -- the map is still a
+       map without it, and a retry loop is exactly the behaviour the usage
+       policy is written to prevent. */
+    (function () {
+      var x0 = Math.floor((pad * UNIT - offX) / 256),
+          x1 = Math.floor(((pad + W) * UNIT - offX) / 256),
+          y0 = Math.floor((pad * UNIT - offY) / 256),
+          y1 = Math.floor(((pad + H) * UNIT - offY) / 256),
+          span = 1 << zoom, drawn = 0;
+      for (var tx = x0; tx <= x1; tx++) {
+        for (var ty = y0; ty <= y1; ty++) {
+          if (tx < 0 || ty < 0 || tx >= span || ty >= span) continue;
+          /* One screenful and no more. If the arithmetic above ever goes
+             wrong, this is what stops a bad frame becoming a bulk download. */
+          if (drawn++ > 48) return;
+          var img = make("image");
+          img.setAttribute("x", ((tx * 256 + offX) / UNIT).toFixed(2));
+          img.setAttribute("y", ((ty * 256 + offY) / UNIT).toFixed(2));
+          img.setAttribute("width", TILE_UNITS); img.setAttribute("height", TILE_UNITS);
+          img.setAttribute("opacity", "0.92");
+          img.setAttribute("href", API + "/api/tile/" + zoom + "/" + tx + "/" + ty + ".png");
+          el["map-tiles"].appendChild(img);
+        }
+      }
+      /* Required by the licence, and placed where the guidelines ask for it.
+         Not behind a toggle, not under anything. */
+      /* Outside the inverted group: the licence asks for legible attribution,
+         and a filter meant for cartography should not be deciding how it
+         reads. */
+      var credit = make("text", null, "© OpenStreetMap contributors");
+      credit.setAttribute("x", 500 - pad); credit.setAttribute("y", 340 - 8);
+      credit.setAttribute("text-anchor", "end");
+      credit.setAttribute("font-size", "9.5"); credit.setAttribute("fill", "#9aa6aa");
+      el["map-grid"].appendChild(credit);
+    })();
+
     /* Held so playback and the alert marks can place things in the same
        frame without recomputing a projection that must not drift from the
        one the trail was drawn with. */
     state.map = { project: project, points: pts, rows: rows, signature: signature };
-    for (var g = 0; g <= 4; g++) {
+    /* The ruled lines existed to give an empty frame some structure. With a
+       real map underneath they are just lines across a map. */
+    for (var g = 0; el["map-tiles"].childNodes.length === 0 && g <= 4; g++) {
       var ln = make("line");
       ln.setAttribute("x1", pad); ln.setAttribute("x2", 500 - pad);
       ln.setAttribute("y1", pad + g * H / 4); ln.setAttribute("y2", pad + g * H / 4);
       ln.setAttribute("stroke", "#1a1f22"); ln.setAttribute("stroke-width", "1");
       el["map-grid"].appendChild(ln);
     }
-    var d = "";
-    for (var k = 0; k < pts.length; k++) {
-      var xy = project(pts[k][0], pts[k][1]);
-      d += (k ? "L" : "M") + xy[0].toFixed(1) + " " + xy[1].toFixed(1) + " ";
+    if (stationary) {
+      /* Joining parked fixes with a line would draw a route between points
+         the vehicle never travelled between. They are scatter, so they are
+         drawn as scatter. */
+      el.trail.setAttribute("d", "");
+      pts.forEach(function (pt) {
+        var xy = project(pt[0], pt[1]), dot = make("circle");
+        dot.setAttribute("cx", xy[0].toFixed(1)); dot.setAttribute("cy", xy[1].toFixed(1));
+        dot.setAttribute("r", "1.6");
+        dot.setAttribute("fill", "#2f6f7d");
+        el["map-grid"].appendChild(dot);
+      });
+    } else {
+      var d = "";
+      for (var k = 0; k < pts.length; k++) {
+        var xy = project(pts[k][0], pts[k][1]);
+        d += (k ? "L" : "M") + xy[0].toFixed(1) + " " + xy[1].toFixed(1) + " ";
+      }
+      el.trail.setAttribute("d", d.trim());
     }
-    el.trail.setAttribute("d", d.trim());
+
+    /* A map with no scale is a picture. This one is drawn from metres, so it
+       can say how big it is. */
+    (function () {
+      var target = W * mPerPx / 4,
+          step = Math.pow(10, Math.floor(Math.log(target) / Math.LN10)),
+          nice = [1, 2, 5, 10].map(function (f) { return f * step; })
+                 .filter(function (v) { return v <= target * 2; }).pop() || step,
+          px = nice / mPerPx, y = 340 - 14, x0 = pad;
+      if (px > 8 && px < 300) {
+        var bar = make("path");
+        bar.setAttribute("d", "M" + x0 + " " + y + " h" + px.toFixed(1));
+        bar.setAttribute("stroke", "#5c686c"); bar.setAttribute("stroke-width", "2");
+        el["map-grid"].appendChild(bar);
+        var lab = make("text", null, nice >= 1000 ? (nice / 1000) + " km" : nice + " m");
+        lab.setAttribute("x", (x0 + px + 6).toFixed(1)); lab.setAttribute("y", y + 4);
+        lab.setAttribute("font-size", "11"); lab.setAttribute("fill", "#7d888c");
+        el["map-grid"].appendChild(lab);
+      }
+    })();
 
     /* the vehicle, at the newest fix, pointed along the last leg */
     var last = project(pts[pts.length - 1][0], pts[pts.length - 1][1]),
@@ -1598,19 +1866,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     car.setAttribute("transform",
       "translate(" + last[0].toFixed(1) + "," + last[1].toFixed(1) + ") rotate(" + heading.toFixed(1) + ")");
     var halo = make("circle");
-    halo.setAttribute("r", "13"); halo.setAttribute("fill", "rgba(238,82,26,.16)");
+    halo.setAttribute("r", stationary ? "20" : "15");
+    halo.setAttribute("fill", "rgba(238,82,26,.16)");
     car.appendChild(halo);
-    /* a small plan-view truck, nose up, so rotate() reads as a compass bearing */
-    var body = make("path");
-    body.setAttribute("d", "M-6,-10 L6,-10 L7,6 L-7,6 Z");
-    body.setAttribute("fill", "#ee521a");
-    body.setAttribute("stroke", "#ffd4c2"); body.setAttribute("stroke-width", "1");
-    car.appendChild(body);
-    var cab = make("rect");
-    cab.setAttribute("x", "-4.5"); cab.setAttribute("y", "-4");
-    cab.setAttribute("width", "9"); cab.setAttribute("height", "7");
-    cab.setAttribute("rx", "1.5"); cab.setAttribute("fill", "#7a2a0d");
-    car.appendChild(cab);
+    car.appendChild(truckMarker(stationary ? 1.25 : 1));
     el["trail-head"].appendChild(car);
 
     /* --- radar alerts, at the coordinate each was recorded at. A list of
@@ -1664,7 +1923,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       el["map-stats"].appendChild(w);
     }
     stat("fixes", String(pts.length));
-    stat("track", (metres / 1000).toFixed(2) + " km");
+    if (stationary) {
+      stat("parked", "wander " + extent.toFixed(0) + " m");
+      stat("view", Math.round(W * mPerPx) + " m across");
+    } else {
+      stat("track", (metres / 1000).toFixed(2) + " km");
+    }
     var alt = sigValue("gps_alt_m"), sats = sigValue("gps_sats");
     if (alt !== null) stat("altitude", alt.toFixed(0) + " m");
     if (sats !== null) stat("satellites", String(sats));
@@ -2078,8 +2342,19 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     var screen = make("g");
     svg.appendChild(screen);
 
-    if (!d || !d.available) {
-      r8Text(screen, 364, 152, 34, "#3a4046", 500, "middle", "no link");
+    /* The screen is lit only when the detector is actually there and talking.
+       An R8 with no link is an R8 with a dark screen, and drawing a plausible
+       idle display over one -- a mode word, a voltage, a GPS flag -- invents a
+       device that is not reporting. The body stays drawn because the hardware
+       is still in the truck; the glass goes black because that is what you
+       would see if you looked at it. */
+    var linked = d && d.available && d.connected === true && !d.stale;
+    if (!linked) {
+      var why = !d || !d.available ? (d && d.reason ? d.reason : "no state file")
+              : d.stale ? "logger quiet for " + duration(d.age_s)
+              : d.connected === false ? "detector not connected"
+              : "link state unknown";
+      r8Text(screen, 364, 148, 27, "#31363b", 500, "middle", why);
       return;
     }
 
@@ -2170,7 +2445,13 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     if (typeof d.alert_packets === "number") fact("packets", String(d.alert_packets));
     el["r8-sub"].textContent = d.stale
       ? "Last published " + duration(d.age_s) + " ago — the detector's logger has gone quiet."
-      : "Live, published " + duration(d.age_s) + " ago.";
+      : d.connected === false
+      ? "The logger is running, but it has no link to the detector — so the "
+        + "screen is drawn dark, which is what the detector itself is showing."
+      : d.connected === true
+      ? "Live, published " + duration(d.age_s) + " ago."
+      : "The logger does not report whether the detector is connected, so the "
+        + "screen is left dark rather than guessed at.";
 
     /* History belongs on the map, at the coordinate each alert was recorded
        at -- a list of frequencies answers no question anyone actually has. */
@@ -2270,6 +2551,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
      user changed session is dropped rather than rendered against the wrong
      one. Kept from the implementation this replaces; it was already right. */
   function getJson(path, timeout) {
+    path = API + path;
     var controller = new AbortController(),
         timer = window.setTimeout(function () { controller.abort(); },
                                   timeout === undefined ? TIMEOUT_MS : timeout);

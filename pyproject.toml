@@ -38,6 +38,7 @@ hummer-obd-experiment = "hummer_obd.experiment:main"
 hummer-obd-respond = "hummer_obd.respond:main"
 hummer-obd-gpstime = "hummer_obd.gpstime:main"
 hummer-obd-dashboard = "hummer_obd.dashboard:main"
+hummer-obd-hapanel = "hummer_obd.hapanel:main"
 
 [tool.setuptools.package-data]
 hummer_obd = ["dashboard.html"]

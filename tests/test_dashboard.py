@@ -347,6 +347,113 @@ class CostTests(unittest.TestCase):
         self.assertIn(names[-1], [Path(key[0]).name for key in store._cache])
 
 
+class CrossOriginTests(unittest.TestCase):
+    """Who, exactly, may read this vehicle's data from a browser.
+
+    The interface moved to a Home Assistant page, so the node has to answer a
+    cross-origin reader. That is a real widening: a browser will hand any page
+    on an allowed origin whatever this API says, and what it says includes
+    where the truck is. So the allowlist is exact, echoed rather than
+    wildcarded, and `*` is refused outright rather than warned about.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.directory = Path(self.temp.name)
+        rows = [{"utc": "2026-01-01T12:00:00Z", "elapsed_s": 0, "pack_v": 390,
+                 "pack_a": 20, "speed_kph": 0, "soc_pct": 80, "energy_kwh": 152},
+                {"utc": "2026-01-01T12:00:10Z", "elapsed_s": 10, "pack_v": 389,
+                 "pack_a": 40, "speed_kph": 50, "soc_pct": 79, "energy_kwh": 150.1}]
+        path = self.directory / "drive-20260101T120000Z.csv"
+        fields = list(dict.fromkeys(k for r in rows for k in r))
+        with path.open("w", newline="") as handle:
+            writer = csv.DictWriter(handle, fields)
+            writer.writeheader()
+            writer.writerows(rows)
+
+    def serve(self, **kwargs):
+        store = SessionStore(self.directory, **kwargs)
+        server = make_server(store, port=0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 3)
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_port}"
+
+    def get(self, base, path, origin=None):
+        headers = {"Origin": origin} if origin else {}
+        return urlopen(Request(base + path, headers=headers), timeout=3)
+
+    def test_a_wildcard_origin_is_refused_at_construction(self):
+        # Not a warning, not a log line. There is no version of "any page may
+        # read where this vehicle is" that is worth supporting.
+        with self.assertRaises(ValueError):
+            SessionStore(self.directory, allow_origins=("*",))
+
+    def test_an_origin_without_a_scheme_is_refused(self):
+        # "homeassistant.local:8123" never matches a browser's Origin header,
+        # so accepting it would look configured and silently fail closed.
+        for bad in ("homeassistant.local:8123", "null", "", "ftp://ha"):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                SessionStore(self.directory, allow_origins=(bad,))
+
+    def test_nothing_is_readable_cross_origin_by_default(self):
+        base = self.serve()
+        with self.get(base, "/api/snapshot", "http://evil.example") as r:
+            self.assertIsNone(r.headers.get("Access-Control-Allow-Origin"))
+
+    def test_a_named_origin_is_echoed_never_wildcarded(self):
+        allowed = "http://homeassistant.local:8123"
+        base = self.serve(allow_origins=(allowed,))
+        with self.get(base, "/api/snapshot", allowed) as r:
+            self.assertEqual(r.headers.get("Access-Control-Allow-Origin"), allowed)
+            # Without Vary, a shared cache could hand this response to a page
+            # on a different origin along with its permission header.
+            self.assertEqual(r.headers.get("Vary"), "Origin")
+
+    def test_an_origin_that_was_not_named_gets_no_permission(self):
+        base = self.serve(allow_origins=("http://homeassistant.local:8123",))
+        for other in ("http://evil.example",
+                      "https://homeassistant.local:8123",   # scheme differs
+                      "http://homeassistant.local",          # port differs
+                      "http://homeassistant.local:8123.evil.example"):
+            with self.subTest(other=other), self.get(base, "/api/snapshot", other) as r:
+                self.assertIsNone(r.headers.get("Access-Control-Allow-Origin"))
+
+    def test_preflight_answers_only_for_a_named_origin(self):
+        allowed = "http://homeassistant.local:8123"
+        base = self.serve(allow_origins=(allowed,))
+        request = Request(base + "/api/snapshot", method="OPTIONS",
+                          headers={"Origin": allowed})
+        with urlopen(request, timeout=3) as r:
+            self.assertEqual(r.status, 204)
+            self.assertEqual(r.headers.get("Access-Control-Allow-Origin"), allowed)
+            self.assertIn("GET", r.headers.get("Access-Control-Allow-Methods", ""))
+        request = Request(base + "/api/snapshot", method="OPTIONS",
+                          headers={"Origin": "http://evil.example"})
+        with urlopen(request, timeout=3) as r:
+            self.assertIsNone(r.headers.get("Access-Control-Allow-Origin"))
+
+    def test_api_only_serves_data_and_not_a_second_copy_of_the_page(self):
+        base = self.serve(api_only=True)
+        with self.get(base, "/") as r:
+            self.assertIn("application/json", r.headers.get("Content-Type", ""))
+            body = json.load(r)
+            self.assertEqual(body["service"], "hummer-obd")
+            self.assertIn("/api/snapshot", body["endpoints"])
+        # The data itself is unaffected -- this changes what is served, not
+        # what is measured.
+        with self.get(base, "/api/snapshot") as r:
+            self.assertEqual(json.load(r)["schema"], 1)
+
+    def test_the_page_is_still_served_when_it_was_not_turned_off(self):
+        base = self.serve()
+        with self.get(base, "/") as r:
+            self.assertIn("text/html", r.headers.get("Content-Type", ""))
+
+
 class PartIndexTests(unittest.TestCase):
     """The page claims where every signal is shown. That claim must stay true.
 

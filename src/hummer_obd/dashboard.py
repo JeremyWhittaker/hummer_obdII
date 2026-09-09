@@ -20,7 +20,7 @@ from importlib.resources import files
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from . import analyze, live, r8
+from . import analyze, live, r8, tiles
 from .confidence import CONFIDENCE, LEVEL_NAMES
 
 SESSION_NAME = re.compile(r"drive-\d{8}T\d{6}Z\.csv\Z")
@@ -266,12 +266,31 @@ class SessionStore:
     """One cached session, bounded files and responses for a small Pi."""
 
     def __init__(self, directory: str | Path, stale_after: float = 45.0,
-                 *, expose_location: bool = False):
+                 *, expose_location: bool = False, tile_cache: str | Path | None = None,
+                 allow_origins: tuple[str, ...] = (), api_only: bool = False):
         if not math.isfinite(stale_after) or stale_after <= 0:
             raise ValueError("stale-after must be positive and finite")
         self.directory = Path(directory).resolve()
         self.stale_after = stale_after
         self.expose_location = bool(expose_location)
+        # Tiles ride on the same decision as coordinates. A map of where the
+        # vehicle has been discloses exactly what the coordinates disclose, so
+        # it cannot be a separate, quieter default: no location, no tiles.
+        self.tiles = (tiles.TileStore(tile_cache)
+                      if tile_cache and self.expose_location else None)
+        # Cross-origin readers, named exactly. This API answers with the
+        # vehicle's position, so a wildcard would hand it to any page the
+        # operator's browser happens to have open. `*` is refused rather
+        # than warned about: there is no version of this that is safe.
+        self.allow_origins = tuple(dict.fromkeys(allow_origins))
+        for origin in self.allow_origins:
+            if origin == "*" or not origin.startswith(("http://", "https://")):
+                raise ValueError(
+                    f"allowed origin must be an explicit scheme://host[:port], not {origin!r}")
+        # A data server has no page to serve. Once the interface lives
+        # somewhere else, still serving a second copy here is two things to
+        # keep in step and one of them will drift.
+        self.api_only = bool(api_only)
         self.columns = public_columns(self.expose_location)
         self._lock = threading.Lock()
         self._cache: OrderedDict = OrderedDict()
@@ -448,9 +467,39 @@ class SessionStore:
 
 def make_server(store: SessionStore, host: str = "127.0.0.1", port: int = 8765) -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):
+        def handle_one_request(self):
+            # A browser closing a tab mid-response is not an incident, but the
+            # default handler logs a full traceback for it. Eight of them
+            # appeared in half an hour of ordinary use, none of them a fault
+            # in this program, and a log that cries wolf about a closed tab is
+            # a log nobody reads when something real happens.
+            try:
+                super().handle_one_request()
+            except (ConnectionResetError, BrokenPipeError):
+                self.close_connection = True
+
+        def log_error(self, fmt, *args):
+            # Same reasoning: keep genuine errors, drop the disconnect noise.
+            message = fmt % args if args else fmt
+            if "Broken pipe" in message or "Connection reset" in message:
+                return
+            super().log_error("%s", message)
+        def _cors(self):
+            """Echo the request's origin when it is one we were told about.
+
+            Echoed rather than wildcarded, and only for origins named on the
+            command line, because a browser will hand any page on an allowed
+            origin whatever this answers -- including where the truck is.
+            """
+            origin = self.headers.get("Origin")
+            if origin and origin in store.allow_origins:
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
+
         def _reply(self, code, value, content_type="application/json; charset=utf-8"):
             body = value if isinstance(value, bytes) else json.dumps(_clean(value), allow_nan=False).encode()
             self.send_response(code)
+            self._cors()
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
@@ -463,6 +512,19 @@ def make_server(store: SessionStore, host: str = "127.0.0.1", port: int = 8765) 
             self.end_headers()
             self.wfile.write(body)
 
+        def do_OPTIONS(self):
+            # A cross-origin GET carrying only safelisted headers needs no
+            # preflight, but answering one costs nothing and stops a browser
+            # quietly failing if that ever changes.
+            self.send_response(204)
+            self._cors()
+            if self.headers.get("Origin") in store.allow_origins:
+                self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "Accept, Content-Type")
+                self.send_header("Access-Control-Max-Age", "600")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
         def do_GET(self):
             # Refuse DNS-rebinding hostnames. A deliberate interface bind may
             # be reached using that IP; loopback also permits localhost.
@@ -474,6 +536,12 @@ def make_server(store: SessionStore, host: str = "127.0.0.1", port: int = 8765) 
             url = urlsplit(self.path)
             try:
                 if url.path == "/":
+                    if store.api_only:
+                        self._reply(200, {"service": "hummer-obd", "schema": 1,
+                                          "endpoints": ["/api/sessions", "/api/snapshot",
+                                                        "/api/r8", "/api/tile/{z}/{x}/{y}.png"],
+                                          "note": "data only; the interface is hosted elsewhere"})
+                        return
                     self._reply(200, files("hummer_obd").joinpath("dashboard.html").read_bytes(),
                                 "text/html; charset=utf-8")
                 elif url.path == "/api/r8":
@@ -483,6 +551,41 @@ def make_server(store: SessionStore, host: str = "127.0.0.1", port: int = 8765) 
                     # origin only -- which is the right default, and means
                     # cross-project data has to come through this server.
                     self._reply(200, r8.snapshot(location=store.expose_location))
+                elif url.path.startswith("/api/tile/"):
+                    # Tiles are fetched by this node, never by the browser:
+                    # the page's CSP allows images from its own origin only,
+                    # and routing them through here is also what keeps the
+                    # tile server's view of this vehicle down to ground it
+                    # has already covered. Gated on the same switch as
+                    # coordinates, because a map of where the truck has been
+                    # is the same disclosure as the coordinates themselves.
+                    if store.tiles is None:
+                        self._reply(404, {"error": "map tiles are not enabled"})
+                        return
+                    parts = url.path[len("/api/tile/"):].split("/")
+                    if len(parts) != 3 or not parts[2].endswith(".png"):
+                        raise ValueError("expected /api/tile/z/x/y.png")
+                    try:
+                        z, x, y = (int(parts[0]), int(parts[1]), int(parts[2][:-4]))
+                    except ValueError:
+                        raise ValueError("tile coordinates must be integers")
+                    # Checked here so a coordinate outside the pyramid is
+                    # answered as the client error it is. Routing it through
+                    # the store would report it as a bad gateway, which blames
+                    # the tile server for a request that never reached it.
+                    if not tiles.valid(z, x, y):
+                        raise ValueError("no such tile")
+                    body = store.tiles.get(z, x, y)
+                    self.send_response(200)
+                    self._cors()
+                    self.send_header("Content-Type", "image/png")
+                    self.send_header("Content-Length", str(len(body)))
+                    # Held by the browser too, so panning back over ground it
+                    # has already drawn costs nothing at either end.
+                    self.send_header("Cache-Control", "public, max-age=604800, immutable")
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.end_headers()
+                    self.wfile.write(body)
                 elif url.path == "/api/sessions":
                     self._reply(200, store.sessions())
                 elif url.path == "/api/snapshot":
@@ -492,6 +595,8 @@ def make_server(store: SessionStore, host: str = "127.0.0.1", port: int = 8765) 
                     self._reply(200, store.snapshot(query.get("session", ["latest"])[0]))
                 else:
                     self._reply(404, {"error": "not found"})
+            except tiles.TileError as error:
+                self._reply(502, {"error": str(error)})
             except FileNotFoundError:
                 self._reply(404, {"error": "session not found"})
             except (ValueError, OverflowError):
@@ -514,6 +619,29 @@ def main(argv=None) -> int:
     parser.add_argument("--host", default="127.0.0.1", help="listener IP (default: loopback)")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--stale-after", type=float, default=45.0)
+    parser.add_argument("--allow-origin", action="append", default=[], metavar="ORIGIN",
+                        help="an origin whose pages may read this API from a browser, "
+                             "e.g. http://homeassistant.local:8123. Repeatable. Named "
+                             "exactly -- never '*' -- because this API answers with the "
+                             "vehicle's position, and a wildcard would hand that to any "
+                             "page the operator happens to have open.")
+    parser.add_argument("--api-only", action="store_true",
+                        help="serve the JSON API and nothing else. Use when the interface "
+                             "is hosted somewhere else; a second copy of the page here "
+                             "is one more thing to keep in step.")
+    parser.add_argument("--tile-cache", default=None,
+                        help="directory for cached map tiles "
+                             "(default: a 'tiles' directory beside --dir)")
+    parser.add_argument("--no-map-tiles", action="store_true",
+                        help="draw the map without background tiles. Tiles are "
+                             "fetched by this node from tile.openstreetmap.org, "
+                             "one at a time and only for ground already driven, "
+                             "then kept on local disk forever. That tells the "
+                             "tile server roughly where the vehicle has been, "
+                             "which is the same disclosure --expose-location "
+                             "already makes to the browser -- so they are on "
+                             "with it and off without it. This turns them off "
+                             "while leaving coordinates on.")
     parser.add_argument("--json", action="store_true", help="print a snapshot and exit without a listener")
     parser.add_argument("--session", default="latest", help="session for --json, default latest")
     parser.add_argument(
@@ -524,13 +652,38 @@ def main(argv=None) -> int:
              "listener you control -- check --host.")
     args = parser.parse_args(argv)
     try:
+        tile_cache = None
+        if not args.no_map_tiles:
+            tile_cache = (Path(args.tile_cache) if args.tile_cache
+                          else Path(args.dir).resolve().parent / "tiles")
         store = SessionStore(args.dir, args.stale_after,
-                             expose_location=args.expose_location)
+                             expose_location=args.expose_location,
+                             tile_cache=tile_cache,
+                             allow_origins=tuple(args.allow_origin),
+                             api_only=args.api_only)
         if args.json:
             print(json.dumps(store.snapshot(args.session), indent=2, allow_nan=False))
             return 0
         with make_server(store, args.host, args.port) as server:
-            print(f"Hummer telemetry: http://{args.host}:{server.server_port} (read-only)", flush=True)
+            mode = "data only" if args.api_only else "read-only"
+            print(f"Hummer telemetry: http://{args.host}:{server.server_port} ({mode})", flush=True)
+            if store.allow_origins:
+                # Named out loud at start-up. Anyone reading the log should be
+                # able to see which other sites can read this vehicle's data
+                # without going and finding the unit file.
+                print("Readable from: " + ", ".join(store.allow_origins), flush=True)
+            if store.tiles is not None:
+                # Said out loud at start-up rather than buried in --help: this
+                # process will contact a third party about where the vehicle
+                # has been, and the operator should learn that from the log
+                # and not from a packet capture.
+                where = (f"cached in {store.tiles.directory}"
+                         if store.tiles.writable else
+                         f"cache directory {store.tiles.directory} is not "
+                         f"writable, so tiles are held in memory for the life "
+                         f"of this process only")
+                print(f"Map tiles: on, via {tiles.TILE_HOST}, {where} "
+                      f"(--no-map-tiles turns this off)", flush=True)
             server.serve_forever()
     except (OSError, ValueError) as exc:
         parser.exit(2, f"dashboard: {exc}\n")
