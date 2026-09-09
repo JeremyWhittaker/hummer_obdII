@@ -446,7 +446,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   var el = {}, state = {
     snapshot: null, sessions: [], selected: "latest", network: "loading",
     error: "", timer: null, busy: false, queued: false, generation: 0,
-    series: "power", filter: "",
+    series: "power", filter: "", retried: false,
     /* Coolant flow is animated from whether the thermal accumulator is
        actually advancing, which needs the previous poll to compare against.
        Kept here rather than recomputed, because a pump that has stopped
@@ -1719,6 +1719,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         throw new Error("Invalid snapshot response");
       }
       state.snapshot = snapshot; state.network = "ok"; state.error = "";
+      state.retried = false;
       render();
       /* The detector is a separate concern and must not be able to break the
          vehicle view: fetched after the render that matters, and a failure
@@ -1730,12 +1731,26 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         state.r8 = { available: false, reason: "not reachable" }; renderR8();
       });
     }).catch(function (err) {
-      if (generation === state.generation) {
-        state.network = "error";
-        state.error = err && err.message ? err.message : "Refresh failed";
-        render();
+      if (generation !== state.generation) return;
+      /* One dropped request is not an outage. A single poll is lost every
+         time the reader is restarted or the network hiccups, and declaring
+         "the reader could not be refreshed" on the strength of it overstates
+         what is known -- the banner is a claim about the reader, and one
+         aborted fetch is not evidence for it. Give it one quick retry and
+         only report a failure if that fails too. */
+      if (!state.retried) {
+        state.retried = true;
+        state.busy = false;
+        queue(400);
+        return;
       }
+      state.network = "error";
+      state.error = err && err.message ? err.message : "Refresh failed";
+      render();
     }).finally(function () {
+      /* The retry path above has already cleared busy and queued its own
+         follow-up; re-queueing here would race it and poll twice. */
+      if (!state.busy) return;
       state.busy = false;
       queue(state.queued || generation !== state.generation ? 0 : POLL_MS);
     });

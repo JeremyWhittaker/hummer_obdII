@@ -328,6 +328,21 @@ discount.
 
 ### Fixed
 
+- **One dropped poll no longer claims the reader is down.** Every restart of
+  the reader aborted whichever request was in flight, and the page answered
+  with "The local telemetry reader could not be refreshed" — a claim about the
+  reader that a single aborted fetch is not evidence for. It now retries once
+  after 400 ms and only reports a failure if that fails too.
+
+  Verified against the real failure rather than a simulated one: restarting the
+  service mid-poll, which produced the banner on every previous deploy, now
+  passes without it while the header stays live.
+
+  The `finally` block had to stop re-queueing when the retry path has already
+  done so, or the two race and the page polls twice.
+
+### Fixed
+
 - **Coolant pipes were stretched along the wrong axis.** The model matrix is
   `TRS × rotation`, so the rotation is applied *first* and the scale axes are
   the post-rotation world ones. A pipe turned onto X was still being scaled
