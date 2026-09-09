@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import statistics
 import sys
 from pathlib import Path
@@ -110,7 +111,7 @@ def _number(text: Optional[str]) -> Optional[float]:
     trailing unit letters are stripped, because a reading that is present
     should not be discarded over its formatting.
     """
-    if text is None:
+    if text is None or not isinstance(text, str):
         return None
     cleaned = text.strip()
     if not cleaned:
@@ -122,9 +123,10 @@ def _number(text: Optional[str]) -> Optional[float]:
     if not cleaned:
         return None
     try:
-        return float(cleaned)
-    except ValueError:
+        value = float(cleaned)
+    except (OverflowError, ValueError):
         return None
+    return value if math.isfinite(value) else None
 
 
 def read_session(path: str | Path) -> tuple[list[dict], list[str], list[str]]:
@@ -142,6 +144,14 @@ def read_session(path: str | Path) -> tuple[list[dict], list[str], list[str]]:
         reader = csv.DictReader(handle)
         header = list(reader.fieldnames or [])
         for raw in reader:
+            # DictReader stores fields beyond the header under a ``None`` key.
+            # Treat that row as malformed rather than feeding its list value to
+            # the scalar parser (or, worse, silently shifting measurements).
+            if None in raw:
+                warnings.append(
+                    "a row contains more fields than the CSV header; it was dropped"
+                )
+                continue
             # A short row means the writer was interrupted partway through it.
             if raw.get("utc") is None or None in raw.values():
                 warnings.append(
@@ -242,22 +252,40 @@ SANITY_FILTERS: dict[str, Callable[[float], bool]] = {
 }
 
 
+def _is_finite_number(value: object) -> bool:
+    """Whether *value* is a real, finite scalar measurement."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except (OverflowError, ValueError):
+        return False
+
+
 def sane(row: dict) -> bool:
     """Whether a row looks like measurements rather than a transition.
 
     A column that is absent is not implausible -- only a present, impossible
     value disqualifies a row.
     """
+    # NaN is especially dangerous here: comparisons with it are false, while
+    # min/max and trapezoidal integration can propagate it through a complete
+    # report.  Infinity has the same problem and is never a vehicle reading.
+    if any(
+        isinstance(value, (int, float)) and not _is_finite_number(value)
+        for value in row.values()
+    ):
+        return False
     for key, ok in SANITY_FILTERS.items():
         value = row.get(key)
-        if isinstance(value, (int, float)) and not ok(value):
+        if _is_finite_number(value) and not ok(value):
             return False
     return True
 
 
 def _series(rows: list[dict], key: str) -> list[float]:
     """Every present numeric value for *key*, in order."""
-    return [r[key] for r in rows if isinstance(r.get(key), (int, float))]
+    return [r[key] for r in rows if _is_finite_number(r.get(key))]
 
 
 def _first_last(rows: list[dict], key: str) -> tuple[Optional[float], Optional[float]]:
@@ -292,31 +320,98 @@ def _round(value: Optional[float], digits: int = 2) -> Optional[float]:
     return 0.0 if rounded == 0 else rounded
 
 
-def _integrate(rows: list[dict], key: str, *, only_negative=False, only_positive=False) -> float:
+def _integration_gap_limit(rows: list[dict]) -> Optional[float]:
+    """Largest interval that can be integrated without crossing a data gap."""
+    periods = []
+    for before, after in zip(rows, rows[1:]):
+        t0, t1 = before.get("elapsed_s"), after.get("elapsed_s")
+        if _is_finite_number(t0) and _is_finite_number(t1) and t1 > t0:
+            periods.append(t1 - t0)
+    median = _median(periods)
+    return median * _GAP_FACTOR if median and median > 0 else None
+
+
+def _signed_segment_area(
+    a: float,
+    b: float,
+    hours: float,
+    *,
+    only_negative: bool,
+    only_positive: bool,
+) -> float:
+    """Area of one linear segment, optionally limited exactly to one sign."""
+    if not only_negative and not only_positive:
+        return (a + b) / 2.0 * hours
+
+    if only_positive:
+        if a <= 0 and b <= 0:
+            return 0.0
+        if a >= 0 and b >= 0:
+            return (a + b) / 2.0 * hours
+    else:
+        if a >= 0 and b >= 0:
+            return 0.0
+        if a <= 0 and b <= 0:
+            return (a + b) / 2.0 * hours
+
+    # The samples straddle zero.  Clamping one endpoint and applying a full-
+    # width trapezoid overstates both directions.  Split at the interpolated
+    # crossing so each direction gets only its triangular share of the time.
+    crossing = -a / (b - a)
+    if only_positive:
+        return (
+            a * crossing * hours / 2.0
+            if a > 0
+            else b * (1.0 - crossing) * hours / 2.0
+        )
+    return (
+        a * crossing * hours / 2.0
+        if a < 0
+        else b * (1.0 - crossing) * hours / 2.0
+    )
+
+
+def _integrate(
+    rows: list[dict],
+    key: str,
+    *,
+    only_negative: bool = False,
+    only_positive: bool = False,
+) -> Optional[float]:
     """Trapezoidal integral of *key* against ``elapsed_s``, in unit-hours.
 
     Used for energy from power and distance from speed.  Sampling here is
     coarse -- a handful of seconds between points -- so this is a total worth
     quoting and not an instantaneous figure worth trusting.  Clamping to one
-    sign is how regenerated energy is separated from consumed energy.
+    sign is how regenerated energy is separated from consumed energy. Missing
+    or invalid rows break adjacency, long sampling gaps are not bridged, and
+    ``None`` means no usable interval was observed (distinct from a measured
+    integral of zero).
     """
+    if only_negative and only_positive:
+        raise ValueError("only_negative and only_positive are mutually exclusive")
     total = 0.0
-    previous_t: Optional[float] = None
-    previous_v: Optional[float] = None
-    for row in rows:
-        t = row.get("elapsed_s")
-        v = row.get(key)
-        if not isinstance(t, (int, float)) or not isinstance(v, (int, float)):
+    intervals = 0
+    gap_limit = _integration_gap_limit(rows)
+    for before, after in zip(rows, rows[1:]):
+        t0, t1 = before.get("elapsed_s"), after.get("elapsed_s")
+        a, b = before.get(key), after.get(key)
+        if not all(_is_finite_number(v) for v in (t0, t1, a, b)):
             continue
-        if previous_t is not None and t > previous_t:
-            a, b = previous_v, v
-            if only_negative:
-                a, b = min(a, 0.0), min(b, 0.0)
-            elif only_positive:
-                a, b = max(a, 0.0), max(b, 0.0)
-            total += (a + b) / 2.0 * (t - previous_t) / 3600.0
-        previous_t, previous_v = t, v
-    return total
+        if not sane(before) or not sane(after):
+            continue
+        period = t1 - t0
+        if period <= 0 or (gap_limit is not None and period > gap_limit):
+            continue
+        total += _signed_segment_area(
+            a,
+            b,
+            period / 3600.0,
+            only_negative=only_negative,
+            only_positive=only_positive,
+        )
+        intervals += 1
+    return total if intervals else None
 
 
 #: Cells in series, measured as ``pack_v / cell_avg_v`` over 297 samples:
@@ -471,10 +566,14 @@ def analyze(rows: list[dict], *, path: str = "", expected_period_s: Optional[flo
     # invented here would be listed there as if the vehicle had sent it.
     wheel_rows = []
     for row in rows:
-        corners = [row[c] for c in _WHEEL_COLUMNS if isinstance(row.get(c), (int, float))]
-        if corners and isinstance(row.get("elapsed_s"), (int, float)):
-            wheel_rows.append({"elapsed_s": row["elapsed_s"],
-                               "wheel_mean_kph": sum(corners) / len(corners)})
+        corners = [row[c] for c in _WHEEL_COLUMNS if _is_finite_number(row.get(c))]
+        wheel_row = dict(row)
+        if corners:
+            wheel_row["wheel_mean_kph"] = sum(corners) / len(corners)
+        # Keep a placeholder even when this row has no wheel reading. Removing
+        # it would make _integrate connect the surrounding chassis samples and
+        # silently fill a period during which the controller did not answer.
+        wheel_rows.append(wheel_row)
     distance_from_wheels_km = _integrate(wheel_rows, "wheel_mean_kph")
     # `dist_since_chg_mi` is an enhanced read and is already in miles, but it
     # resets to zero when the vehicle charges.  A negative delta is that reset,
@@ -544,9 +643,10 @@ def analyze(rows: list[dict], *, path: str = "", expected_period_s: Optional[flo
         energy["consumption_kwh_per_100mi"] = _round(energy_used / distance_mi * 100.0, 1)
     # Regenerated energy, from the pack's own current.  hv_power_kw is positive
     # while discharging, so the negative excursions are what came back in.
-    regen_kwh = -_integrate(rows, "hv_power_kw", only_negative=True)
+    regen_integral = _integrate(rows, "hv_power_kw", only_negative=True)
     drawn_kwh = _integrate(rows, "hv_power_kw", only_positive=True)
-    if _series(rows, "hv_power_kw"):
+    regen_kwh = -regen_integral if regen_integral is not None else None
+    if regen_kwh is not None and drawn_kwh is not None:
         energy["regen_kwh_from_pack_current"] = _round(regen_kwh, 3)
         energy["drawn_kwh_from_pack_current"] = _round(drawn_kwh, 3)
         energy["net_kwh_from_pack_current"] = _round(drawn_kwh - regen_kwh, 3)
@@ -564,8 +664,8 @@ def analyze(rows: list[dict], *, path: str = "", expected_period_s: Optional[flo
         "a_min": min(pack_a) if pack_a else None,
         "a_max": max(pack_a) if pack_a else None,
         # Positive is discharge for this column.
-        "peak_discharge_kw": _round(max(hv_kw), 2) if hv_kw else None,
-        "peak_regen_kw": _round(-min(hv_kw), 2) if hv_kw and min(hv_kw) < 0 else None,
+        "peak_discharge_kw": _round(max(max(hv_kw), 0.0), 2) if hv_kw else None,
+        "peak_regen_kw": _round(max(-min(hv_kw), 0.0), 2) if hv_kw else None,
         "mean_kw": _round(_mean(hv_kw), 2),
     }
 

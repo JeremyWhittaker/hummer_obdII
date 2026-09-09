@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import math
 import os
 import statistics
 import sys
@@ -34,7 +35,13 @@ from typing import Optional
 
 from . import drive
 from . import gps as gps_module
-from .analyze import read_session, sane
+from .analyze import (
+    _integrate,
+    _integration_gap_limit,
+    _is_finite_number,
+    read_session,
+    sane,
+)
 
 __all__ = ["column_sources", "snapshot", "render", "main"]
 
@@ -285,6 +292,8 @@ def snapshot(rows: list[dict]) -> dict:
         return {"rows": 0, "columns": {}}
     newest = rows[-1]
     now = newest.get("elapsed_s")
+    if not _is_finite_number(now):
+        now = None
     columns: dict[str, dict] = {}
     for name in drive.COLUMNS:
         value = None
@@ -292,12 +301,18 @@ def snapshot(rows: list[dict]) -> dict:
         seen = 0
         for row in reversed(rows):
             candidate = row.get(name)
+            if isinstance(candidate, (int, float)) and not _is_finite_number(candidate):
+                continue
             if candidate is not None and candidate != "":
                 seen += 1
                 if value is None:
                     value = candidate
                     stamp = row.get("elapsed_s")
-                    if isinstance(now, (int, float)) and isinstance(stamp, (int, float)):
+                    if (
+                        isinstance(now, (int, float))
+                        and _is_finite_number(stamp)
+                        and now >= stamp
+                    ):
                         age = now - stamp
         columns[name] = {
             "value": value,
@@ -310,7 +325,11 @@ def snapshot(rows: list[dict]) -> dict:
         for a, b in zip(
             [r.get("elapsed_s") for r in rows], [r.get("elapsed_s") for r in rows[1:]]
         )
-        if isinstance(a, (int, float)) and isinstance(b, (int, float)) and b > a
+        if (
+            _is_finite_number(a)
+            and _is_finite_number(b)
+            and b > a
+        )
     ]
     return {
         "rows": len(rows),
@@ -344,14 +363,19 @@ def _num(row: dict, name: str):
     if value is None or value == "":
         return None
     if isinstance(value, (int, float)):
-        return float(value)
+        try:
+            number = float(value)
+        except (OverflowError, ValueError):
+            return None
+        return number if math.isfinite(number) else None
     text = str(value).strip()
     while text and text[-1] not in "0123456789.":
         text = text[:-1]
     try:
-        return float(text)
+        number = float(text)
     except ValueError:
         return None
+    return number if math.isfinite(number) else None
 
 
 def _hex(row: dict, *names: str):
@@ -378,6 +402,17 @@ def _last(rows: list[dict], name: str):
         if value is not None:
             return value
     return None
+
+
+def _last_pair(rows: list[dict], first: str, second: str):
+    """Newest two values that were observed together in one sane row."""
+    for row in reversed(rows):
+        if not sane(row):
+            continue
+        a, b = _num(row, first), _num(row, second)
+        if a is not None and b is not None:
+            return a, b
+    return None, None
 
 
 def _last_hex(rows: list[dict], *names: str):
@@ -410,10 +445,17 @@ def pack_resistance(rows: list[dict]) -> Optional[tuple[float, int, float]]:
     has not yet produced enough current movement to measure anything.
     """
     steps: list[tuple[float, float]] = []
+    gap_limit = _integration_gap_limit(rows)
     for before, after in zip(rows, rows[1:]):
+        if not sane(before) or not sane(after):
+            continue
         v0, i0 = _num(before, "pack_v"), _num(before, "pack_a")
         v1, i1 = _num(after, "pack_v"), _num(after, "pack_a")
-        if None in (v0, i0, v1, i1):
+        t0, t1 = _num(before, "elapsed_s"), _num(after, "elapsed_s")
+        if None in (v0, i0, v1, i1, t0, t1):
+            continue
+        period = t1 - t0
+        if period <= 0 or (gap_limit is not None and period > gap_limit):
             continue
         di = i1 - i0
         if abs(di) < _MIN_STEP_AMPS:
@@ -432,8 +474,11 @@ def pack_resistance(rows: list[dict]) -> Optional[tuple[float, int, float]]:
     try:
         r = statistics.correlation(xs, ys)
     except (statistics.StatisticsError, ValueError):
-        r = float("nan")
-    return (-slope * 1000.0, len(steps), r)
+        return None
+    resistance_mohms = -slope * 1000.0
+    if not math.isfinite(resistance_mohms) or resistance_mohms <= 0 or not math.isfinite(r):
+        return None
+    return (resistance_mohms, len(steps), r)
 
 
 def derive(rows: list[dict]) -> dict:
@@ -453,7 +498,7 @@ def derive(rows: list[dict]) -> dict:
     # very often the vehicle going to sleep with the contactors open, where
     # pack_v reads about 1 V -- which would show a 1.06 V pack and 0.3 cells
     # in series, and look like a decode fault rather than a sleeping truck.
-    good = [r for r in rows if sane(r)] or rows
+    good = [r for r in rows if sane(r)]
 
     # -- pack, all level 4 ---------------------------------------------------
     pack_v = _last(good, "pack_v")
@@ -461,54 +506,77 @@ def derive(rows: list[dict]) -> dict:
     cell_avg = _last(good, "cell_avg_v")
     soc = _last(good, "soc_pct")
     energy = _last(good, "energy_kwh")
+    power_v, power_a = _last_pair(good, "pack_v", "pack_a")
+    series_v, series_cell = _last_pair(good, "pack_v", "cell_avg_v")
+    capacity_energy, capacity_soc = _last_pair(good, "energy_kwh", "soc_pct")
     out["pack_v"] = pack_v
     out["pack_a"] = pack_a
-    out["pack_kw"] = (pack_v * pack_a / 1000.0) if None not in (pack_v, pack_a) else None
+    out["pack_kw"] = (
+        power_v * power_a / 1000.0
+        if None not in (power_v, power_a)
+        else None
+    )
     out["cell_avg_v"] = cell_avg
     out["cell_spread_mv"] = _last(good, "cell_spread_mv")
     out["soc_pct"] = soc
     out["energy_kwh"] = energy
-    out["series_cells"] = (pack_v / cell_avg) if pack_v and cell_avg else None
+    out["series_cells"] = (
+        series_v / series_cell
+        if series_v is not None and series_cell
+        else None
+    )
     # Usable capacity implied by where the pack sits right now.  Corpus median
     # is 190.5 kWh with sd 0.89 over 6961 rows, so a live value far from that
     # is a reading problem rather than a discovery.
-    out["implied_kwh"] = (energy / (soc / 100.0)) if energy and soc else None
+    out["implied_kwh"] = (
+        capacity_energy / (capacity_soc / 100.0)
+        if capacity_energy is not None and capacity_soc
+        else None
+    )
 
     # -- measured constants --------------------------------------------------
-    out["resistance"] = pack_resistance(good)
+    out["resistance"] = pack_resistance(rows)
 
     # -- motion and energy over this session ---------------------------------
     odo = _series(good, "odometer_km")
     out["distance_km"] = (max(odo) - min(odo)) if len(odo) >= 2 else None
     ek = _series(good, "energy_kwh")
-    out["energy_used_kwh"] = (max(ek) - min(ek)) if len(ek) >= 2 else None
+    energy_change = ek[0] - ek[-1] if len(ek) >= 2 else None
+    out["energy_used_kwh"] = (
+        energy_change
+        if energy_change is not None and energy_change >= 0
+        else None
+    )
 
     # Efficiency is measured over the MOVING window, not the whole session.
     # A session that parked with the air conditioning on for forty minutes
     # drained several kWh against zero distance, and charging that to the
     # drive turns a real 42 kWh/100km into a meaningless 63.
     moving = [
-        i for i, r in enumerate(good)
-        if (_num(r, "speed_kph") or _num(r, "wheel_fl_kph") or 0) > 1
+        i for i, r in enumerate(rows)
+        if sane(r)
+        and (_num(r, "speed_kph") or _num(r, "wheel_fl_kph") or 0) > 1
     ]
     if len(moving) >= 2:
-        span = good[moving[0]:moving[-1] + 1]
-        d_odo = _series(span, "odometer_km")
-        d_ek = _series(span, "energy_kwh")
+        span = rows[moving[0]:moving[-1] + 1]
+        sane_span = [r for r in span if sane(r)]
+        d_odo = _series(sane_span, "odometer_km")
+        d_ek = _series(sane_span, "energy_kwh")
         if len(d_odo) >= 2 and len(d_ek) >= 2:
             km = max(d_odo) - min(d_odo)
-            kwh = max(d_ek) - min(d_ek)
+            net_used = d_ek[0] - d_ek[-1]
+            kwh = net_used if net_used >= 0 else None
             out["drive_km"] = km
             out["drive_kwh"] = kwh
-            if km > 0.05 and kwh > 0:
+            if km > 0.05 and kwh is not None and kwh > 0:
                 out["kwh_per_100km"] = kwh / km * 100.0
                 out["mi_per_kwh"] = (km * 0.621371) / kwh
-    speeds = _series(rows, "speed_kph")
+    speeds = _series(good, "speed_kph")
     out["speed_max_kph"] = max(speeds) if speeds else None
     out["speed_now_kph"] = _last(rows, "speed_kph")
-    kw = _series(rows, "hv_power_kw")
-    out["kw_peak_drive"] = max(kw) if kw else None
-    out["kw_peak_regen"] = min(kw) if kw else None
+    kw = _series(good, "hv_power_kw")
+    out["kw_peak_drive"] = max(max(kw), 0.0) if kw else None
+    out["kw_peak_regen"] = min(min(kw), 0.0) if kw else None
 
     # Energy split by direction, trapezoid over the samples that carry both a
     # power and a timestamp.  Regen fraction is the honest headline here; the
@@ -518,23 +586,20 @@ def derive(rows: list[dict]) -> dict:
     # parked air-conditioning load is drawn energy that no amount of braking
     # could ever return, so including it silently deflates the fraction.
     span_for_energy = (
-        good[moving[0]:moving[-1] + 1] if len(moving) >= 2 else good
+        rows[moving[0]:moving[-1] + 1] if len(moving) >= 2 else rows
     )
-    drawn = returned = 0.0
-    for before, after in zip(span_for_energy, span_for_energy[1:]):
-        p0, p1 = _num(before, "hv_power_kw"), _num(after, "hv_power_kw")
-        t0, t1 = _num(before, "elapsed_s"), _num(after, "elapsed_s")
-        if None in (p0, p1, t0, t1) or t1 <= t0:
-            continue
-        dt = (t1 - t0) / 3600.0
-        mid = (p0 + p1) / 2.0
-        if mid >= 0:
-            drawn += mid * dt
-        else:
-            returned += -mid * dt
-    out["kwh_drawn"] = drawn or None
-    out["kwh_regen"] = returned or None
-    out["regen_pct"] = (returned / drawn * 100.0) if drawn > 0 else None
+    drawn = _integrate(span_for_energy, "hv_power_kw", only_positive=True)
+    regen_integral = _integrate(
+        span_for_energy, "hv_power_kw", only_negative=True
+    )
+    returned = -regen_integral if regen_integral is not None else None
+    out["kwh_drawn"] = drawn
+    out["kwh_regen"] = returned
+    out["regen_pct"] = (
+        returned / drawn * 100.0
+        if returned is not None and drawn is not None and drawn > 0
+        else None
+    )
 
     # -- the torque signal, zero-referenced ----------------------------------
     torque = _last_hex(rows, "field_2429_raw")

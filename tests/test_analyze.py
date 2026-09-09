@@ -66,6 +66,9 @@ class TestNumberParsing(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIsNone(analyze._number(text))
 
+    def test_overflow_is_not_accepted_as_a_vehicle_reading(self):
+        self.assertIsNone(analyze._number("1e309"))
+
 
 class TestDistanceAndSpeed(unittest.TestCase):
     def test_integrated_speed_matches_a_constant_hour(self):
@@ -93,6 +96,37 @@ class TestDistanceAndSpeed(unittest.TestCase):
         self.assertEqual(report["motion"]["stopped_samples"], 2)
         self.assertEqual(report["motion"]["moving_samples"], 2)
         self.assertEqual(report["motion"]["max_speed_kph"], 60.0)
+
+    def test_an_absent_sample_breaks_integration_adjacency(self):
+        rows = _rows([
+            (0, {"speed_kph": 100.0}),
+            (10, {}),
+            (20, {"speed_kph": 100.0}),
+        ])
+        self.assertIsNone(analyze._integrate(rows, "speed_kph"))
+        self.assertIsNone(analyze_session(rows)["motion"]["distance_from_speed_km"])
+
+    def test_a_sampling_gap_is_not_filled_with_stale_speed(self):
+        rows = _rows([
+            (0, {"speed_kph": 36.0}),
+            (10, {"speed_kph": 36.0}),
+            (20, {"speed_kph": 36.0}),
+            (30, {"speed_kph": 36.0}),
+            (300, {"speed_kph": 36.0}),
+            (310, {"speed_kph": 36.0}),
+        ])
+        # Four ten-second intervals are observed; the 270-second hole is not.
+        self.assertAlmostEqual(analyze._integrate(rows, "speed_kph"), 0.4)
+
+    def test_an_absent_wheel_sample_breaks_wheel_distance_adjacency(self):
+        wheels = {
+            "wheel_fl_kph": 100.0, "wheel_fr_kph": 100.0,
+            "wheel_rl_kph": 100.0, "wheel_rr_kph": 100.0,
+        }
+        rows = _rows([(0, wheels), (10, {}), (20, wheels)])
+        self.assertIsNone(
+            analyze_session(rows)["motion"]["distance_from_wheels_km"]
+        )
 
 
 class TestHexColumnsAreNotParsedAsNumbers(unittest.TestCase):
@@ -278,6 +312,35 @@ class TestEnergyAndEfficiency(unittest.TestCase):
         self.assertAlmostEqual(report["energy"]["regen_kwh_from_pack_current"], 10.0, delta=0.05)
         self.assertAlmostEqual(report["energy"]["net_kwh_from_pack_current"], 10.0, delta=0.1)
 
+    def test_a_zero_crossing_is_split_at_the_interpolated_crossing(self):
+        rows = _rows([
+            (0, {"hv_power_kw": 20.0}),
+            (3600, {"hv_power_kw": -10.0}),
+        ])
+        report = analyze_session(rows)["energy"]
+        self.assertAlmostEqual(
+            report["drawn_kwh_from_pack_current"], 20.0 / 3.0, places=3
+        )
+        self.assertAlmostEqual(
+            report["regen_kwh_from_pack_current"], 5.0 / 3.0, places=3
+        )
+        self.assertAlmostEqual(report["net_kwh_from_pack_current"], 5.0)
+
+    def test_one_power_sample_does_not_impose_zero_energy(self):
+        report = analyze_session(_rows([(0, {"hv_power_kw": 0.0})]))
+        self.assertNotIn("regen_kwh_from_pack_current", report["energy"])
+        self.assertNotIn("drawn_kwh_from_pack_current", report["energy"])
+
+    def test_observed_power_reports_zero_for_the_absent_direction(self):
+        discharge = analyze_session(_rows([
+            (0, {"hv_power_kw": 10.0}), (10, {"hv_power_kw": 20.0}),
+        ]))["pack"]
+        charge = analyze_session(_rows([
+            (0, {"hv_power_kw": -10.0}), (10, {"hv_power_kw": -20.0}),
+        ]))["pack"]
+        self.assertEqual(discharge["peak_regen_kw"], 0.0)
+        self.assertEqual(charge["peak_discharge_kw"], 0.0)
+
     def test_no_efficiency_is_claimed_without_a_distance(self):
         rows = _rows([(0, {"energy_kwh": 100.0}), (3600, {"energy_kwh": 90.0})])
         report = analyze_session(rows)
@@ -361,6 +424,10 @@ class TestSanityFilter(unittest.TestCase):
     def test_impossible_cell_and_temperature_readings_are_rejected(self):
         self.assertFalse(analyze.sane({"cell_avg_v": 0.0}))
         self.assertFalse(analyze.sane({"temp_f": 9999.0}))
+
+    def test_nonfinite_values_are_rejected_even_in_unbounded_columns(self):
+        self.assertFalse(analyze.sane({"pack_a": float("nan")}))
+        self.assertFalse(analyze.sane({"hv_power_kw": float("inf")}))
 
 
 class TestTrendAcrossSessions(unittest.TestCase):
@@ -589,6 +656,16 @@ class TestSessionFileHandling(unittest.TestCase):
             rows, warnings, _ = read_session(path)
         self.assertEqual(len(rows), 1, "the torn row must not reach the analysis")
         self.assertTrue(any("incomplete" in w for w in warnings))
+
+    def test_a_row_with_fields_beyond_the_header_is_dropped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "drive.csv")
+            with open(path, "w", encoding="utf-8", newline="") as handle:
+                handle.write("utc,elapsed_s,pack_v\n")
+                handle.write("2026-09-03T15:00:00Z,0,392.0,unexpected\n")
+            rows, warnings, _ = read_session(path)
+        self.assertEqual(rows, [])
+        self.assertTrue(any("more fields" in warning for warning in warnings))
 
     def test_an_empty_session_says_so_rather_than_dividing_by_zero(self):
         report = analyze_session([])

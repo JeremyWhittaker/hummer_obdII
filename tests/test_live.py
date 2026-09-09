@@ -101,6 +101,18 @@ class TestSnapshotAgesEveryColumn(unittest.TestCase):
         self.assertEqual(snap["columns"]["speed_kph"]["age_s"], 0.0)
         self.assertEqual(snap["columns"]["speed_kph"]["samples"], 2)
 
+    def test_a_nonfinite_reading_is_not_presented_as_telemetry(self):
+        snap = snapshot(_rows([(0, {"speed_kph": float("nan")})]))
+        self.assertIsNone(snap["columns"]["speed_kph"]["value"])
+        self.assertEqual(snap["columns"]["speed_kph"]["samples"], 0)
+
+    def test_clock_rollback_never_produces_a_negative_age(self):
+        rows = _rows([
+            (10, {"speed_kph": 50.0}),
+            (5, {"pack_v": 390.0}),
+        ])
+        self.assertIsNone(snapshot(rows)["columns"]["speed_kph"]["age_s"])
+
     def test_how_often_each_column_answered_is_counted(self):
         rows = _rows([
             (0, {"pack_v": 390.0, "speed_kph": 1.0}),
@@ -331,6 +343,42 @@ class TestDerivedQuantities(unittest.TestCase):
         self.assertGreater(d["series_cells"], 90)
         self.assertLess(d["series_cells"], 100)
 
+    def test_pack_arithmetic_uses_values_observed_in_the_same_row(self):
+        rows = _rows([
+            (0, {"pack_v": 400.0, "pack_a": 10.0, "cell_avg_v": 4.0,
+                 "energy_kwh": 100.0, "soc_pct": 50.0}),
+            (10, {"pack_v": 410.0, "energy_kwh": 90.0}),
+            (20, {"pack_a": 20.0, "soc_pct": 25.0}),
+        ])
+        d = live.derive(rows)
+        # Individual latest readings are still visible, but calculations do
+        # not invent a state by combining measurements twenty seconds apart.
+        self.assertEqual(d["pack_v"], 410.0)
+        self.assertEqual(d["pack_a"], 20.0)
+        self.assertEqual(d["pack_kw"], 4.0)
+        self.assertEqual(d["series_cells"], 100.0)
+        self.assertEqual(d["implied_kwh"], 200.0)
+
+    def test_all_invalid_rows_do_not_become_a_fallback_pack_state(self):
+        d = live.derive(_rows([
+            (0, {"pack_v": 1.06, "pack_a": 10.0, "cell_avg_v": 4.0,
+                 "energy_kwh": 100.0, "soc_pct": 50.0}),
+        ]))
+        for key in ("pack_v", "pack_a", "pack_kw", "series_cells",
+                    "implied_kwh"):
+            with self.subTest(key=key):
+                self.assertIsNone(d[key])
+
+    def test_nonfinite_pack_values_are_not_reported_or_combined(self):
+        d = live.derive(_rows([
+            (0, {"pack_v": float("nan"), "pack_a": 10.0,
+                 "energy_kwh": float("inf"), "soc_pct": 50.0}),
+        ]))
+        self.assertIsNone(d["pack_v"])
+        self.assertIsNone(d["energy_kwh"])
+        self.assertIsNone(d["pack_kw"])
+        self.assertIsNone(d["implied_kwh"])
+
     def test_efficiency_is_measured_over_the_moving_window_only(self):
         # Parked with a load for two samples (energy falls, distance does not),
         # then a drive.  Charging that parked draw against the drive's distance
@@ -353,6 +401,18 @@ class TestDerivedQuantities(unittest.TestCase):
         # so the two are visibly different rather than silently merged.
         self.assertAlmostEqual(d["energy_used_kwh"], 6.0, places=3)
 
+    def test_energy_rising_during_charge_is_not_called_energy_used(self):
+        rows = _rows([
+            (0, {"speed_kph": 20.0, "odometer_km": 100.0,
+                 "energy_kwh": 100.0, "pack_v": 390.0}),
+            (10, {"speed_kph": 20.0, "odometer_km": 101.0,
+                  "energy_kwh": 108.0, "pack_v": 390.0}),
+        ])
+        d = live.derive(rows)
+        self.assertIsNone(d["energy_used_kwh"])
+        self.assertIsNone(d["drive_kwh"])
+        self.assertNotIn("kwh_per_100km", d)
+
     def test_resistance_recovers_a_known_value_from_a_synthetic_pack(self):
         # V = OCV - I*R with R = 20 mOhm exactly.
         ocv, r_ohms = 390.0, 0.020
@@ -374,6 +434,64 @@ class TestDerivedQuantities(unittest.TestCase):
         # dividing sensor noise by a near-zero current step gives a number.
         rows = _rows([(i * 9, {"pack_a": 0.4, "pack_v": 388.6}) for i in range(40)])
         self.assertIsNone(live.pack_resistance(rows))
+
+    def test_resistance_does_not_bridge_invalid_rows(self):
+        samples = []
+        for i, amps in enumerate((0, 100, 0, 100, 0, 100, 0)):
+            samples.append((i * 20, {
+                "pack_a": float(amps), "pack_v": 390.0 - amps * 0.02,
+            }))
+            if i != 6:
+                samples.append((i * 20 + 10, {"pack_a": 50.0, "pack_v": 1.0}))
+        self.assertIsNone(live.derive(_rows(samples))["resistance"])
+
+    def test_resistance_does_not_treat_a_sampling_gap_as_one_step(self):
+        samples = [
+            (i * 10, {"pack_a": float(amps),
+                      "pack_v": 390.0 - amps * 0.02})
+            for i, amps in enumerate((0, 100, 0, 100, 0, 100))
+        ]
+        samples.append((1000, {"pack_a": 0.0, "pack_v": 390.0}))
+        result = live.pack_resistance(_rows(samples))
+        self.assertIsNotNone(result)
+        _milliohms, steps, _correlation = result
+        self.assertEqual(steps, 5)
+
+    def test_live_energy_preserves_adjacency_and_skips_gaps(self):
+        rows = _rows([
+            (0, {"hv_power_kw": 10.0}),
+            (10, {"hv_power_kw": 10.0}),
+            (20, {}),  # a missing power sample breaks both surrounding spans
+            (30, {"hv_power_kw": 10.0}),
+            (40, {"hv_power_kw": 10.0}),
+            (400, {"hv_power_kw": 10.0}),  # dropped reads: do not bridge
+            (410, {"hv_power_kw": 10.0}),
+        ])
+        d = live.derive(rows)
+        self.assertAlmostEqual(d["kwh_drawn"], 10.0 * 30.0 / 3600.0)
+        self.assertEqual(d["kwh_regen"], 0.0)
+
+    def test_zero_regen_is_distinct_from_no_integrable_power_data(self):
+        observed = live.derive(_rows([
+            (0, {"hv_power_kw": 0.0}), (10, {"hv_power_kw": 0.0}),
+        ]))
+        missing = live.derive(_rows([(0, {"hv_power_kw": 0.0})]))
+        self.assertEqual(observed["kwh_regen"], 0.0)
+        self.assertEqual(observed["kwh_drawn"], 0.0)
+        self.assertIsNone(missing["kwh_regen"])
+        self.assertIsNone(missing["kwh_drawn"])
+
+    def test_directional_power_peaks_do_not_relabel_the_other_direction(self):
+        discharge = live.derive(_rows([
+            (0, {"hv_power_kw": 10.0}), (10, {"hv_power_kw": 20.0}),
+        ]))
+        charge = live.derive(_rows([
+            (0, {"hv_power_kw": -10.0}), (10, {"hv_power_kw": -20.0}),
+        ]))
+        self.assertEqual(discharge["kw_peak_drive"], 20.0)
+        self.assertEqual(discharge["kw_peak_regen"], 0.0)
+        self.assertEqual(charge["kw_peak_drive"], 0.0)
+        self.assertEqual(charge["kw_peak_regen"], -20.0)
 
     def test_the_torque_signal_is_reported_as_signed_counts_from_its_zero(self):
         for raw, direction, counts in (("5806", "neutral", 0),

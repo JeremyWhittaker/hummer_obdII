@@ -1,0 +1,2035 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0a0d0e">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src data:; font-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Hummer EV Telemetry</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090c0d;
+      --surface: #101516;
+      --surface-raised: #151b1d;
+      --surface-soft: #0d1213;
+      --border: #273034;
+      --border-bright: #38454a;
+      --text: #f4f7f7;
+      --muted: #93a1a5;
+      --subtle: #69777b;
+      --lime: #b9f227;
+      --lime-soft: rgba(185, 242, 39, .11);
+      --cyan: #55d9ed;
+      --cyan-soft: rgba(85, 217, 237, .11);
+      --amber: #ffcb66;
+      --amber-soft: rgba(255, 203, 102, .11);
+      --red: #ff8c83;
+      --red-soft: rgba(255, 140, 131, .11);
+      --radius: 14px;
+      --shadow: 0 22px 60px rgba(0, 0, 0, .26);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-synthesis: none;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { background: var(--bg); }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 86% -10%, rgba(85, 217, 237, .07), transparent 31rem),
+        radial-gradient(circle at -8% 18%, rgba(185, 242, 39, .055), transparent 28rem),
+        var(--bg);
+    }
+
+    button, input, select { font: inherit; }
+
+    button, select { color: inherit; }
+
+    button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 3px;
+    }
+
+    [hidden] { display: none !important; }
+
+    .skip-link {
+      position: fixed;
+      z-index: 100;
+      top: 10px;
+      left: 10px;
+      padding: 10px 14px;
+      color: #071012;
+      background: var(--cyan);
+      border-radius: 8px;
+      font-weight: 800;
+      transform: translateY(-150%);
+    }
+
+    .skip-link:focus { transform: translateY(0); }
+
+    .shell {
+      width: min(1480px, 100%);
+      margin: 0 auto;
+      padding: 24px clamp(16px, 3vw, 42px) 48px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 22px;
+      padding: 5px 0 24px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      flex: 0 0 auto;
+      border: 1px solid rgba(185, 242, 39, .48);
+      border-radius: 11px;
+      color: var(--lime);
+      background: linear-gradient(145deg, rgba(185, 242, 39, .14), rgba(185, 242, 39, .025));
+      box-shadow: inset 0 0 20px rgba(185, 242, 39, .035);
+      font-weight: 900;
+      font-size: 20px;
+      letter-spacing: -.08em;
+    }
+
+    .eyebrow {
+      margin: 0 0 3px;
+      color: var(--lime);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .18em;
+      line-height: 1.2;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(20px, 2.4vw, 30px);
+      letter-spacing: -.035em;
+      line-height: 1.1;
+    }
+
+    .top-status {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: max-content;
+    }
+
+    .status-copy { text-align: right; }
+
+    .status-primary {
+      display: block;
+      font-size: 13px;
+      font-weight: 780;
+      letter-spacing: .01em;
+    }
+
+    .status-secondary {
+      display: block;
+      max-width: 300px;
+      margin-top: 2px;
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 11px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .status-beacon {
+      position: relative;
+      width: 11px;
+      height: 11px;
+      flex: 0 0 auto;
+      border: 2px solid currentColor;
+      border-radius: 50%;
+      color: var(--subtle);
+      background: currentColor;
+    }
+
+    body[data-view-state="live"] .status-beacon {
+      color: var(--lime);
+      box-shadow: 0 0 0 5px rgba(185, 242, 39, .08), 0 0 18px rgba(185, 242, 39, .35);
+    }
+
+    body[data-view-state="stale"] .status-beacon,
+    body[data-view-state="historical"] .status-beacon { color: var(--amber); }
+
+    body[data-view-state="error"] .status-beacon { color: var(--red); }
+
+    .session-bar {
+      display: grid;
+      grid-template-columns: minmax(220px, 420px) minmax(0, 1fr);
+      gap: 16px;
+      align-items: end;
+      margin-bottom: 16px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: rgba(16, 21, 22, .88);
+      box-shadow: var(--shadow);
+    }
+
+    .field-label {
+      display: block;
+      margin-bottom: 7px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+
+    .select-wrap { position: relative; }
+
+    .select-wrap::after {
+      position: absolute;
+      right: 13px;
+      bottom: 14px;
+      width: 7px;
+      height: 7px;
+      border-right: 1.5px solid var(--muted);
+      border-bottom: 1.5px solid var(--muted);
+      content: "";
+      pointer-events: none;
+      transform: rotate(45deg);
+    }
+
+    select, .search-input {
+      width: 100%;
+      min-height: 43px;
+      border: 1px solid var(--border-bright);
+      border-radius: 9px;
+      color: var(--text);
+      background: #0b0f10;
+      transition: border-color .15s ease, background .15s ease;
+    }
+
+    select {
+      padding: 0 38px 0 12px;
+      appearance: none;
+      cursor: pointer;
+    }
+
+    select:hover, .search-input:hover { border-color: #526167; }
+
+    .session-facts {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 20px;
+      min-width: 0;
+      min-height: 43px;
+    }
+
+    .fact {
+      position: relative;
+      min-width: 0;
+    }
+
+    .fact + .fact::before {
+      position: absolute;
+      top: 4px;
+      bottom: 4px;
+      left: -11px;
+      width: 1px;
+      background: var(--border);
+      content: "";
+    }
+
+    .fact-value {
+      display: block;
+      overflow: hidden;
+      font-size: 13px;
+      font-weight: 730;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .fact-label {
+      display: block;
+      margin-top: 3px;
+      color: var(--subtle);
+      font-size: 10px;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .state-banner {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 16px;
+      padding: 11px 13px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--muted);
+      background: var(--surface);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .state-banner::before {
+      flex: 0 0 auto;
+      color: var(--amber);
+      content: "●";
+      font-size: 8px;
+      line-height: 1.9;
+    }
+
+    body[data-view-state="error"] .state-banner {
+      border-color: rgba(255, 140, 131, .25);
+      background: var(--red-soft);
+    }
+
+    body[data-view-state="error"] .state-banner::before { color: var(--red); }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .metric-card {
+      position: relative;
+      min-height: 138px;
+      overflow: hidden;
+      padding: 17px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: linear-gradient(160deg, rgba(21, 27, 29, .98), rgba(13, 18, 19, .98));
+      box-shadow: 0 12px 35px rgba(0, 0, 0, .16);
+    }
+
+    .metric-card::after {
+      position: absolute;
+      right: -26px;
+      bottom: -42px;
+      width: 104px;
+      height: 104px;
+      border: 1px solid rgba(85, 217, 237, .08);
+      border-radius: 50%;
+      content: "";
+    }
+
+    .metric-card.accent-lime::after { border-color: rgba(185, 242, 39, .1); }
+
+    .metric-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .105em;
+      text-transform: uppercase;
+    }
+
+    .metric-glyph {
+      width: 7px;
+      height: 7px;
+      border: 1px solid var(--cyan);
+      border-radius: 2px;
+      transform: rotate(45deg);
+    }
+
+    .accent-lime .metric-glyph { border-color: var(--lime); }
+
+    .metric-reading {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      margin-top: 18px;
+      min-width: 0;
+    }
+
+    .metric-value {
+      min-width: 0;
+      font-size: clamp(27px, 2.55vw, 40px);
+      font-weight: 760;
+      letter-spacing: -.055em;
+      line-height: .95;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric-unit {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .metric-detail {
+      position: absolute;
+      right: 17px;
+      bottom: 15px;
+      left: 17px;
+      overflow: hidden;
+      color: var(--subtle);
+      font-size: 10px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .metric-card[data-signal-state="missing"] .metric-value,
+    .metric-card[data-signal-state="offline"] .metric-value { color: var(--muted); }
+
+    .metric-card[data-signal-state="stale"] { border-color: rgba(255, 203, 102, .28); }
+
+    .metric-card[data-signal-state="invalid"] { border-style: dashed; }
+
+    .middle-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.7fr) minmax(290px, .78fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .panel {
+      min-width: 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: rgba(16, 21, 22, .94);
+      box-shadow: var(--shadow);
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 17px 18px 0;
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 14px;
+      letter-spacing: -.01em;
+    }
+
+    .panel-subtitle {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    .chart-tabs {
+      display: inline-flex;
+      flex: 0 0 auto;
+      gap: 3px;
+      padding: 3px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--surface-soft);
+    }
+
+    .chart-tab {
+      min-height: 31px;
+      padding: 0 11px;
+      border: 0;
+      border-radius: 6px;
+      color: var(--muted);
+      background: transparent;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .04em;
+      cursor: pointer;
+    }
+
+    .chart-tab[aria-selected="true"] {
+      color: var(--text);
+      background: #222a2d;
+      box-shadow: 0 2px 7px rgba(0, 0, 0, .25);
+    }
+
+    .chart-panel { display: flex; flex-direction: column; }
+
+    .chart-wrap {
+      position: relative;
+      height: 300px;
+      min-height: 230px;
+      flex: 1;
+      margin: 9px 8px 8px;
+    }
+
+    #history-chart {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .chart-empty {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 30px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    .trip-panel { padding-bottom: 6px; }
+
+    .trip-list {
+      margin: 14px 18px 9px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .trip-item {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 13px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .trip-name {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .trip-number {
+      text-align: right;
+      font-size: 14px;
+      font-weight: 760;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .trip-number small {
+      display: block;
+      margin-top: 2px;
+      color: var(--subtle);
+      font-size: 9px;
+      font-weight: 600;
+    }
+
+    .energy-budget {
+      margin: 5px 18px 12px;
+      padding-top: 13px;
+      border-top: 1px solid var(--border);
+    }
+
+    .budget-title {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .budget-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .budget-item {
+      min-width: 0;
+      padding: 9px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-soft);
+    }
+
+    .budget-value {
+      display: block;
+      overflow: hidden;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 750;
+      font-variant-numeric: tabular-nums;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .budget-label {
+      display: block;
+      margin-top: 3px;
+      color: var(--subtle);
+      font-size: 10px;
+      line-height: 1.25;
+    }
+
+    #budget-observed-item { grid-column: 1 / -1; }
+
+    .notes-panel { margin-bottom: 16px; }
+
+    .notes-head { padding-bottom: 14px; }
+
+    .notes-count {
+      flex: 0 0 auto;
+      padding: 4px 7px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+    }
+
+    .notes-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 0;
+      padding: 0 18px 18px;
+      list-style: none;
+    }
+
+    .note {
+      min-width: 0;
+      padding: 12px 13px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--surface-soft);
+    }
+
+    .note[data-level="notice"] { border-color: rgba(255, 203, 102, .25); }
+
+    .note-title {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 11px;
+      font-weight: 760;
+    }
+
+    .note-detail {
+      margin: 0;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.5;
+    }
+
+    .notes-more {
+      margin: -7px 18px 18px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--surface-soft);
+    }
+
+    .notes-more summary {
+      padding: 11px 13px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 760;
+      cursor: pointer;
+    }
+
+    .notes-more[open] summary { border-bottom: 1px solid var(--border); }
+
+    .notes-more-list {
+      grid-template-columns: 1fr;
+      max-height: 390px;
+      margin-top: 12px;
+      padding-bottom: 12px;
+      overflow-y: auto;
+    }
+
+    .signals-panel { overflow: hidden; }
+
+    .signals-header {
+      align-items: end;
+      padding-bottom: 15px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .search-block { width: min(360px, 46%); }
+
+    .search-input {
+      min-height: 39px;
+      padding: 0 12px 0 36px;
+      background-image:
+        linear-gradient(45deg, transparent 46%, var(--subtle) 47%, var(--subtle) 53%, transparent 54%),
+        linear-gradient(135deg, transparent 46%, var(--subtle) 47%, var(--subtle) 53%, transparent 54%);
+      background-position: 16px 21px, 20px 21px;
+      background-repeat: no-repeat;
+      background-size: 7px 7px, 7px 7px;
+    }
+
+    .table-scroll { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    th {
+      padding: 10px 12px;
+      color: var(--subtle);
+      background: #0d1112;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .09em;
+      text-align: left;
+      text-transform: uppercase;
+    }
+
+    td {
+      padding: 12px;
+      border-top: 1px solid rgba(39, 48, 52, .72);
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.4;
+      vertical-align: middle;
+    }
+
+    tbody tr:hover { background: rgba(255, 255, 255, .018); }
+
+    .col-signal { width: 21%; }
+    .col-value { width: 14%; }
+    .col-status { width: 14%; }
+    .col-source { width: 23%; }
+    .col-id { width: 10%; }
+    .col-confidence { width: 18%; }
+
+    .signal-name {
+      display: block;
+      color: var(--text);
+      font-weight: 720;
+    }
+
+    .signal-key {
+      display: block;
+      margin-top: 2px;
+      color: var(--subtle);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 9px;
+    }
+
+    .signal-reading {
+      color: var(--text);
+      font-weight: 720;
+      font-variant-numeric: tabular-nums;
+      overflow-wrap: anywhere;
+    }
+
+    .signal-unit { color: var(--subtle); }
+
+    .state-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 100%;
+      font-size: 10px;
+      font-weight: 760;
+    }
+
+    .state-chip::before {
+      width: 6px;
+      height: 6px;
+      flex: 0 0 auto;
+      border: 1px solid currentColor;
+      border-radius: 50%;
+      content: "";
+    }
+
+    .state-chip[data-state="fresh"] { color: var(--lime); }
+    .state-chip[data-state="recorded"] { color: var(--cyan); }
+    .state-chip[data-state="stale"] { color: var(--amber); }
+    .state-chip[data-state="invalid"],
+    .state-chip[data-state="offline"] { color: var(--red); }
+    .state-chip[data-state="missing"] { color: var(--subtle); }
+    .state-chip[data-state="missing"]::before { border-radius: 1px; }
+
+    .age-copy {
+      display: block;
+      margin-top: 3px;
+      color: var(--subtle);
+      font-size: 9px;
+    }
+
+    .identifier {
+      display: inline-block;
+      padding: 3px 6px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: #b9c4c7;
+      background: var(--surface-soft);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 9px;
+      overflow-wrap: anywhere;
+    }
+
+    .confidence {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .confidence-meter {
+      display: grid;
+      grid-template-columns: repeat(4, 6px);
+      gap: 3px;
+      flex: 0 0 auto;
+    }
+
+    .confidence-meter i {
+      height: 10px;
+      border: 1px solid #3c474a;
+      border-radius: 2px;
+      background: transparent;
+    }
+
+    .confidence-meter i[data-filled="true"] {
+      border-color: rgba(85, 217, 237, .5);
+      background: rgba(85, 217, 237, .56);
+    }
+
+    .confidence-copy { min-width: 0; }
+
+    .confidence-label {
+      display: block;
+      overflow: hidden;
+      color: #c5cfd1;
+      font-size: 10px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .confidence-score {
+      display: block;
+      margin-top: 2px;
+      color: var(--subtle);
+      font-size: 9px;
+    }
+
+    .table-empty {
+      padding: 34px 20px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .signals-footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 11px 13px;
+      border-top: 1px solid var(--border);
+      color: var(--subtle);
+      background: #0d1112;
+      font-size: 9px;
+      line-height: 1.45;
+    }
+
+    .noscript {
+      margin: 24px;
+      padding: 14px;
+      border: 1px solid var(--red);
+      border-radius: 10px;
+      color: var(--text);
+      background: var(--red-soft);
+    }
+
+    .sr-only {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      margin: -1px !important;
+      overflow: hidden !important;
+      clip: rect(0, 0, 0, 0) !important;
+      white-space: nowrap !important;
+      border: 0 !important;
+    }
+
+    body[data-view-state="loading"] .metric-value { color: var(--muted); }
+
+    body[data-view-state="error"] .metric-card,
+    body[data-view-state="error"] .chart-panel,
+    body[data-view-state="error"] .trip-panel { opacity: .78; }
+
+    @media (max-width: 1120px) {
+      .metrics-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .metric-card { min-height: 128px; }
+    }
+
+    @media (max-width: 780px) {
+      .shell { padding-top: 15px; }
+      .topbar { align-items: flex-start; padding-bottom: 18px; }
+      .status-secondary { max-width: 160px; }
+      .session-bar { grid-template-columns: 1fr; }
+      .session-facts { justify-content: flex-start; overflow: hidden; }
+      .middle-grid { grid-template-columns: 1fr; }
+      .chart-wrap { height: 260px; }
+      .notes-list { grid-template-columns: 1fr; }
+      .signals-header { align-items: stretch; flex-direction: column; }
+      .search-block { width: 100%; }
+      .table-scroll { overflow: visible; }
+      table, tbody, tr, td { display: block; width: 100%; }
+      thead { display: none; }
+      tbody { padding: 0 13px 6px; }
+      tbody tr {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0 16px;
+        margin: 10px 0;
+        padding: 4px 0;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        background: var(--surface-soft);
+      }
+      td {
+        min-width: 0;
+        padding: 10px 11px;
+        border-top: 1px solid rgba(39, 48, 52, .58);
+      }
+      td::before {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--subtle);
+        content: attr(data-label);
+        font-size: 8px;
+        font-weight: 800;
+        letter-spacing: .09em;
+        text-transform: uppercase;
+      }
+      td:first-child, td:nth-child(2) { border-top: 0; }
+      .confidence-label { white-space: normal; }
+    }
+
+    @media (max-width: 560px) {
+      .shell { padding-inline: 12px; }
+      .brand-mark { width: 38px; height: 38px; }
+      .top-status { gap: 8px; }
+      .status-secondary { max-width: 118px; }
+      .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+      .metric-card { min-height: 122px; padding: 14px; }
+      .metric-value { font-size: 29px; }
+      .metric-detail { right: 14px; bottom: 13px; left: 14px; }
+      .session-facts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 20px; }
+      .fact + .fact::before { display: none; }
+      .panel-header { padding-inline: 14px; }
+      .chart-wrap { height: 230px; }
+      .signals-footer { flex-direction: column; }
+    }
+
+    @media (max-width: 380px) {
+      .topbar { flex-wrap: wrap; }
+      .top-status { width: 100%; justify-content: flex-start; }
+      .status-copy { text-align: left; }
+      .status-secondary { max-width: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body data-view-state="loading">
+  <a class="skip-link" href="#main-content">Skip to telemetry</a>
+  <noscript><p class="noscript">JavaScript is required to read the local telemetry API.</p></noscript>
+
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">H</div>
+        <div>
+          <p class="eyebrow">EV data console</p>
+          <h1>Hummer EV Telemetry</h1>
+        </div>
+      </div>
+      <div class="top-status" role="status" aria-live="polite" aria-atomic="true">
+        <div class="status-copy">
+          <span class="status-primary" id="status-primary">Loading telemetry</span>
+          <span class="status-secondary" id="status-secondary">Connecting to the local reader</span>
+        </div>
+        <span class="status-beacon" aria-hidden="true"></span>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="session-bar" aria-labelledby="session-label">
+        <div class="select-wrap">
+          <label class="field-label" id="session-label" for="session-select">Telemetry session</label>
+          <select id="session-select" aria-describedby="session-help">
+            <option value="latest">Latest session</option>
+          </select>
+          <span class="sr-only" id="session-help">Choose the latest data or a recorded session.</span>
+        </div>
+        <div class="session-facts" aria-label="Session details">
+          <div class="fact">
+            <span class="fact-value" id="session-name">—</span>
+            <span class="fact-label">Session</span>
+          </div>
+          <div class="fact">
+            <span class="fact-value" id="session-duration">—</span>
+            <span class="fact-label">Duration</span>
+          </div>
+          <div class="fact">
+            <span class="fact-value" id="session-samples">—</span>
+            <span class="fact-label">Samples</span>
+          </div>
+          <div class="fact">
+            <span class="fact-value" id="session-period">—</span>
+            <span class="fact-label">Avg interval</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="state-banner" id="state-banner" role="status" aria-live="polite">Loading the latest local session…</div>
+
+      <section class="metrics-grid" aria-label="Current telemetry">
+        <article class="metric-card" id="metric-pack-v" data-signal-state="missing">
+          <div class="metric-label"><span>Pack voltage</span><span class="metric-glyph" aria-hidden="true"></span></div>
+          <div class="metric-reading"><span class="metric-value">—</span><span class="metric-unit">V</span></div>
+          <div class="metric-detail">Waiting for a reading</div>
+        </article>
+        <article class="metric-card accent-lime" id="metric-soc" data-signal-state="missing">
+          <div class="metric-label"><span>State of charge</span><span class="metric-glyph" aria-hidden="true"></span></div>
+          <div class="metric-reading"><span class="metric-value">—</span><span class="metric-unit">%</span></div>
+          <div class="metric-detail">Waiting for a reading</div>
+        </article>
+        <article class="metric-card" id="metric-energy" data-signal-state="missing">
+          <div class="metric-label"><span>Energy remaining</span><span class="metric-glyph" aria-hidden="true"></span></div>
+          <div class="metric-reading"><span class="metric-value">—</span><span class="metric-unit">kWh</span></div>
+          <div class="metric-detail">Waiting for a reading</div>
+        </article>
+        <article class="metric-card accent-lime" id="metric-cell-spread" data-signal-state="missing">
+          <div class="metric-label"><span>Cell spread</span><span class="metric-glyph" aria-hidden="true"></span></div>
+          <div class="metric-reading"><span class="metric-value">—</span><span class="metric-unit">mV</span></div>
+          <div class="metric-detail">Waiting for a reading</div>
+        </article>
+        <article class="metric-card" id="metric-speed" data-signal-state="missing">
+          <div class="metric-label"><span>Road speed</span><span class="metric-glyph" aria-hidden="true"></span></div>
+          <div class="metric-reading"><span class="metric-value">—</span><span class="metric-unit">mph</span></div>
+          <div class="metric-detail">Waiting for a reading</div>
+        </article>
+        <article class="metric-card accent-lime" id="metric-12v" data-signal-state="missing">
+          <div class="metric-label"><span>12 V rail</span><span class="metric-glyph" aria-hidden="true"></span></div>
+          <div class="metric-reading"><span class="metric-value">—</span><span class="metric-unit">V</span></div>
+          <div class="metric-detail">Waiting for a reading</div>
+        </article>
+      </section>
+
+      <div class="middle-grid">
+        <section class="panel chart-panel" aria-labelledby="chart-title">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title" id="chart-title">Session history</h2>
+              <p class="panel-subtitle" id="chart-subtitle">Pack power over elapsed time</p>
+            </div>
+            <div class="chart-tabs" role="tablist" aria-label="Chart metric">
+              <button class="chart-tab" id="tab-power" type="button" role="tab" aria-selected="true" aria-controls="history-chart">Power</button>
+              <button class="chart-tab" id="tab-soc" type="button" role="tab" aria-selected="false" aria-controls="history-chart">Charge</button>
+            </div>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="history-chart" role="img" aria-label="No history data available"></canvas>
+            <div class="chart-empty" id="chart-empty">Waiting for enough samples to draw a history.</div>
+            <p class="sr-only" id="chart-description" aria-live="polite">No history data available.</p>
+          </div>
+        </section>
+
+        <section class="panel trip-panel" aria-labelledby="trip-title">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title" id="trip-title">Trip energy</h2>
+              <p class="panel-subtitle" id="trip-subtitle">Measured over this recorded session</p>
+            </div>
+          </div>
+          <ul class="trip-list">
+            <li class="trip-item"><span class="trip-name" id="trip-distance-label">Session distance</span><span class="trip-number" id="trip-distance">—</span></li>
+            <li class="trip-item"><span class="trip-name" id="trip-efficiency-label">Efficiency while moving</span><span class="trip-number" id="trip-efficiency">—</span></li>
+            <li class="trip-item"><span class="trip-name" id="trip-drawn-label">Energy drawn</span><span class="trip-number" id="trip-drawn">—</span></li>
+            <li class="trip-item"><span class="trip-name" id="trip-regen-label">Energy recovered</span><span class="trip-number" id="trip-regen">—</span></li>
+            <li class="trip-item"><span class="trip-name" id="trip-regen-pct-label">Regen share</span><span class="trip-number" id="trip-regen-pct">—</span></li>
+          </ul>
+          <div class="energy-budget" id="energy-budget" hidden>
+            <h3 class="budget-title">Where energy went</h3>
+            <div class="budget-grid">
+              <div class="budget-item" id="budget-moving-item">
+                <span class="budget-value" id="budget-moving">—</span>
+                <span class="budget-label">Draw while moving</span>
+              </div>
+              <div class="budget-item" id="budget-moving-regen-item">
+                <span class="budget-value" id="budget-moving-regen">—</span>
+                <span class="budget-label">Regen while moving</span>
+              </div>
+              <div class="budget-item" id="budget-stationary-item">
+                <span class="budget-value" id="budget-stationary">—</span>
+                <span class="budget-label" id="budget-stationary-label">Draw while stationary</span>
+              </div>
+              <div class="budget-item">
+                <span class="budget-value" id="budget-stationary-in">—</span>
+                <span class="budget-label">Energy in while stationary</span>
+              </div>
+              <div class="budget-item" id="budget-observed-item">
+                <span class="budget-value" id="budget-observed">—</span>
+                <span class="budget-label" id="budget-observed-label">Observed intervals</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section class="panel notes-panel" id="notes-panel" aria-labelledby="notes-title" hidden>
+        <div class="panel-header notes-head">
+          <div>
+            <h2 class="panel-title" id="notes-title">Session observations</h2>
+            <p class="panel-subtitle">Capture and measurement context—not vehicle fault diagnoses</p>
+          </div>
+          <span class="notes-count" id="notes-count">0 notes</span>
+        </div>
+        <ul class="notes-list" id="notes-list"></ul>
+        <details class="notes-more" id="notes-more" hidden>
+          <summary id="notes-more-summary">Show more notes</summary>
+          <ul class="notes-list notes-more-list" id="notes-more-list"></ul>
+        </details>
+      </section>
+
+      <section class="panel signals-panel" aria-labelledby="signals-title">
+        <div class="panel-header signals-header">
+          <div>
+            <h2 class="panel-title" id="signals-title">Signal inventory</h2>
+            <p class="panel-subtitle" id="signal-summary">No signals loaded</p>
+          </div>
+          <div class="search-block">
+            <label class="field-label" for="signal-search">Search signals</label>
+            <input class="search-input" id="signal-search" type="search" placeholder="Label, source, identifier…" autocomplete="off">
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <caption class="sr-only">Telemetry readings with freshness, provenance, identifier, and confidence</caption>
+            <thead>
+              <tr>
+                <th class="col-signal" scope="col">Signal</th>
+                <th class="col-value" scope="col">Reading</th>
+                <th class="col-status" scope="col">Age status</th>
+                <th class="col-source" scope="col">Source</th>
+                <th class="col-id" scope="col">Identifier</th>
+                <th class="col-confidence" scope="col">Confidence</th>
+              </tr>
+            </thead>
+            <tbody id="signals-body"></tbody>
+          </table>
+          <div class="table-empty" id="signals-empty">Waiting for signal data.</div>
+        </div>
+        <footer class="signals-footer">
+          <span id="signals-result-count" aria-live="polite">0 signals</span>
+          <span>Read-only display · Confidence describes signal evidence, not vehicle condition</span>
+        </footer>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const POLL_MS = 5000;
+      const REQUEST_TIMEOUT_MS = 4500;
+      const MAX_HISTORY_POINTS = 600;
+      const KM_PER_MILE = 1.609344;
+
+      const byId = (id) => document.getElementById(id);
+      const elements = {
+        sessionSelect: byId("session-select"),
+        sessionName: byId("session-name"),
+        sessionDuration: byId("session-duration"),
+        sessionSamples: byId("session-samples"),
+        sessionPeriod: byId("session-period"),
+        statusPrimary: byId("status-primary"),
+        statusSecondary: byId("status-secondary"),
+        stateBanner: byId("state-banner"),
+        chart: byId("history-chart"),
+        chartEmpty: byId("chart-empty"),
+        chartSubtitle: byId("chart-subtitle"),
+        chartDescription: byId("chart-description"),
+        tabPower: byId("tab-power"),
+        tabSoc: byId("tab-soc"),
+        tripTitle: byId("trip-title"),
+        tripSubtitle: byId("trip-subtitle"),
+        energyBudget: byId("energy-budget"),
+        notesPanel: byId("notes-panel"),
+        notesCount: byId("notes-count"),
+        notesList: byId("notes-list"),
+        notesMore: byId("notes-more"),
+        notesMoreSummary: byId("notes-more-summary"),
+        notesMoreList: byId("notes-more-list"),
+        search: byId("signal-search"),
+        signalSummary: byId("signal-summary"),
+        signalsBody: byId("signals-body"),
+        signalsEmpty: byId("signals-empty"),
+        signalsResultCount: byId("signals-result-count")
+      };
+
+      const state = {
+        selected: "latest",
+        sessions: [],
+        latest: null,
+        snapshot: null,
+        network: "loading",
+        errorMessage: "",
+        lastSuccessAt: null,
+        chartMetric: "power",
+        search: "",
+        refreshing: false,
+        refreshQueued: false,
+        generation: 0,
+        timer: null
+      };
+
+      function isNumber(value) {
+        return typeof value === "number" && Number.isFinite(value);
+      }
+
+      function numeric(value) {
+        if (isNumber(value)) return value;
+        if (typeof value !== "string") return null;
+        const clean = value.trim().replace(/[^0-9eE+.-]+$/, "");
+        if (!clean) return null;
+        const parsed = Number(clean);
+        return Number.isFinite(parsed) ? parsed : null;
+      }
+
+      function valueOr(...values) {
+        for (const value of values) {
+          if (value !== null && value !== undefined && value !== "") return value;
+        }
+        return null;
+      }
+
+      function formatNumber(value, digits = 1) {
+        const number = numeric(value);
+        if (number === null) return "—";
+        return number.toLocaleString(undefined, {
+          minimumFractionDigits: digits,
+          maximumFractionDigits: digits
+        });
+      }
+
+      function formatCompactNumber(value) {
+        const number = numeric(value);
+        if (number === null) return "—";
+        return number.toLocaleString(undefined, { maximumFractionDigits: 0 });
+      }
+
+      function formatDuration(seconds) {
+        const value = numeric(seconds);
+        if (value === null || value < 0) return "—";
+        const total = Math.round(value);
+        const hours = Math.floor(total / 3600);
+        const minutes = Math.floor((total % 3600) / 60);
+        const secs = total % 60;
+        if (hours) return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+        if (minutes) return `${minutes}m ${String(secs).padStart(2, "0")}s`;
+        return `${secs}s`;
+      }
+
+      function formatAge(seconds, short = false) {
+        const value = numeric(seconds);
+        if (value === null || value < 0) return "age unavailable";
+        if (value < 1) return short ? "now" : "updated now";
+        if (value < 60) return `${Math.round(value)}s${short ? "" : " ago"}`;
+        if (value < 3600) {
+          const minutes = Math.floor(value / 60);
+          const secs = Math.round(value % 60);
+          return short ? `${minutes}m ${secs}s` : `${minutes}m ${secs}s ago`;
+        }
+        const hours = Math.floor(value / 3600);
+        const minutes = Math.floor((value % 3600) / 60);
+        return short ? `${hours}h ${minutes}m` : `${hours}h ${minutes}m ago`;
+      }
+
+      function parseDate(value) {
+        if (!value) return null;
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? null : date;
+      }
+
+      function formatDate(value, includeDate = false) {
+        const date = parseDate(value);
+        if (!date) return "time unavailable";
+        const options = includeDate
+          ? { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }
+          : { hour: "numeric", minute: "2-digit", second: "2-digit" };
+        return date.toLocaleString(undefined, options);
+      }
+
+      function friendlySessionName(id) {
+        if (!id) return "No session";
+        return String(id).replace(/\.csv$/i, "");
+      }
+
+      function sessionOptionLabel(session) {
+        const stamp = session.start_utc || session.modified_utc;
+        const date = parseDate(stamp);
+        const dateText = date
+          ? date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+          : friendlySessionName(session.id);
+        const rows = numeric(session.rows);
+        return rows === null ? dateText : `${dateText} · ${formatCompactNumber(rows)} samples`;
+      }
+
+      function effectiveViewState() {
+        if (state.network === "error") return "error";
+        if (state.network === "loading" && !state.snapshot) return "loading";
+        const session = state.snapshot && state.snapshot.session;
+        if (!session || !session.id || session.status === "empty") return "empty";
+        if (state.selected !== "latest" || session.status === "historical") return "historical";
+        if (session.status === "live") return "live";
+        return "stale";
+      }
+
+      function signalStatus(signal, viewState) {
+        const raw = signal && signal.status ? String(signal.status) : "missing";
+        if (raw === "missing" || raw === "invalid") return raw;
+        if (viewState === "error") return "offline";
+        if (viewState === "historical") return raw === "fresh" ? "recorded" : raw;
+        if (viewState === "stale") return "stale";
+        return raw === "fresh" || raw === "stale" ? raw : "missing";
+      }
+
+      function signalStateLabel(status) {
+        return {
+          fresh: "Fresh",
+          recorded: "Recorded",
+          stale: "Stale",
+          missing: "Missing",
+          invalid: "Invalid reading",
+          offline: "Refresh unavailable"
+        }[status] || "Unavailable";
+      }
+
+      function signalAgeLabel(signal, viewState) {
+        const age = signal ? signal.age_s : null;
+        if (viewState === "historical") {
+          const number = numeric(age);
+          return number === null || number < 1 ? "At session end" : `${formatAge(number, true)} before end`;
+        }
+        if (viewState === "error") {
+          return numeric(age) === null ? "Last known reading" : `Last known · ${formatAge(age)}`;
+        }
+        return formatAge(age);
+      }
+
+      function updateSessionOptions(payload) {
+        const sessions = Array.isArray(payload && payload.sessions) ? payload.sessions : [];
+        state.sessions = sessions.filter((item) => item && typeof item.id === "string");
+        state.latest = payload && typeof payload.latest === "string" ? payload.latest : null;
+
+        const options = [];
+        const latestOption = document.createElement("option");
+        latestOption.value = "latest";
+        latestOption.textContent = state.latest ? `Latest session · ${friendlySessionName(state.latest)}` : "Latest session";
+        options.push(latestOption);
+
+        const sorted = [...state.sessions].sort((a, b) => {
+          const aTime = parseDate(a.modified_utc || a.start_utc);
+          const bTime = parseDate(b.modified_utc || b.start_utc);
+          return (bTime ? bTime.getTime() : 0) - (aTime ? aTime.getTime() : 0);
+        });
+        for (const session of sorted) {
+          const option = document.createElement("option");
+          option.value = session.id;
+          option.textContent = sessionOptionLabel(session);
+          options.push(option);
+        }
+        elements.sessionSelect.replaceChildren(...options);
+
+        const selectionExists = state.selected === "latest" || state.sessions.some((item) => item.id === state.selected);
+        if (!selectionExists) state.selected = "latest";
+        elements.sessionSelect.value = state.selected;
+      }
+
+      function statusCopy(viewState, session) {
+        const sampleTime = session && session.newest_utc;
+        const age = session && session.age_s;
+        if (viewState === "live") {
+          return ["Live telemetry", `${formatAge(age)} · ${formatDate(sampleTime)}`];
+        }
+        if (viewState === "historical") {
+          return ["Recorded session", `Ended ${formatDate(sampleTime, true)}`];
+        }
+        if (viewState === "stale") {
+          return ["Telemetry stale", `Last vehicle sample ${formatAge(age)}`];
+        }
+        if (viewState === "error") {
+          const lastRefresh = state.lastSuccessAt ? formatDate(state.lastSuccessAt.toISOString()) : "not yet available";
+          return ["Refresh unavailable", `Last successful refresh ${lastRefresh}`];
+        }
+        if (viewState === "empty") return ["No session data", "Waiting for a recorded sample"];
+        return ["Loading telemetry", "Connecting to the local reader"];
+      }
+
+      function bannerCopy(viewState, session) {
+        if (viewState === "historical") {
+          return "Recorded session selected. Values are the last available readings in that session and are not live vehicle data.";
+        }
+        if (viewState === "stale") {
+          return `The latest session is not updating. Its newest vehicle sample is ${formatAge(session && session.age_s)}.`;
+        }
+        if (viewState === "error") {
+          const suffix = state.snapshot
+            ? " Last-known values remain visible below and are marked unavailable."
+            : " No last-known snapshot is available.";
+          return `The local telemetry reader could not be refreshed.${suffix}`;
+        }
+        if (viewState === "empty") {
+          return "No telemetry rows are available yet. Start a recording session, then this page will populate automatically.";
+        }
+        if (viewState === "loading") return "Loading the latest local session…";
+        return "";
+      }
+
+      function renderHeader(viewState, session) {
+        document.body.dataset.viewState = viewState;
+        const copy = statusCopy(viewState, session);
+        elements.statusPrimary.textContent = copy[0];
+        elements.statusSecondary.textContent = copy[1];
+        const banner = bannerCopy(viewState, session);
+        elements.stateBanner.hidden = !banner;
+        elements.stateBanner.textContent = banner;
+
+        elements.sessionName.textContent = friendlySessionName(session && session.id);
+        elements.sessionName.title = session && session.id ? String(session.id) : "";
+        elements.sessionDuration.textContent = formatDuration(session && session.elapsed_s);
+        elements.sessionSamples.textContent = formatCompactNumber(session && session.rows);
+        elements.sessionPeriod.textContent = numeric(session && session.period_s) === null
+          ? "—"
+          : `${formatNumber(session.period_s, 1)}s`;
+      }
+
+      function getSignal(...names) {
+        const signals = state.snapshot && state.snapshot.signals;
+        if (!signals) return null;
+        for (const name of names) {
+          if (signals[name]) return signals[name];
+        }
+        return null;
+      }
+
+      function derivedValue(...names) {
+        const derived = state.snapshot && state.snapshot.derived;
+        if (!derived) return null;
+        for (const name of names) {
+          if (derived[name] !== null && derived[name] !== undefined) return derived[name];
+        }
+        return null;
+      }
+
+      function derivedTileValue(names, signal) {
+        const derived = state.snapshot && state.snapshot.derived;
+        if (derived && typeof derived === "object") {
+          let contracted = false;
+          for (const name of names) {
+            if (!Object.hasOwn(derived, name)) continue;
+            contracted = true;
+            if (derived[name] !== null && derived[name] !== undefined) return derived[name];
+          }
+          if (contracted) return null;
+        }
+        return signal ? signal.value : null;
+      }
+
+      function setMetric(id, value, unit, digits, signal, viewState, transform = null) {
+        const card = byId(id);
+        let number = numeric(value);
+        if (number !== null && transform) number = transform(number);
+        const status = signalStatus(signal, viewState);
+        card.dataset.signalState = number === null ? "missing" : status;
+        card.querySelector(".metric-value").textContent = number === null ? "—" : formatNumber(number, digits);
+        card.querySelector(".metric-unit").textContent = unit;
+        card.querySelector(".metric-detail").textContent = number === null
+          ? "No reading in this session"
+          : `${signalStateLabel(status)} · ${signalAgeLabel(signal, viewState)}`;
+      }
+
+      function renderMetrics(viewState) {
+        const packSignal = getSignal("pack_v");
+        const socSignal = getSignal("soc_pct");
+        const energySignal = getSignal("energy_kwh");
+        const spreadSignal = getSignal("cell_spread_mv");
+        const speedSignal = getSignal("speed_kph", "wheel_fl_kph");
+        const railSignal = getSignal("volts", "module_voltage", "dmc2_v");
+
+        setMetric("metric-pack-v", derivedTileValue(["pack_v"], packSignal), "V", 1, packSignal, viewState);
+        setMetric("metric-soc", derivedTileValue(["soc_pct"], socSignal), "%", 1, socSignal, viewState);
+        setMetric("metric-energy", derivedTileValue(["energy_kwh"], energySignal), "kWh", 1, energySignal, viewState);
+        setMetric("metric-cell-spread", derivedTileValue(["cell_spread_mv"], spreadSignal), "mV", 1, spreadSignal, viewState);
+        setMetric("metric-speed", derivedTileValue(["speed_now_kph"], speedSignal), "mph", 0, speedSignal, viewState, (kph) => kph / KM_PER_MILE);
+        setMetric(
+          "metric-12v",
+          derivedTileValue(["volts_adapter", "volts_module", "volts_dmc2"], railSignal),
+          "V",
+          1,
+          railSignal,
+          viewState
+        );
+      }
+
+      function appendSmall(parent, text) {
+        if (!text) return;
+        const small = document.createElement("small");
+        small.textContent = text;
+        parent.appendChild(small);
+      }
+
+      function setTripValue(id, primary, secondary = "") {
+        const element = byId(id);
+        element.textContent = primary;
+        appendSmall(element, secondary);
+      }
+
+      function reportValue(section, key) {
+        const report = state.snapshot && state.snapshot.report;
+        return report && report[section] ? report[section][key] : null;
+      }
+
+      function renderTrip() {
+        const report = state.snapshot && state.snapshot.report;
+        const budget = state.snapshot && state.snapshot.energy_budget && typeof state.snapshot.energy_budget === "object"
+          ? state.snapshot.energy_budget
+          : null;
+        const charge = report && report.charge ? report.charge : null;
+        const charging = Boolean(charge);
+        elements.tripTitle.textContent = charging ? "Charge energy" : "Trip energy";
+        elements.tripSubtitle.textContent = charging
+          ? "Measured over this recorded charge session"
+          : "Measured over this recorded session";
+
+        const distanceKm = valueOr(
+          derivedValue("drive_km"),
+          reportValue("motion", "distance_used_mi") !== null ? numeric(reportValue("motion", "distance_used_mi")) * KM_PER_MILE : null,
+          derivedValue("distance_km")
+        );
+        const efficiency = derivedValue("mi_per_kwh");
+        const consumption = derivedValue("kwh_per_100km");
+        const drawn = budget ? numeric(budget.moving_drawn_kwh) : derivedValue("kwh_drawn");
+        const regen = budget ? numeric(budget.moving_regen_kwh) : derivedValue("kwh_regen");
+        const regenPct = budget
+          ? (drawn !== null && drawn > 0 && regen !== null ? regen / drawn * 100 : null)
+          : derivedValue("regen_pct");
+
+        setTripValue(
+          "trip-distance",
+          numeric(distanceKm) === null ? "—" : `${formatNumber(numeric(distanceKm) / KM_PER_MILE, 2)} mi`,
+          numeric(distanceKm) === null ? "" : `${formatNumber(distanceKm, 2)} km`
+        );
+        setTripValue(
+          "trip-efficiency",
+          numeric(efficiency) === null ? "—" : `${formatNumber(efficiency, 2)} mi/kWh`,
+          numeric(consumption) === null ? "moving samples only" : `${formatNumber(consumption, 1)} kWh/100 km`
+        );
+        if (charging) {
+          const energyAdded = valueOr(charge.energy_added_kwh, budget && budget.stationary_energy_in_kwh);
+          const meanCharge = charge.mean_charge_kw_from_current;
+          const peakCharge = charge.peak_charge_kw_from_current;
+          const socGained = charge.soc_gained_pct;
+          const chargeDuration = valueOr(report.session && report.session.duration_hms, numeric(charge.duration_h) !== null ? formatDuration(numeric(charge.duration_h) * 3600) : null);
+          byId("trip-distance-label").textContent = "Charge duration";
+          byId("trip-efficiency-label").textContent = "Peak charge power";
+          byId("trip-drawn-label").textContent = "Energy into pack";
+          byId("trip-regen-label").textContent = "Mean charge power";
+          byId("trip-regen-pct-label").textContent = "Charge added";
+          setTripValue("trip-distance", chargeDuration || "—", "Recorded session span");
+          setTripValue("trip-efficiency", numeric(peakCharge) === null ? "—" : `${formatNumber(peakCharge, 1)} kW`, "From measured pack current");
+          setTripValue("trip-drawn", numeric(energyAdded) === null ? "—" : `${formatNumber(energyAdded, 2)} kWh`, "Change in recorded pack energy");
+          setTripValue("trip-regen", numeric(meanCharge) === null ? "—" : `${formatNumber(meanCharge, 1)} kW`, "From measured pack current");
+          setTripValue("trip-regen-pct", numeric(socGained) === null ? "—" : `${formatNumber(socGained, 1)}%`, "State-of-charge increase");
+        } else {
+          byId("trip-distance-label").textContent = "Session distance";
+          byId("trip-efficiency-label").textContent = "Efficiency while moving";
+          byId("trip-drawn-label").textContent = "Energy drawn";
+          byId("trip-regen-label").textContent = "Energy recovered";
+          byId("trip-regen-pct-label").textContent = "Regen share";
+          setTripValue("trip-drawn", numeric(drawn) === null ? "—" : `${formatNumber(drawn, 2)} kWh`, "Observed moving intervals");
+          setTripValue("trip-regen", numeric(regen) === null ? "—" : `${formatNumber(regen, 2)} kWh`, "Returned while moving");
+          setTripValue("trip-regen-pct", numeric(regenPct) === null ? "—" : `${formatNumber(regenPct, 1)}%`, "Recovered ÷ drawn");
+        }
+
+        renderEnergyBudget(budget, charging);
+      }
+
+      function renderEnergyBudget(budget, charging) {
+        if (!budget) {
+          elements.energyBudget.hidden = true;
+          return;
+        }
+        const movingDrawn = numeric(budget.moving_drawn_kwh);
+        const movingRegen = numeric(budget.moving_regen_kwh);
+        const stationaryDrawn = numeric(budget.stationary_drawn_kwh);
+        const stationaryIn = numeric(budget.stationary_energy_in_kwh);
+        const observed = numeric(budget.observed_s);
+        const moving = numeric(budget.moving_s);
+        const stationary = numeric(budget.stationary_s);
+        const skipped = numeric(budget.skipped_intervals);
+        const hasAny = [movingDrawn, movingRegen, stationaryDrawn, stationaryIn, observed].some((value) => value !== null);
+        elements.energyBudget.hidden = !hasAny;
+        if (!hasAny) return;
+
+        byId("budget-moving").textContent = movingDrawn === null ? "—" : `${formatNumber(movingDrawn, 2)} kWh`;
+        byId("budget-moving-regen").textContent = movingRegen === null ? "—" : `${formatNumber(movingRegen, 2)} kWh`;
+        byId("budget-stationary").textContent = stationaryDrawn === null ? "—" : `${formatNumber(stationaryDrawn, 2)} kWh`;
+        byId("budget-stationary-in").textContent = stationaryIn === null ? "—" : `${formatNumber(stationaryIn, 2)} kWh`;
+        byId("budget-stationary-label").textContent = "Draw while stationary";
+        byId("budget-observed").textContent = observed === null ? "—" : formatDuration(observed);
+        const shares = [];
+        if (moving !== null) shares.push(`${formatDuration(moving)} moving`);
+        if (stationary !== null) shares.push(`${formatDuration(stationary)} stationary`);
+        if (skipped !== null && skipped > 0) shares.push(`${formatCompactNumber(skipped)} skipped`);
+        byId("budget-observed-label").textContent = shares.length ? shares.join(" · ") : "Observed intervals";
+      }
+
+      function makeNote(title, detail, level) {
+        const item = document.createElement("li");
+        item.className = "note";
+        item.dataset.level = level === "notice" ? "notice" : "info";
+        const heading = document.createElement("span");
+        heading.className = "note-title";
+        heading.textContent = title;
+        const body = document.createElement("p");
+        body.className = "note-detail";
+        body.textContent = detail;
+        item.append(heading, body);
+        return item;
+      }
+
+      function renderNotes() {
+        const notes = [];
+        const insights = state.snapshot && Array.isArray(state.snapshot.insights) ? state.snapshot.insights : [];
+        const directWarnings = state.snapshot && Array.isArray(state.snapshot.warnings) ? state.snapshot.warnings : [];
+        const reportWarnings = state.snapshot && state.snapshot.report && Array.isArray(state.snapshot.report.warnings)
+          ? state.snapshot.report.warnings
+          : [];
+
+        for (const insight of insights) {
+          if (!insight || !insight.detail) continue;
+          notes.push({ title: insight.title || "Measured observation", detail: insight.detail, level: insight.level });
+        }
+        for (const warning of [...directWarnings, ...reportWarnings]) {
+          if (!warning || notes.some((note) => note.detail === String(warning))) continue;
+          notes.push({ title: "Data quality note", detail: String(warning), level: "notice" });
+        }
+
+        const previewCount = 3;
+        const preview = notes.slice(0, previewCount);
+        const remainder = notes.slice(previewCount);
+        elements.notesList.replaceChildren(...preview.map((note) => makeNote(note.title, note.detail, note.level)));
+        elements.notesMoreList.replaceChildren(...remainder.map((note) => makeNote(note.title, note.detail, note.level)));
+        elements.notesMore.hidden = remainder.length === 0;
+        elements.notesMoreSummary.textContent = `Show ${remainder.length} more ${remainder.length === 1 ? "note" : "notes"}`;
+        elements.notesCount.textContent = `${notes.length} ${notes.length === 1 ? "note" : "notes"}`;
+        elements.notesPanel.hidden = notes.length === 0;
+      }
+
+      function confidenceLevel(signal) {
+        const value = numeric(signal && signal.confidence);
+        if (value === null) return null;
+        return Math.max(0, Math.min(4, Math.round(value)));
+      }
+
+      function createTextCell(label, className = "") {
+        const cell = document.createElement("td");
+        cell.dataset.label = label;
+        if (className) cell.className = className;
+        return cell;
+      }
+
+      function makeSignalRow(key, signal, viewState) {
+        const row = document.createElement("tr");
+
+        const nameCell = createTextCell("Signal");
+        const label = document.createElement("span");
+        label.className = "signal-name";
+        label.textContent = signal.label || key;
+        const keyLabel = document.createElement("span");
+        keyLabel.className = "signal-key";
+        keyLabel.textContent = key;
+        nameCell.append(label, keyLabel);
+
+        const valueCell = createTextCell("Reading", "signal-reading");
+        const value = signal.value;
+        valueCell.textContent = value === null || value === undefined || value === "" ? "—" : String(value);
+        if (signal.unit) {
+          const unit = document.createElement("span");
+          unit.className = "signal-unit";
+          unit.textContent = ` ${signal.unit}`;
+          valueCell.appendChild(unit);
+        }
+
+        const statusCell = createTextCell("Age status");
+        const status = signalStatus(signal, viewState);
+        const chip = document.createElement("span");
+        chip.className = "state-chip";
+        chip.dataset.state = status;
+        chip.textContent = signalStateLabel(status);
+        const age = document.createElement("span");
+        age.className = "age-copy";
+        age.textContent = signalAgeLabel(signal, viewState);
+        statusCell.append(chip, age);
+
+        const sourceCell = createTextCell("Source");
+        sourceCell.textContent = signal.source || "Source not recorded";
+
+        const identifierCell = createTextCell("Identifier");
+        const identifier = document.createElement("span");
+        identifier.className = "identifier";
+        identifier.textContent = signal.identifier || "—";
+        identifierCell.appendChild(identifier);
+
+        const confidenceCell = createTextCell("Confidence");
+        const confidence = document.createElement("div");
+        confidence.className = "confidence";
+        const meter = document.createElement("span");
+        meter.className = "confidence-meter";
+        meter.setAttribute("aria-hidden", "true");
+        const level = confidenceLevel(signal);
+        for (let index = 1; index <= 4; index += 1) {
+          const segment = document.createElement("i");
+          segment.dataset.filled = String(level !== null && index <= level);
+          meter.appendChild(segment);
+        }
+        const confidenceCopy = document.createElement("span");
+        confidenceCopy.className = "confidence-copy";
+        const confidenceLabel = document.createElement("span");
+        confidenceLabel.className = "confidence-label";
+        confidenceLabel.textContent = signal.confidence_label || "Not graded";
+        const score = document.createElement("span");
+        score.className = "confidence-score";
+        score.textContent = level === null ? "No evidence level" : `Evidence level ${level} of 4`;
+        confidenceCopy.append(confidenceLabel, score);
+        confidence.append(meter, confidenceCopy);
+        confidenceCell.appendChild(confidence);
+
+        row.append(nameCell, valueCell, statusCell, sourceCell, identifierCell, confidenceCell);
+        return row;
+      }
+
+      function renderSignals(viewState) {
+        const signals = state.snapshot && state.snapshot.signals && typeof state.snapshot.signals === "object"
+          ? state.snapshot.signals
+          : {};
+        const query = state.search.trim().toLocaleLowerCase();
+        const allowedGpsSignals = new Set(["gps_mode", "gps_sats"]);
+        const entries = Object.entries(signals)
+          .filter(([key]) => !key.startsWith("gps_") || allowedGpsSignals.has(key))
+          .sort((a, b) => {
+          const sourceCompare = String(a[1].source || "").localeCompare(String(b[1].source || ""));
+          if (sourceCompare) return sourceCompare;
+          return String(a[1].label || a[0]).localeCompare(String(b[1].label || b[0]));
+          });
+        const filtered = entries.filter(([key, signal]) => {
+          if (!query) return true;
+          const haystack = [key, signal.label, signal.unit, signal.source, signal.identifier, signal.confidence_label]
+            .filter(Boolean)
+            .join(" ")
+            .toLocaleLowerCase();
+          return haystack.includes(query);
+        });
+
+        const available = entries.filter(([, signal]) => signal.value !== null && signal.value !== undefined && signal.value !== "").length;
+        elements.signalSummary.textContent = entries.length
+          ? `${available} of ${entries.length} signals have a recorded value`
+          : "No signals loaded";
+        elements.signalsBody.replaceChildren(...filtered.map(([key, signal]) => makeSignalRow(key, signal, viewState)));
+        elements.signalsEmpty.hidden = filtered.length > 0;
+        elements.signalsEmpty.textContent = entries.length
+          ? "No signals match this search."
+          : (state.network === "error" ? "Signal inventory is unavailable." : "Waiting for signal data.");
+        const suffix = query ? ` matching “${state.search.trim()}”` : "";
+        elements.signalsResultCount.textContent = `${filtered.length} ${filtered.length === 1 ? "signal" : "signals"}${suffix}`;
+      }
+
+      function historyData() {
+        const history = state.snapshot && Array.isArray(state.snapshot.history) ? state.snapshot.history : [];
+        return history.slice(-MAX_HISTORY_POINTS);
+      }
+
+      function median(values) {
+        if (!values.length) return null;
+        const sorted = [...values].sort((a, b) => a - b);
+        const middle = Math.floor(sorted.length / 2);
+        return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+      }
+
+      function niceRange(minimum, maximum, metric) {
+        if (metric === "soc") return { min: 0, max: 100, decimals: 0 };
+        const extent = Math.max(Math.abs(minimum), Math.abs(maximum), 10);
+        const rough = extent / 3;
+        const magnitude = 10 ** Math.floor(Math.log10(rough));
+        const normalized = rough / magnitude;
+        const nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+        const cap = Math.ceil(extent / (nice * magnitude)) * nice * magnitude;
+        return { min: -cap, max: cap, decimals: cap < 10 ? 1 : 0 };
+      }
+
+      function drawChart() {
+        const canvas = elements.chart;
+        const bounds = canvas.getBoundingClientRect();
+        if (!bounds.width || !bounds.height) return;
+        const ratio = Math.min(window.devicePixelRatio || 1, 2);
+        const width = Math.round(bounds.width);
+        const height = Math.round(bounds.height);
+        const pixelWidth = Math.round(width * ratio);
+        const pixelHeight = Math.round(height * ratio);
+        if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+          canvas.width = pixelWidth;
+          canvas.height = pixelHeight;
+        }
+        const context = canvas.getContext("2d");
+        context.setTransform(ratio, 0, 0, ratio, 0, 0);
+        context.clearRect(0, 0, width, height);
+
+        const metric = state.chartMetric;
+        const key = metric === "soc" ? "soc_pct" : "pack_kw";
+        const unit = metric === "soc" ? "%" : "kW";
+        const label = metric === "soc" ? "State of charge" : "Pack power";
+        const rows = historyData();
+        const points = rows.map((row) => ({ x: numeric(row && row.elapsed_s), y: numeric(row && row[key]) }));
+        const valid = points.filter((point) => point.x !== null && point.y !== null);
+        const times = points.map((point) => point.x).filter((value) => value !== null);
+
+        elements.chartSubtitle.textContent = metric === "soc"
+          ? "State of charge over elapsed time"
+          : "Pack power over elapsed time · positive is pack draw, negative is energy into the pack";
+        elements.tabPower.setAttribute("aria-selected", String(metric === "power"));
+        elements.tabSoc.setAttribute("aria-selected", String(metric === "soc"));
+
+        if (valid.length < 2 || times.length < 2) {
+          elements.chartEmpty.hidden = false;
+          elements.chartEmpty.textContent = `Not enough ${label.toLocaleLowerCase()} samples to draw this chart.`;
+          const description = `No ${label.toLocaleLowerCase()} history available.`;
+          canvas.setAttribute("aria-label", description);
+          elements.chartDescription.textContent = description;
+          return;
+        }
+
+        elements.chartEmpty.hidden = true;
+        const padding = { top: 18, right: 18, bottom: 34, left: 53 };
+        const plotWidth = Math.max(1, width - padding.left - padding.right);
+        const plotHeight = Math.max(1, height - padding.top - padding.bottom);
+        const xMin = Math.min(...times);
+        const xMax = Math.max(...times);
+        const yValues = valid.map((point) => point.y);
+        const range = niceRange(Math.min(...yValues), Math.max(...yValues), metric);
+        const xSpan = Math.max(1, xMax - xMin);
+        const ySpan = Math.max(.001, range.max - range.min);
+        const toX = (value) => padding.left + ((value - xMin) / xSpan) * plotWidth;
+        const toY = (value) => padding.top + (1 - (value - range.min) / ySpan) * plotHeight;
+
+        context.lineWidth = 1;
+        context.font = "10px ui-sans-serif, system-ui, sans-serif";
+        context.textBaseline = "middle";
+        for (let index = 0; index <= 4; index += 1) {
+          const value = range.max - (ySpan * index) / 4;
+          const y = padding.top + (plotHeight * index) / 4;
+          context.strokeStyle = index === 2 && metric === "power" ? "rgba(147,161,165,.28)" : "rgba(56,69,74,.52)";
+          context.beginPath();
+          context.moveTo(padding.left, Math.round(y) + .5);
+          context.lineTo(width - padding.right, Math.round(y) + .5);
+          context.stroke();
+          context.fillStyle = "#69777b";
+          context.textAlign = "right";
+          context.fillText(`${value.toFixed(range.decimals)} ${unit}`, padding.left - 8, y);
+        }
+
+        context.textBaseline = "top";
+        for (let index = 0; index <= 4; index += 1) {
+          const value = xMin + (xSpan * index) / 4;
+          const x = padding.left + (plotWidth * index) / 4;
+          context.fillStyle = "#69777b";
+          context.textAlign = index === 0 ? "left" : index === 4 ? "right" : "center";
+          context.fillText(formatDuration(value - xMin), x, height - padding.bottom + 10);
+        }
+
+        const adjacentDeltas = [];
+        for (let index = 1; index < times.length; index += 1) {
+          const delta = times[index] - times[index - 1];
+          if (delta > 0) adjacentDeltas.push(delta);
+        }
+        const sessionPeriod = numeric(state.snapshot && state.snapshot.session && state.snapshot.session.period_s);
+        const typical = valueOr(median(adjacentDeltas), sessionPeriod, 1);
+        const gapLimit = Math.max(30, numeric(typical) * 3);
+
+        context.lineWidth = 2;
+        context.lineJoin = "round";
+        context.lineCap = "round";
+        context.strokeStyle = metric === "soc" ? "#b9f227" : "#55d9ed";
+        context.shadowColor = metric === "soc" ? "rgba(185,242,39,.25)" : "rgba(85,217,237,.25)";
+        context.shadowBlur = 9;
+        context.beginPath();
+        let drawing = false;
+        let previousX = null;
+        for (const point of points) {
+          if (point.x === null || point.y === null) {
+            drawing = false;
+            previousX = null;
+            continue;
+          }
+          const x = toX(point.x);
+          const y = toY(point.y);
+          const gap = previousX !== null && point.x - previousX > gapLimit;
+          if (!drawing || gap) context.moveTo(x, y);
+          else context.lineTo(x, y);
+          drawing = true;
+          previousX = point.x;
+        }
+        context.stroke();
+        context.shadowBlur = 0;
+
+        const last = valid[valid.length - 1];
+        context.fillStyle = metric === "soc" ? "#b9f227" : "#55d9ed";
+        context.beginPath();
+        context.arc(toX(last.x), toY(last.y), 3.5, 0, Math.PI * 2);
+        context.fill();
+
+        const minimum = Math.min(...yValues);
+        const maximum = Math.max(...yValues);
+        const description = `${label} history with ${valid.length} recorded points. Range ${formatNumber(minimum, 1)} to ${formatNumber(maximum, 1)} ${unit}. Gaps in recorded samples are not connected.`;
+        canvas.setAttribute("aria-label", description);
+        elements.chartDescription.textContent = description;
+      }
+
+      function render() {
+        const session = state.snapshot && state.snapshot.session ? state.snapshot.session : null;
+        const viewState = effectiveViewState();
+        renderHeader(viewState, session);
+        renderMetrics(viewState);
+        renderTrip();
+        renderNotes();
+        renderSignals(viewState);
+        drawChart();
+      }
+
+      async function getJson(path) {
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+        try {
+          const response = await fetch(path, {
+            method: "GET",
+            cache: "no-store",
+            credentials: "same-origin",
+            headers: { Accept: "application/json" },
+            signal: controller.signal
+          });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return await response.json();
+        } finally {
+          window.clearTimeout(timeout);
+        }
+      }
+
+      function queueRefresh(delay = POLL_MS) {
+        if (state.timer !== null) window.clearTimeout(state.timer);
+        state.timer = window.setTimeout(refresh, delay);
+      }
+
+      async function refresh() {
+        if (state.refreshing) {
+          state.refreshQueued = true;
+          return;
+        }
+        state.refreshing = true;
+        state.refreshQueued = false;
+        if (state.timer !== null) window.clearTimeout(state.timer);
+        state.timer = null;
+        const generation = state.generation;
+        try {
+          const sessions = await getJson("/api/sessions");
+          if (generation !== state.generation) return;
+          updateSessionOptions(sessions);
+          const requestedSession = state.selected;
+          const snapshot = await getJson(`/api/snapshot?session=${encodeURIComponent(requestedSession)}`);
+          if (generation !== state.generation || requestedSession !== state.selected) return;
+          if (!snapshot || typeof snapshot !== "object" || !snapshot.session || !snapshot.signals) {
+            throw new Error("Invalid snapshot response");
+          }
+          state.snapshot = snapshot;
+          state.network = "ok";
+          state.errorMessage = "";
+          state.lastSuccessAt = new Date();
+          render();
+        } catch (error) {
+          if (generation === state.generation) {
+            state.network = "error";
+            state.errorMessage = error && error.message ? error.message : "Refresh failed";
+            render();
+          }
+        } finally {
+          state.refreshing = false;
+          queueRefresh(state.refreshQueued || generation !== state.generation ? 0 : POLL_MS);
+        }
+      }
+
+      function selectChartMetric(metric) {
+        state.chartMetric = metric;
+        drawChart();
+      }
+
+      elements.sessionSelect.addEventListener("change", () => {
+        state.selected = elements.sessionSelect.value;
+        state.snapshot = null;
+        state.network = "loading";
+        state.generation += 1;
+        state.refreshQueued = true;
+        render();
+        if (!state.refreshing) queueRefresh(0);
+      });
+
+      elements.search.addEventListener("input", () => {
+        state.search = elements.search.value;
+        renderSignals(effectiveViewState());
+      });
+
+      elements.tabPower.addEventListener("click", () => selectChartMetric("power"));
+      elements.tabSoc.addEventListener("click", () => selectChartMetric("soc"));
+      elements.tabPower.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+          event.preventDefault();
+          elements.tabSoc.focus();
+          selectChartMetric("soc");
+        }
+      });
+      elements.tabSoc.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+          event.preventDefault();
+          elements.tabPower.focus();
+          selectChartMetric("power");
+        }
+      });
+
+      let resizeFrame = null;
+      window.addEventListener("resize", () => {
+        if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
+        resizeFrame = window.requestAnimationFrame(() => {
+          resizeFrame = null;
+          drawChart();
+        });
+      });
+
+      render();
+      refresh();
+    })();
+  </script>
+</body>
+</html>

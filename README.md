@@ -176,6 +176,7 @@ The right-hand column is the one that matters operationally.
 | `hummer-obd-capabilities` | Sanitized report of a node's live state | **no** |
 | `hummer-obd-analyze` | Reads a session back; `--trend` compares them all | **no** |
 | `hummer-obd-live` | Derived quantities, then every sensor and how long since it answered | **no** |
+| `hummer-obd-dashboard` | Local browser dashboard, session history, charts and a driving / stationary energy budget | **no** |
 | `hummer-obd-decode` | Correlates undecoded raw fields against measured quantities | **no** |
 | `hummer-obd-export` | Local export of stored telemetry | **no** |
 | `hummer-obd-drive` | The automatic session recorder (a service) | yes — `ATRV` only while asleep |
@@ -197,6 +198,38 @@ column reads files the recorder already wrote, so it is safe alongside it —
 including while driving. Everything else needs `hummer-drive` stopped first,
 and the sessions pulled to a workstation before that. See the
 [runbook](docs/RUNBOOK.md#drive-recorder).
+
+### Browser dashboard
+
+```bash
+hummer-obd-dashboard --dir evidence/sessions
+# From an uninstalled checkout:
+PYTHONPATH=src python3 -m hummer_obd.dashboard --dir evidence/sessions
+```
+
+Open `http://127.0.0.1:8765`. The dashboard reads the recorder's existing CSVs:
+pack power, state of charge, cell spread, signal ages and sources, recent
+charts, and selectable past sessions. It never opens the OBD adapter. GPS
+coordinates, vehicle identity and raw transcripts are excluded from its API.
+No external scripts, fonts, map service or cloud connection are needed.
+
+The energy budget separates energy drawn while moving, returned while moving,
+stationary electrical draw, and stationary energy flowing into the pack. It
+counts only adjacent samples with valid power and speed, reports skipped
+intervals, and splits a drive/regen zero crossing at the crossing itself.
+Stationary draw includes every pack load; it is **not** an HVAC-only reading.
+
+A stopped file ages against the clock, even when cached. Current-value tiles
+are withheld when their input is missing, invalid or stale; selecting a past
+session explicitly labels it historical. Raw fields retain their unscaled
+label and each enhanced signal shows its recorded confidence level. Internal
+resistance and energy/SOC ratios remain estimates, not battery health tests.
+
+For remote viewing, start it on the node and forward its loopback port with
+`ssh -N -L 8765:127.0.0.1:8765 user@pi-host`. The server has no login and should
+stay on loopback or a deliberately chosen private interface. `--json` prints
+the same snapshot without starting a server. See [the expansion assessment](docs/EXPANSION.md)
+for the evidence boundaries, limits and validation approach.
 
 ## System overview
 
