@@ -249,6 +249,20 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now hummer-dashboard.service
 ```
 
+If a hand-started reader is already holding the port, stop it first — and
+**anchor the pattern**:
+
+```bash
+pkill -f '^/usr/bin/python3 -m hummer_obd.dashboard'
+```
+
+`pkill -f hummer_obd.dashboard` is a trap. The pattern appears in the command
+line of the shell running it, so it matches its own invoking shell and kills
+the command mid-sequence. That cost one install here: the unit was copied and
+`daemon-reload` ran, then the chain died before `enable --now`, leaving a unit
+that looked installed and was not enabled. The sibling `unidenr8` runbook
+documents the same trap against `gpsd`.
+
 Check `--host` before enabling location. The shipped unit binds a Tailscale
 address, so the listener is reachable across that tailnet and nowhere else —
 not `0.0.0.0`, and not the LAN address either.
