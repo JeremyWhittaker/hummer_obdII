@@ -294,6 +294,23 @@ and the body rolls and pitches from the vehicle's own `lateral_g` and
 `longitudinal_g`, so it leans in a corner because the accelerometer says it is
 leaning.
 
+**The driver display works.** The 12.3-inch cluster renders GM's own Lunar
+layout — the one GM illustrates as the default — from this project's
+telemetry: the battery arc bowed left with 100% at the top, the range in
+brackets beneath it, the speed dead centre, the power indicator as its mirror,
+and a data pane at each end. It is painted to a canvas and uploaded as a
+texture only when what it says changes.
+
+The meshes here are generated in code and carry no UV coordinates, so the
+screen is textured from world position instead — it is a flat rectangle of
+known extent, and the fragment works out where on it a pixel falls. Adding a
+UV channel to all five meshes for the sake of two rectangles would have been a
+far larger change.
+
+The gear indicator stays empty. Nothing in this project reports PRNDL, and
+inferring it from speed would be inventing the one number on that screen a
+driver would most reasonably trust.
+
 **There is a driver's seat.** A toggle moves the camera into the cabin and
 dims the body so you can see out of it. The cabin carries what GM publishes:
 the 12.3-inch reconfigurable cluster and the 13.4-inch centre touchscreen —

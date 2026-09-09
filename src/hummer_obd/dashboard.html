@@ -775,7 +775,24 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     "varying vec3 vNormal, vWorld;",
     "uniform vec3 uColour, uEmissive, uEye;",
     "uniform float uAlpha;",
+    /* The instrument screens are textured from world position rather than
+       from mesh coordinates. Every mesh here is generated in code with
+       positions, normals and indices and no UVs, and adding a UV channel to
+       all five for the sake of two flat rectangles would be a much larger
+       change than this. The screens are axis-aligned planes of known extent,
+       so the extent is passed in and the fragment works out where on it the
+       pixel falls. */
+    "uniform sampler2D uTex;",
+    "uniform vec4 uScreen;",
+    "uniform float uUseTex;",
     "void main(){",
+    "  if (uUseTex > 0.5) {",
+    "    vec2 uv = vec2((vWorld.z - uScreen.x) / (uScreen.y - uScreen.x),",
+    "                   1.0 - (vWorld.y - uScreen.z) / (uScreen.w - uScreen.z));",
+    "    vec4 t = texture2D(uTex, clamp(uv, 0.0, 1.0));",
+    "    gl_FragColor = vec4(t.rgb, uAlpha);",
+    "    return;",
+    "  }",
     "  vec3 n = normalize(vNormal);",
     "  vec3 key = normalize(vec3(0.55, 0.9, 0.35));",
     "  vec3 fill = normalize(vec3(-0.6, 0.35, -0.5));",
@@ -1321,8 +1338,33 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       colour: gl.getUniformLocation(prog, "uColour"),
       emissive: gl.getUniformLocation(prog, "uEmissive"),
       alpha: gl.getUniformLocation(prog, "uAlpha"),
-      eye: gl.getUniformLocation(prog, "uEye")
+      eye: gl.getUniformLocation(prog, "uEye"),
+      tex: gl.getUniformLocation(prog, "uTex"),
+      screen: gl.getUniformLocation(prog, "uScreen"),
+      useTex: gl.getUniformLocation(prog, "uUseTex")
     };
+    /* The cluster is painted to a 2D canvas and uploaded, and only when what
+       it says has changed -- a texture upload per frame would be work done
+       sixty times a second to redraw the same number. 512x256 is a power of
+       two on both sides, so LINEAR filtering needs no mipmaps. */
+    var clusterCanvas = document.createElement("canvas"),
+        clusterTex = gl.createTexture(), clusterStamp = null;
+    clusterCanvas.width = CLUSTER_W; clusterCanvas.height = CLUSTER_H;
+    var clusterCtx = clusterCanvas.getContext("2d");
+    gl.bindTexture(gl.TEXTURE_2D, clusterTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    function refreshCluster() {
+      var d = live.cluster || {}, key = JSON.stringify(d);
+      if (key === clusterStamp) return;
+      clusterStamp = key;
+      drawCluster(clusterCtx, d);
+      gl.bindTexture(gl.TEXTURE_2D, clusterTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, clusterCanvas);
+    }
+
     var meshes = { box: makeMesh(gl, unitBox()), cyl: makeMesh(gl, unitCylinder(28)),
                        bev: makeMesh(gl, bevelBox(0.10)), tyre: makeMesh(gl, tyreMesh(0.58, 30)),
                        ring: makeMesh(gl, tyreMesh(0.86, 34)),
@@ -1431,6 +1473,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       gl.uniformMatrix4fv(loc.proj, false, proj);
       gl.uniformMatrix4fv(loc.view, false, view);
       gl.uniform3fv(loc.eye, new Float32Array(eye));
+      refreshCluster();
 
       /* Body attitude, from the vehicle's own accelerometer. +X is forward
          and Y is up, so a lateral reading rolls the body about X and a
@@ -1612,6 +1655,20 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         if (p.layer === "shell" && live.fault) {
           emissive = [0.42, 0.05, 0.05];
         }
+        /* The screen sampled from world position. Set for every part, not
+           only the textured one: a uniform left at 1 would paint the next
+           object with the cluster. */
+        if (p.screen === "cluster" && live.awake) {
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, clusterTex);
+          gl.uniform1i(loc.tex, 0);
+          gl.uniform4f(loc.screen,
+                       p.t[2] - p.s[2] / 2, p.t[2] + p.s[2] / 2,
+                       p.t[1] - p.s[1] / 2, p.t[1] + p.s[1] / 2);
+          gl.uniform1f(loc.useTex, 1);
+        } else {
+          gl.uniform1f(loc.useTex, 0);
+        }
         gl.uniform3fv(loc.colour, new Float32Array(colour));
         gl.uniform3fv(loc.emissive, new Float32Array(emissive));
         gl.uniform1f(loc.alpha, alpha);
@@ -1631,6 +1688,110 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       camera: function () { return cam.mode; },
       update: function (data) { live = data; }
     };
+  }
+
+  /* ---------- the driver display ----------
+     GM ships five cluster layouts and illustrates Lunar as the default, so
+     Lunar is what this draws, in the arrangement GM's own line art gives:
+     a DIC pane at each end, the battery gauge as an arc of about twelve
+     segments bowed to the left with 100% at the top and 0% at the bottom and
+     the range in brackets beneath it, the speed dead centre with MPH under
+     it, and the power indicator as the mirror of the battery arc.
+
+     What is drawn on it is this project's own telemetry, not a guess at what
+     the real screen is showing at that moment. Where a field has no reading
+     the space is left with a dash rather than filled -- there is no gear
+     position anywhere in this project, so the gear indicator stays empty
+     rather than being inferred from speed. */
+  var CLUSTER_W = 512, CLUSTER_H = 256;
+
+  function clusterArc(ctx, cx, cy, lit, total, bowLeft, tint) {
+    var i, seg, a, x, y, on;
+    for (i = 0; i < total; i++) {
+      a = (i / (total - 1) - 0.5) * 1.9;              /* -0.95..0.95 rad */
+      x = cx + (bowLeft ? -1 : 1) * (1 - Math.cos(a)) * 42;
+      y = cy - Math.sin(a) * 78;
+      on = i < lit;
+      ctx.fillStyle = on ? tint : "rgba(190,205,215,0.16)";
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(bowLeft ? -a * 0.5 : a * 0.5);
+      seg = ctx.fillRect(-13, -3.6, 26, 7.2);
+      ctx.restore();
+    }
+  }
+
+  function drawCluster(ctx, d) {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, CLUSTER_W, CLUSTER_H);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    var FONT = "system-ui,-apple-system,Segoe UI,Roboto,sans-serif";
+
+    /* --- battery, left, bowed left, 100 at the top --- */
+    var soc = d.soc === null ? null : Math.max(0, Math.min(100, d.soc)),
+        segs = soc === null ? 0 : Math.round(soc / 100 * 12);
+    clusterArc(ctx, 150, 118, segs, 12, true, "#e8eef2");
+    ctx.fillStyle = "#7d8a92"; ctx.font = "600 13px " + FONT;
+    ctx.fillText("100%", 150, 26);
+    ctx.fillText("0%", 150, 212);
+    ctx.fillStyle = "#e8eef2"; ctx.font = "700 22px " + FONT;
+    ctx.fillText(d.range === null ? "[ – ]"
+                 : "[" + Math.round(d.range) + "] mi", 150, 231);
+
+    /* --- power, right, the mirror of it --- */
+    var kw = d.kw === null ? null : d.kw,
+        span = 200,
+        plit = kw === null ? 0 : Math.round(Math.min(1, Math.abs(kw) / span) * 12);
+    clusterArc(ctx, 362, 118, plit, 12, false,
+               kw !== null && kw < 0 ? "#5fd08a" : "#ff8a3d");
+    ctx.fillStyle = "#7d8a92"; ctx.font = "600 12px " + FONT;
+    ctx.fillText("PWR", 362, 26);
+    ctx.fillText(kw !== null && kw < 0 ? "REGEN" : "DRAW", 362, 212);
+    ctx.fillStyle = "#e8eef2"; ctx.font = "700 20px " + FONT;
+    ctx.fillText(kw === null ? "– kW" : Math.abs(kw).toFixed(0) + " kW", 362, 231);
+
+    /* --- speed, dead centre ---
+       A missing speed is drawn small and grey, not as a 92-pixel dash. At
+       that size the glyph is a solid white bar and reads as a gauge that is
+       full rather than a reading that is absent, which is the exact failure
+       this project spends most of its effort avoiding. Caught by rendering
+       it and looking at it. */
+    if (d.mph === null) {
+      ctx.fillStyle = "#4a555c"; ctx.font = "600 30px " + FONT;
+      ctx.fillText("no speed", 256, 108);
+    } else {
+      ctx.fillStyle = "#ffffff"; ctx.font = "700 92px " + FONT;
+      ctx.fillText(String(Math.round(d.mph)), 256, 108);
+    }
+    ctx.fillStyle = "#9aa7ae"; ctx.font = "600 20px " + FONT;
+    ctx.fillText("MPH", 256, 166);
+    /* Gear: nothing in this project reports PRNDL, so nothing is claimed. */
+    ctx.strokeStyle = "rgba(150,165,175,0.35)"; ctx.lineWidth = 1.5;
+    ctx.strokeRect(232, 190, 48, 30);
+    ctx.fillStyle = "#5d6a72"; ctx.font = "600 15px " + FONT;
+    ctx.fillText("–", 256, 206);
+
+    /* --- the two DIC panes --- */
+    ctx.fillStyle = "#7d8a92"; ctx.font = "600 11px " + FONT;
+    ctx.fillText("PACK", 62, 86);
+    ctx.fillStyle = "#e8eef2"; ctx.font = "700 26px " + FONT;
+    ctx.fillText(d.tempF === null ? "–" : d.tempF.toFixed(0) + "\u00B0", 62, 114);
+    ctx.fillStyle = "#7d8a92"; ctx.font = "600 11px " + FONT;
+    ctx.fillText("SPREAD", 62, 150);
+    ctx.fillStyle = "#e8eef2"; ctx.font = "700 22px " + FONT;
+    ctx.fillText(d.spread === null ? "–" : d.spread.toFixed(1), 62, 176);
+
+    ctx.fillStyle = "#7d8a92"; ctx.font = "600 11px " + FONT;
+    ctx.fillText("ENERGY", 452, 86);
+    ctx.fillStyle = "#e8eef2"; ctx.font = "700 24px " + FONT;
+    ctx.fillText(d.kwh === null ? "–" : d.kwh.toFixed(0), 452, 114);
+    ctx.fillStyle = "#7d8a92"; ctx.font = "600 11px " + FONT;
+    ctx.fillText("kWh", 452, 136);
+    ctx.fillStyle = "#7d8a92"; ctx.font = "600 11px " + FONT;
+    ctx.fillText("12 V", 452, 158);
+    ctx.fillStyle = "#e8eef2"; ctx.font = "700 20px " + FONT;
+    ctx.fillText(d.lv === null ? "–" : d.lv.toFixed(1), 452, 180);
   }
 
   /* ---------- the vehicle ---------- */
@@ -1797,6 +1958,24 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       /* Awake if anything is actually moving or drawing: a live session with
          power on the bus, or a charge in progress. */
       awake: vs === "live" || derived("charging") === true,
+      cluster: {
+        /* Rounded before it becomes the texture's cache key, so the display
+           does not re-upload every poll because a reading moved a
+           thousandth of a unit. */
+        mph: (function () { var k = num(derived("speed_now_kph"));
+              return k === null ? null : Math.round(k * 0.621371); })(),
+        soc: (function () { var v = sigValue("soc_pct");
+              return v === null ? null : Math.round(v * 10) / 10; })(),
+        range: sigValue("range_mi"),
+        kw: (function () { var v = num(derived("pack_kw"));
+             return v === null ? null : Math.round(v * 10) / 10; })(),
+        tempF: sigValue("temp_f"),
+        spread: sigValue("cell_spread_mv"),
+        kwh: (function () { var v = sigValue("energy_kwh");
+              return v === null ? null : Math.round(v * 10) / 10; })(),
+        lv: sigValue("module_voltage") !== null ? sigValue("module_voltage")
+            : sigValue("volts")
+      },
       radar: (function () {
         /* Same rule the panel's screen follows: lit only when the detector is
            there and talking. Alerting takes the band's colour, idle a low
