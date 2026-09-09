@@ -1,6 +1,7 @@
 """A browser may read telemetry, never a device, arbitrary file, or location."""
 
 import csv
+import re
 import json
 import os
 import tempfile
@@ -14,7 +15,7 @@ from urllib.request import Request, urlopen
 
 from hummer_obd import analyze
 from hummer_obd.dashboard import (CACHE_ENTRIES, MAX_HISTORY, SessionStore,
-                                  energy_budget, make_server)
+                                  energy_budget, make_server, public_columns)
 
 
 class DashboardTests(unittest.TestCase):
@@ -344,6 +345,48 @@ class CostTests(unittest.TestCase):
         self.assertLessEqual(len(store._cache), CACHE_ENTRIES)
         # The one just asked for is the one still held.
         self.assertIn(names[-1], [Path(key[0]).name for key in store._cache])
+
+
+class PartIndexTests(unittest.TestCase):
+    """The page claims where every signal is shown. That claim must stay true.
+
+    This is the fourth hand-kept inventory in this project. The README's column
+    count, the drive unit's identifier list and the enhanced-identifier registry
+    all drifted from the code before a test was put on them. The part index is
+    the same shape of promise -- one entry per recorded column -- so it gets the
+    same treatment before rather than after it goes stale.
+    """
+
+    PAGE = Path(__file__).resolve().parents[1] / "src" / "hummer_obd" / "dashboard.html"
+
+    def entries(self):
+        page = self.PAGE.read_text(encoding="utf-8")
+        start = page.index("var SIGNAL_PART = {")
+        block = page[start:page.index("\n  };", start)]
+        return re.findall(r"^\s{4}(\w+):\s*\[", block, re.M)
+
+    def test_every_recorded_column_says_where_it_is_shown(self):
+        mapped = self.entries()
+        columns = set(public_columns(True))
+        missing = sorted(columns - set(mapped))
+        self.assertEqual(
+            missing, [],
+            "columns the page would render with no entry in the part index -- "
+            "the 'Shown on' cell falls back to 'unmapped', which is a question "
+            f"the page should answer rather than ask: {missing}",
+        )
+
+    def test_the_index_does_not_name_columns_that_do_not_exist(self):
+        stray = sorted(set(self.entries()) - set(public_columns(True)))
+        self.assertEqual(
+            stray, [],
+            f"part index entries for columns nothing records any more: {stray}",
+        )
+
+    def test_each_column_is_claimed_once(self):
+        mapped = self.entries()
+        duplicates = sorted({name for name in mapped if mapped.count(name) > 1})
+        self.assertEqual(duplicates, [], f"two answers for one signal: {duplicates}")
 
 
 if __name__ == "__main__":

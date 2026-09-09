@@ -232,6 +232,19 @@ select:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid 
 .band-unknown{background:rgba(255,255,255,.06);color:var(--ink-3)}
 .bars{font-family:var(--mono);letter-spacing:1px;color:var(--ev-orange)}
 .r8-meta{color:var(--ink-3);font-size:11.5px;text-align:right;white-space:nowrap}
+/* The detector's own front panel, drawn to the published envelope: the R8 is
+   124.11 x 98.00 x 38.80 mm, so the face is 98 x 38.8 and everything below is
+   in tenths of a millimetre on that face. Inline SVG rather than a photograph
+   because the CSP forbids remote images -- and because a drawing can show the
+   live reading, which a photograph cannot. */
+.r8-face-wrap{
+  margin:12px 0 14px;padding:16px;border-radius:var(--r-sm);
+  background:radial-gradient(120% 140% at 50% 0%,#1b1f22 0%,#0b0d0e 70%);
+  border:1px solid var(--line);
+}
+#r8-face{width:100%;max-width:760px;height:auto;display:block;margin:0 auto}
+.r8-legend{font-size:11px;color:var(--ink-3);text-align:center;margin-top:9px}
+.muted{color:var(--ink-3)}
 
 /* --- the map -------------------------------------------------------- */
 .map-wrap{position:relative}
@@ -240,6 +253,14 @@ select:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid 
   position:absolute;inset:0;display:grid;place-items:center;text-align:center;
   padding:20px;font-size:12.5px;color:var(--ink-3);
 }
+.playback{display:none;align-items:center;gap:11px;margin-top:11px}
+.playback.on{display:flex}
+.playback button{
+  background:var(--ev-orange);border:0;color:#fff;font:inherit;font-size:13px;
+  width:32px;height:32px;border-radius:50%;cursor:pointer;flex:none;line-height:1;
+}
+.playback input[type="range"]{flex:1;accent-color:var(--ev-orange);min-width:80px}
+.play-time{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);min-width:92px;text-align:right}
 .map-stats{display:flex;flex-wrap:wrap;gap:16px;margin-top:11px;font-size:11.5px;color:var(--ink-3)}
 .map-stats b{color:var(--ink);font-variant-numeric:tabular-nums;font-weight:600}
 .trail-head{animation:blip 1.8s ease-in-out infinite}
@@ -364,9 +385,16 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         <g id="map-grid"></g>
         <path id="trail" fill="none" stroke="#55d9ed" stroke-width="2.4"
               stroke-linejoin="round" stroke-linecap="round" opacity=".85"/>
+        <g id="alert-marks"></g>
         <g id="trail-head"></g>
       </svg>
       <div class="map-empty" id="map-empty">No position data in this session.</div>
+    </div>
+    <div class="playback" id="playback">
+      <button id="play" type="button" aria-label="Play the trip back">▶</button>
+      <input id="scrub" type="range" min="0" max="0" value="0" step="1"
+             aria-label="Position in the trip">
+      <span class="play-time" id="play-time">–</span>
     </div>
     <div class="map-stats" id="map-stats"></div>
   </div>
@@ -375,8 +403,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 <section class="card bracket fadeable" style="margin-bottom:var(--gap)">
   <h2>Radar &middot; Uniden R8</h2>
   <p class="sub" id="r8-sub">From the detector's own logger on this node.</p>
+  <div class="r8-face-wrap"><svg id="r8-face" viewBox="0 0 980 388"
+       preserveAspectRatio="xMidYMid meet" role="img"
+       aria-label="Uniden R8 front panel"></svg></div>
   <div class="r8-state" id="r8-state"></div>
-  <ul class="alerts" id="r8-alerts"></ul>
+  <p class="prov" id="r8-history"></p>
 </section>
 
 <section class="tiles fadeable" id="tiles"></section>
@@ -421,6 +452,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       <tr>
         <th scope="col">Signal</th><th scope="col">Value</th><th scope="col">State</th>
         <th scope="col">Age</th><th scope="col">Source</th><th scope="col">Confidence</th>
+        <th scope="col">Shown on</th>
       </tr>
     </thead>
     <tbody id="signals-body"></tbody>
@@ -432,6 +464,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 "use strict";
 (function () {
   var POLL_MS = 5000, TIMEOUT_MS = 4500;
+  /* A snapshot of a past trip is the one genuinely expensive request here --
+     the node parses and analyses the whole session. On the Pi Zero 2 W that
+     is about two seconds for a 573-row commute, so the 4.5 s that suits the
+     small endpoints is too tight to be safe for this one. Being slow is not
+     the same as being broken, and a timeout reports the wrong one. */
+  var SNAPSHOT_TIMEOUT_MS = 20000;
 
   /* Below this much spread across the whole session, the "track" is receiver
      noise rather than travel. A stationary BU-353S4 wanders tens of metres. */
@@ -447,6 +485,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     snapshot: null, sessions: [], selected: "latest", network: "loading",
     error: "", timer: null, busy: false, queued: false, generation: 0,
     series: "power", filter: "", retried: false,
+    map: null, play: { timer: null },
     /* Coolant flow is animated from whether the thermal accumulator is
        actually advancing, which needs the previous poll to compare against.
        Kept here rather than recomputed, because a pump that has stopped
@@ -461,8 +500,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   [ "status-primary","status-secondary","banner","session-select","f-samples",
     "f-duration","f-period","f-age","vehicle-sub","legend",
     "module-caveat","map","map-grid","trail","trail-head","map-empty","map-stats",
+    "alert-marks","playback","play","scrub","play-time",
     "tiles","chart","chart-empty","chart-sub","tab-power","tab-soc","tab-speed",
-    "notes","signal-search","signals-body","signal-sub","scene","scene-status","layers","r8-state","r8-alerts","r8-sub"
+    "notes","signal-search","signals-body","signal-sub","scene","scene-status","layers","r8-state","r8-face","r8-history","r8-sub"
   ].forEach(function (id) { el[id] = byId(id); });
 
   /* ---------- small helpers ---------- */
@@ -945,8 +985,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       .forEach(function (w) {
         var z = w[2] * (W - 0.02), d = VEH.wheelRadius * 2;
         var front = w[1] > 0;
+        /* Translucent so the disc and caliper behind it are visible. A tyre
+           you cannot see past is the one part of a wheel with nothing to
+           report. */
         add({ id: "tyre-" + w[0], mesh: "tyre", layer: "wheels", colour: TYRE,
-              spin: true, corner: w[0], steer: front,
+              alpha: 0.38, spin: true, corner: w[0], steer: front,
               t: [w[1], VEH.wheelRadius, z],
               s: [d, d, VEH.wheelWidth], rot: "z", flip: w[2] < 0 });
         add({ id: "rim-" + w[0], mesh: "rim", layer: "wheels", colour: RIM,
@@ -975,14 +1018,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           flow: true, t: [0.70, 0.32, VEH.packWidth / 2 + 0.14],
           s: [3.3, 0.08, 0.08], rot: "x" });
 
-    /* --- ground. An object with nothing under it floats, whatever else is
-       right about it; a plane and a contact shadow do more for whether this
-       reads as a real vehicle than any amount of extra body detail. --- */
-    add({ id: "ground", mesh: "bev", layer: "ground", colour: [0.055, 0.065, 0.070],
-          t: [0, -0.03, 0], s: [15, 0.05, 15], noRim: true });
-    add({ id: "shadow", mesh: "bev", layer: "ground", colour: [0.0, 0.0, 0.0],
-          t: [0, 0.005, 0], s: [VEH.length * 0.96, 0.01, VEH.width * 0.94],
-          alpha: 0.55, noRim: true });
+    /* No ground plane. A floor would look better in a still, and it would
+       also hide the half of this vehicle worth looking at -- the pack, the
+       skid plate, the drive units and the coolant runs are all underneath,
+       and the camera is allowed below the axle line so they can be seen.
+       Grounding the object is not worth blindfolding the view. */
 
     /* --- 12 V and charge port --- */
     add({ id: "lv", mesh: "bev", layer: "aux", colour: [0.40, 0.33, 0.16],
@@ -1030,7 +1070,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                        rim: makeMesh(gl, rimMesh(6)) },
         parts = buildScene(),
         cam = { yaw: -0.72, pitch: 0.34, dist: 8.2, spin: 0 },
-        layers = { shell: 0.40, pack: 1, drive: 1, wheels: 1, thermal: 1, aux: 1, ground: 1 },
+        layers = { shell: 0.40, pack: 1, drive: 1, wheels: 1, thermal: 1, aux: 1 },
         live = { modules: [], kw: 0, brake: 0, flow: 0, speed: 0, steer: 0,
                  corners: {}, charging: false },
         angle = { fl: 0, fr: 0, rl: 0, rr: 0 }, lastFrame = 0;
@@ -1049,7 +1089,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     canvas.addEventListener("pointermove", function (e) {
       if (!drag) return;
       cam.yaw += (e.clientX - drag.x) * 0.008;
-      cam.pitch = Math.max(-0.15, Math.min(1.45, cam.pitch + (e.clientY - drag.y) * 0.006));
+      /* Below the axle line on purpose: the underside is the half of an
+             EV that has anything on it. */
+      cam.pitch = Math.max(-1.25, Math.min(1.45, cam.pitch + (e.clientY - drag.y) * 0.006));
       drag.x = e.clientX; drag.y = e.clientY;
     });
     ["pointerup", "pointercancel", "pointerleave"].forEach(function (ev) {
@@ -1082,7 +1124,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       if (!drag) cam.spin += 0.0013;              /* a slow idle orbit */
       var yaw = cam.yaw + cam.spin,
           eye = [Math.cos(yaw) * Math.cos(cam.pitch) * cam.dist,
-                 Math.sin(cam.pitch) * cam.dist + 0.7,
+                 Math.sin(cam.pitch) * cam.dist + 0.9,
                  Math.sin(yaw) * Math.cos(cam.pitch) * cam.dist],
           proj = m4persp(0.72, w / h, 0.1, 120),
           view = m4look(eye, [0, 0.85, 0], [0, 1, 0]);
@@ -1181,8 +1223,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   var LAYER_LABELS = [
     ["shell", "Body"], ["pack", "Battery"], ["drive", "Drive units"],
     ["wheels", "Wheels & brakes"], ["thermal", "Thermal"], ["aux", "12 V & charge"],
-    ["ground", "Ground"]
-  ];
+    ];
   function buildLayerControls() {
     clear(el.layers);
     LAYER_LABELS.forEach(function (pair) {
@@ -1271,20 +1312,97 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       : "Drag to orbit, scroll to zoom. No per-module array in this sample.";
   }
 
+  /* ---------- trip playback ----------
+     Pull up a past session and watch where the vehicle actually was, minute
+     by minute. The marker is placed from the same projection the trail was
+     drawn with, so the two cannot drift apart. */
+  function showFrame(index) {
+    var m = state.map;
+    if (!m || !m.points.length) return;
+    var i = Math.max(0, Math.min(m.points.length - 1, index)),
+        here = m.project(m.points[i][0], m.points[i][1]),
+        before = m.project(m.points[Math.max(0, i - 1)][0], m.points[Math.max(0, i - 1)][1]),
+        row = m.rows[i] || {},
+        heading = Math.atan2(here[0] - before[0], before[1] - here[1]) * 180 / Math.PI;
+
+    clear(el["trail-head"]);
+    var car = make("g");
+    car.setAttribute("transform", "translate(" + here[0].toFixed(1) + "," +
+                     here[1].toFixed(1) + ") rotate(" + heading.toFixed(1) + ")");
+    var halo = make("circle");
+    halo.setAttribute("r", "13"); halo.setAttribute("fill", "rgba(238,82,26,.18)");
+    car.appendChild(halo);
+    var body = make("path");
+    body.setAttribute("d", "M-6,-10 L6,-10 L7,6 L-7,6 Z");
+    body.setAttribute("fill", "#ee521a");
+    body.setAttribute("stroke", "#ffd4c2"); body.setAttribute("stroke-width", "1");
+    car.appendChild(body);
+    var cab = make("rect");
+    cab.setAttribute("x", "-4.5"); cab.setAttribute("y", "-4");
+    cab.setAttribute("width", "9"); cab.setAttribute("height", "7");
+    cab.setAttribute("rx", "1.5"); cab.setAttribute("fill", "#7a2a0d");
+    car.appendChild(cab);
+    el["trail-head"].appendChild(car);
+
+    var speed = num(row.speed_kph), elapsed = num(row.elapsed_s), parts = [];
+    if (elapsed !== null) parts.push(duration(elapsed));
+    if (speed !== null) parts.push(speed.toFixed(0) + " km/h");
+    el["play-time"].textContent = parts.length ? parts.join(" · ")
+                                : (i + 1) + "/" + m.points.length;
+  }
+
+  function stopPlayback() {
+    if (state.play.timer !== null) { window.clearInterval(state.play.timer); }
+    state.play.timer = null;
+    el.play.textContent = "\u25B6";
+    el.play.setAttribute("aria-label", "Play the trip back");
+  }
+  function togglePlayback() {
+    if (state.play.timer !== null) { stopPlayback(); return; }
+    var m = state.map;
+    if (!m || m.points.length < 2) return;
+    if (Number(el.scrub.value) >= m.points.length - 1) el.scrub.value = "0";
+    el.play.textContent = "\u23F8";
+    el.play.setAttribute("aria-label", "Pause");
+    /* A fixed frame rate rather than real time: a two-hour session played at
+       its own pace is not playback, it is waiting. */
+    state.play.timer = window.setInterval(function () {
+      var next = Number(el.scrub.value) + 1;
+      if (!state.map || next > state.map.points.length - 1) { stopPlayback(); return; }
+      el.scrub.value = String(next);
+      showFrame(next);
+    }, 90);
+  }
+
   /* ---------- the map ----------
      Drawn from the recorder's own fixes. No tile server: the CSP forbids it,
      and asking one for tiles would hand a stranger the coordinates this
      project spent real effort keeping local. */
   function renderMap() {
     var hist = (state.snapshot && state.snapshot.history) || [],
-        pts = [];
+        pts = [], rows = [];
     for (var i = 0; i < hist.length; i++) {
       var la = num(hist[i].gps_lat), lo = num(hist[i].gps_lon);
-      if (la !== null && lo !== null) pts.push([la, lo]);
+      if (la !== null && lo !== null) { pts.push([la, lo]); rows.push(hist[i]); }
     }
-    clear(el["map-grid"]); clear(el["trail-head"]);
+
+    /* Rebuilding the map tears down the playback marker with it, and the page
+       polls every five seconds. Watching a past trip therefore used to jump
+       back to the start twice a minute -- the route had not changed, only the
+       clock had. A past session's fixes never change at all, and a live one
+       only grows at the end, so compare the track before touching it and
+       leave a playback in progress alone when it is the same track. */
+    var signature = state.selected + "|" + pts.length +
+                    (pts.length ? "|" + pts[0].join(",") + "|" +
+                     pts[pts.length - 1].join(",") : "");
+    if (state.map && state.map.signature === signature) return;
+    stopPlayback();
+
+    clear(el["map-grid"]); clear(el["trail-head"]); clear(el["alert-marks"]);
     el.trail.setAttribute("d", "");
     clear(el["map-stats"]);
+    state.map = null;
+    el.playback.classList.remove("on");
 
     if (pts.length < 2) {
       el["map-empty"].style.display = "grid";
@@ -1326,6 +1444,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       return [offX + (lo - minLo) * mPerLon * scale,
               offY + (maxLa - la) * mPerLat * scale];   /* north is up */
     }
+    /* Held so playback and the alert marks can place things in the same
+       frame without recomputing a projection that must not drift from the
+       one the trail was drawn with. */
+    state.map = { project: project, points: pts, rows: rows, signature: signature };
     for (var g = 0; g <= 4; g++) {
       var ln = make("line");
       ln.setAttribute("x1", pad); ln.setAttribute("x2", 500 - pad);
@@ -1366,6 +1488,44 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     car.appendChild(cab);
     el["trail-head"].appendChild(car);
 
+    /* --- radar alerts, at the coordinate each was recorded at. A list of
+       alerts says one happened; a map says where, which is the question
+       anyone actually has about a radar detector. --- */
+    var BAND_COLOUR = { KA: "#ff5c5c", K: "#ffb454", X: "#6cc7ff", LASER: "#ff4de0" },
+        recent = (state.r8 && state.r8.recent) || [], plotted = 0;
+    recent.forEach(function (a) {
+      if (typeof a.lat !== "number" || typeof a.lon !== "number") return;
+      /* Only plot an alert that falls inside this trip's own extent --
+         otherwise a detection from another day lands wherever the maths
+         puts it and reads as part of this route. */
+      if (a.lat < minLa - 0.002 || a.lat > maxLa + 0.002) return;
+      if (a.lon < minLo - 0.002 || a.lon > maxLo + 0.002) return;
+      var xy = project(a.lat, a.lon), g = make("g");
+      var halo = make("circle");
+      halo.setAttribute("cx", xy[0].toFixed(1)); halo.setAttribute("cy", xy[1].toFixed(1));
+      halo.setAttribute("r", String(6 + (a.strength || 1)));
+      halo.setAttribute("fill", BAND_COLOUR[a.band] || "#93a1a5");
+      halo.setAttribute("opacity", "0.18");
+      g.appendChild(halo);
+      var dot = make("circle");
+      dot.setAttribute("cx", xy[0].toFixed(1)); dot.setAttribute("cy", xy[1].toFixed(1));
+      dot.setAttribute("r", "3.4");
+      dot.setAttribute("fill", BAND_COLOUR[a.band] || "#93a1a5");
+      g.appendChild(dot);
+      g.appendChild(make("title", null,
+        a.band + (a.frequency_ghz ? " " + a.frequency_ghz.toFixed(3) + " GHz" : "") +
+        " · strength " + (a.strength === null ? "?" : a.strength) +
+        " · " + a.direction + (a.at ? " · " + a.at.slice(11, 19) : "")));
+      el["alert-marks"].appendChild(g);
+      plotted++;
+    });
+
+    /* --- playback --- */
+    el.playback.classList.add("on");
+    el.scrub.max = String(pts.length - 1);
+    if (Number(el.scrub.value) > pts.length - 1) el.scrub.value = String(pts.length - 1);
+    showFrame(Number(el.scrub.value) || pts.length - 1);
+
     /* distance along the trail */
     var metres = 0;
     for (var m = 1; m < pts.length; m++) {
@@ -1404,7 +1564,17 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         return d === null ? "" : d.toFixed(1) + " km this session"; } },
     { key: "resistance", label: "Pack resistance", unit: "mΩ", digits: 2, accent: "var(--ev-charge)",
       detail: function () { var r = derived("resistance");
-        return Array.isArray(r) && r.length >= 2 ? "n=" + r[1] + " current steps" : "needs current steps"; } }
+        return Array.isArray(r) && r.length >= 2 ? "n=" + r[1] + " current steps" : "needs current steps"; } },
+    { key: "regen_pct", label: "Regen recovered", unit: "%", digits: 1, accent: "var(--good)",
+      detail: function () {
+        var back = num(derived("kwh_regen")), drawn = num(derived("kwh_drawn"));
+        if (back === null || drawn === null) return "moving energy only";
+        return back.toFixed(2) + " kWh back of " + drawn.toFixed(2) + " drawn"; } },
+    { key: "kw_peak_regen", label: "Peak regen", unit: "kW", digits: 1, accent: "var(--cool)",
+      detail: function () {
+        var counter = derived("regen_counter");
+        return counter === null || counter === undefined
+          ? "" : "0x27BF counter at " + counter + ", units unknown"; } }
   ];
   function tileValue(t) {
     var d = derived(t.key);
@@ -1514,10 +1684,106 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   }
 
   /* ---------- signals ---------- */
+  /* ---------- which part of the truck shows which signal ----------
+     Every recorded column appears here exactly once. The second entry is what
+     the model actually does with it; a null part is a signal that is recorded
+     and *not* drawn, with the reason, because the honest answer to "where is
+     this on the truck" is sometimes "nowhere, and here is why".
+
+     The refusals are the load-bearing part of this table. There is no
+     front- or rear-axle telemetry on this vehicle: `hv_power_kw`, `pack_a`
+     and `power_kw` are whole-driveline, so if the three motors glow they glow
+     together. `array_2b43` returns 26 values against 24 modules and the gap is
+     unexplained, so it is never mapped onto module geometry. `evse_current_raw`
+     was falsified as charge-port current twice, independently. Drawing any of
+     those on a part would look better and mean less. */
+  var SIGNAL_PART = {
+    /* --- traction pack --- */
+    soc_pct:        ["pack-case", "pack charge level"],
+    energy_kwh:     ["pack-case", "pack charge level (the one that moves smoothly)"],
+    range_mi:       ["pack-case", "pack charge level"],
+    dist_since_chg_mi: ["pack-case", "pack charge level"],
+    temp_f:         ["pack-case", "pack temperature tint"],
+    cell_avg_v:     ["pack-case", "cell envelope"],
+    cell_min_v:     ["pack-case", "cell envelope"],
+    cell_max_v:     ["pack-case", "cell envelope"],
+    cell_spread_mv: ["pack-case", "cell envelope spread"],
+    pack_v:         ["pack-case", "HV bus"],
+    pack_a:         ["pack-case", "HV bus flow, direction from the sign"],
+    array_2af1:     ["mod-*", "24 module blocks, shaded by deviation from their median"],
+
+    /* --- drive units: shared bus power only --- */
+    hv_power_kw:    ["motor-*", "all three drive units together — the bus is shared"],
+    power_kw:       ["motor-*", "all three drive units together — the bus is shared"],
+    field_2429_raw: ["motor-*", "drive/regen torque, whole driveline"],
+
+    /* --- wheels and brakes --- */
+    speed_kph:      ["wheel-*", "wheel rotation"],
+    wheel_fl_kph:   ["tyre-fl", "corner rotation (corner label is a source label)"],
+    wheel_fr_kph:   ["tyre-fr", "corner rotation (corner label is a source label)"],
+    wheel_rl_kph:   ["tyre-rl", "corner rotation (corner label is a source label)"],
+    wheel_rr_kph:   ["tyre-rr", "corner rotation (corner label is a source label)"],
+    brake_kpa:      ["brake-*", "all four discs equally — it is one system pressure"],
+    regen_field_raw: ["brake-*", "regen indication"],
+    steering_deg:   ["tyre-fl", "front wheel angle (the ratio is assumed, not measured)"],
+    odometer_km:    ["wheel-*", "distance travelled"],
+
+    /* --- chassis attitude --- */
+    lateral_g:      ["shell", "body roll"],
+    longitudinal_g: ["shell", "body pitch"],
+
+    /* --- thermal --- */
+    thermal_energy_raw:  ["pipe-l", "coolant flow, gated on the accumulator advancing"],
+    coolant_1_raw:       ["pipe-r", "coolant tint, relative ramp — the unit is unknown"],
+    coolant_2_raw:       ["hvac", "HVAC on/off only"],
+    group_v1_raw:        ["hvac", "HVAC actuator command"],
+    field_4127_raw:      ["shell", "powertrain awake/asleep — wakes or dims the whole model"],
+    compressor_temp_raw: ["chiller", "compressor activity"],
+
+    /* --- 12 V and charging --- */
+    volts:          ["lv", "12 V rail, sensed at the OBD-II connector"],
+    module_voltage: ["lv", "12 V rail, sensed at module 17 — the precise one"],
+    dmc2_v:         ["lv", "12 V rail, sensed at module 1D"],
+    charger_5401_raw: ["charge", "charge port lit when the state byte is non-zero"],
+
+    /* --- fault lamp --- */
+    mil_on:         ["shell", "warning lamp (module 17's view of it)"],
+    dtc_count:      ["shell", "warning lamp (module 17's view of it)"],
+
+    /* --- recorded, deliberately not drawn --- */
+    array_2b43:     [null, "26 values against 24 modules; the gap is unexplained"],
+    cell_extra_raw: [null, "four bytes, unattributed"],
+    evse_current_raw: [null, "not EVSE current — falsified twice, independently"],
+    group_v2_raw:   [null, "not a group voltage; six distinct values, always equal to v3"],
+    group_v3_raw:   [null, "not a group voltage; six distinct values, always equal to v2"],
+    field_4124_raw: [null, "four distinct values across the corpus; not a temperature"],
+    hv_temp_raw:    [null, "held still through a 16.2 °F pack warm-up; not a temperature"],
+    thermal_distance_raw: [null, "redundant with the thermal accumulator"],
+    obd_standard:   [null, "module bookkeeping, nothing physical"],
+    run_time_s:     [null, "module bookkeeping, nothing physical"],
+    dist_with_mil_km: [null, "module bookkeeping, nothing physical"],
+    warmups_since_clear: [null, "module bookkeeping, nothing physical"],
+    dist_since_clear_km: [null, "module bookkeeping, nothing physical"],
+    utc:            [null, "bookkeeping"],
+    elapsed_s:      [null, "bookkeeping"],
+
+    /* --- the node's own receiver, not the vehicle --- */
+    gps_mode:       ["#map", "map and track"],
+    gps_lat:        ["#map", "map and track"],
+    gps_lon:        ["#map", "map and track"],
+    gps_alt_m:      ["#map", "map readout"],
+    gps_speed_mps:  ["#map", "map readout, and the speed cross-check"],
+    gps_track_deg:  ["#map", "heading of the playback marker"],
+    gps_sats:       ["#map", "fix quality"],
+    gps_epx_m:      ["#map", "fix quality"],
+    gps_time:       ["#map", "fix quality"]
+  };
+
   function renderSignals(vs) {
     clear(el["signals-body"]);
     var signals = (state.snapshot && state.snapshot.signals) || {},
-        names = Object.keys(signals).sort(), filter = state.filter.toLowerCase(), shown = 0;
+        names = Object.keys(signals).sort(), filter = state.filter.toLowerCase(),
+        shown = 0, drawn = 0;
     names.forEach(function (name) {
       var s = signals[name] || {},
           hay = (name + " " + (s.label || "") + " " + (s.source || "") + " " + (s.identifier || "")).toLowerCase();
@@ -1546,13 +1812,24 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       cell("Confidence", h("span", "conf",
         s.confidence === null || s.confidence === undefined ? "–"
           : ("level " + s.confidence + (s.confidence_label ? " · " + s.confidence_label : ""))));
+      var bound = SIGNAL_PART[name];
+      if (bound && bound[0]) { drawn++; }
+      var where = h("div");
+      where.appendChild(h("div", null, bound ? (bound[0] || "not drawn") : "unmapped"));
+      where.appendChild(h("div", "prov", bound ? bound[1] : "no entry in the part index"));
+      if (!bound || !bound[0]) where.firstChild.className = "muted";
+      cell("Shown on", where);
       el["signals-body"].appendChild(tr);
     });
     el["signal-sub"].textContent = shown + " of " + names.length +
-      " signals" + (filter ? " matching “" + state.filter + "”" : "") + ", grouped by the module that answers them.";
+      " signals" + (filter ? " matching “" + state.filter + "”" : "") +
+      ", grouped by the module that answers them. " + drawn + " of " + shown +
+      " are drawn somewhere on the model or the map; the rest are recorded and " +
+      "say so, because a signal nobody can attribute to a part is not one to " +
+      "put on a part.";
     if (!shown) {
       var tr = h("tr"), td = h("td", "empty-row", "No signal matches that filter.");
-      td.colSpan = 6; tr.appendChild(td); el["signals-body"].appendChild(tr);
+      td.colSpan = 7; tr.appendChild(td); el["signals-body"].appendChild(tr);
     }
   }
 
@@ -1566,12 +1843,190 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     var full = Math.max(0, Math.min(8, Math.round(n)));
     return "\u2588".repeat(full) + "\u2591".repeat(8 - full);
   }
+  /* The eight signal-strength segments, weakest to strongest, sampled from
+     the vector artwork in the R8 owner's manual (Issue 3, March 2024). The
+     detector draws all eight always and lights the ones it has earned. */
+  var R8_STEPS = ["#cde3e8", "#f4f1b5", "#fcec7a", "#f9ce62",
+                  "#fbb03b", "#f77941", "#f9461c", "#d80505"];
+
+  function r8Arrow(g, direction, colour) {
+    /* One glyph position, three states -- and "side" is a single
+       double-headed arrow on the real panel, not a left and a right one. */
+    var x = 330, top = 58, bottom = 211, shaft = 12, head = 34, lip = 58;
+    var d;
+    if (direction === "rear") {
+      d = "M" + (x - shaft) + " " + top + " H" + (x + shaft) + " V" + (bottom - lip) +
+          " H" + (x + head) + " L" + x + " " + bottom + " L" + (x - head) + " " +
+          (bottom - lip) + " H" + (x - shaft) + " Z";
+    } else if (direction === "side") {
+      var mid = (top + bottom) / 2;
+      d = "M" + (x - head) + " " + mid + " L" + (x - head + lip) + " " + (mid - head) +
+          " V" + (mid - shaft) + " H" + (x + head - lip) + " V" + (mid - head) +
+          " L" + (x + head) + " " + mid + " L" + (x + head - lip) + " " + (mid + head) +
+          " V" + (mid + shaft) + " H" + (x - head + lip) + " V" + (mid + head) + " Z";
+    } else {
+      d = "M" + x + " " + top + " L" + (x + head) + " " + (top + lip) + " H" + (x + shaft) +
+          " V" + bottom + " H" + (x - shaft) + " V" + (top + lip) + " H" + (x - head) + " Z";
+    }
+    var path = make("path");
+    path.setAttribute("d", d);
+    path.setAttribute("fill", colour);
+    g.appendChild(path);
+  }
+
+  function r8Bars(g, lit) {
+    /* Slanted parallelograms, 2.4 mm on a 2.9 mm pitch, leaning forward. */
+    for (var i = 0; i < 8; i++) {
+      var x = 392 + i * 29, top = 196, tall = 30, skew = 9,
+          seg = make("path");
+      seg.setAttribute("d", "M" + (x + skew) + " " + top + " h24 l-" + skew + " " +
+                       tall + " h-24 Z");
+      var on = typeof lit === "number" && i < lit;
+      seg.setAttribute("fill", on ? R8_STEPS[i] : "#1d1f21");
+      g.appendChild(seg);
+    }
+  }
+
+  function r8Text(g, x, y, size, colour, weight, anchor, value) {
+    var t = make("text", null, value);
+    t.setAttribute("x", x); t.setAttribute("y", y);
+    t.setAttribute("font-size", size); t.setAttribute("fill", colour);
+    t.setAttribute("font-weight", weight);
+    t.setAttribute("text-anchor", anchor || "start");
+    t.setAttribute("font-family", "ui-monospace,Menlo,Consolas,monospace");
+    g.appendChild(t);
+    return t;
+  }
+
+  function r8Rect(g, x, y, w, hh, fill, stroke, rx, sw) {
+    var r = make("rect");
+    r.setAttribute("x", x); r.setAttribute("y", y);
+    r.setAttribute("width", w); r.setAttribute("height", hh);
+    if (rx) r.setAttribute("rx", rx);
+    r.setAttribute("fill", fill || "none");
+    if (stroke) { r.setAttribute("stroke", stroke); r.setAttribute("stroke-width", sw || 5); }
+    g.appendChild(r);
+    return r;
+  }
+
+  /* ---------- the detector's own front panel ----------
+     Drawn from the published envelope (98.00 x 38.80 mm face) and the parts
+     diagram in the owner's manual, in tenths of a millimetre. A photograph
+     would be prettier and would show nothing: this one shows the live screen.
+     Everything not measured from the manual or the FCC external photos is
+     left plain rather than invented. */
+  function drawR8Face(d) {
+    var svg = el["r8-face"];
+    clear(svg);
+
+    /* Body: the flattened octagon of the real bezel -- every corner chamfered,
+       widest just below mid-height, the bottom edge bowed gently down. */
+    var body = make("path");
+    body.setAttribute("d", "M40 0 H940 L980 58 V246 L928 378 Q490 397 52 378 " +
+                           "L0 246 V58 Z");
+    body.setAttribute("fill", "#111315");
+    body.setAttribute("stroke", "#2b2f33");
+    body.setAttribute("stroke-width", 4);
+    svg.appendChild(body);
+
+    /* The recessed panel inside the raised bezel frame. */
+    r8Rect(svg, 78, 26, 824, 262, "#0a0b0c", "#1e2124", 10, 3);
+
+    /* The display glass: 52.8 x 19.5 mm, hard left of centre, upper half.
+       True black when off -- the manual's illustrations draw #333, which is
+       an artefact of the artwork, not the panel. */
+    r8Rect(svg, 100, 45, 528, 195, "#000000", "#191c1f", 6, 3);
+
+    /* Uniden wordmark, light silver-grey, 69-90% across, vertically centred. */
+    r8Text(svg, 779, 168, 62, "#cfd7e1", 600, "middle", "Uniden")
+      .setAttribute("font-family", "system-ui,-apple-system,Segoe UI,sans-serif");
+    r8Text(svg, 779, 208, 26, "#4a5158", 500, "middle", "R8")
+      .setAttribute("font-family", "system-ui,-apple-system,Segoe UI,sans-serif");
+
+    /* The two front-face keys. MUTE/DIM moved to the front on the R8 and the
+       legends are backlit, so they glow rather than sit as grey paint. */
+    [[59, 210, "MUTE/DIM"], [412, 222, "MARK"]].forEach(function (key) {
+      r8Rect(svg, key[0], 302, key[1], 58, "#15181a", "#2e3337", 12, 3);
+      r8Text(svg, key[0] + key[1] / 2, 341, 27, "#c8d0d8", 600, "middle", key[2]);
+    });
+
+    var screen = make("g");
+    svg.appendChild(screen);
+
+    if (!d || !d.available) {
+      r8Text(screen, 364, 152, 34, "#3a4046", 500, "middle", "no link");
+      return;
+    }
+
+    var alert = (d.alerts || [])[0] || null;
+
+    /* Left status box: rounded rect with a coloured border, a large value and
+       a small unit under it. Speed when the node has a GPS fix -- which is
+       what the detector's own box shows -- and supply volts otherwise, which
+       is exactly the substitution the manual describes. */
+    var signals = (state.snapshot && state.snapshot.signals) || {},
+        gpsSpeed = signals.gps_speed_mps ? num(signals.gps_speed_mps.value) : null,
+        fresh = signals.gps_speed_mps && signals.gps_speed_mps.status === "fresh";
+    var boxValue, boxUnit;
+    if (gpsSpeed !== null && fresh) {
+      boxValue = String(Math.round(gpsSpeed * 2.23694)); boxUnit = "mph";
+    }
+    else if (typeof d.voltage === "number") { boxValue = d.voltage.toFixed(1); boxUnit = "v"; }
+    else { boxValue = "--"; boxUnit = ""; }
+    r8Rect(screen, 116, 60, 156, 166, "none", alert ? "#ff0000" : "#8a1f1f", 14, 5);
+    r8Text(screen, 194, 158, 66, "#ffffff", 700, "middle", boxValue);
+    r8Text(screen, 194, 202, 28, "#999999", 500, "middle", boxUnit);
+
+    if (!alert) {
+      /* Idle: the R8 shows its alert-priority mode with an underline. */
+      var mode = d.mode === "continuous" ? "Highway" : (d.mode || "Auto");
+      mode = mode.charAt(0).toUpperCase() + mode.slice(1);
+      r8Text(screen, 452, 148, 52, "#39b54a", 700, "middle", mode);
+      var rule = make("rect");
+      rule.setAttribute("x", 352); rule.setAttribute("y", 166);
+      rule.setAttribute("width", 200); rule.setAttribute("height", 5);
+      rule.setAttribute("fill", "#39b54a");
+      screen.appendChild(rule);
+      if (d.gps_locked === true)
+        r8Text(screen, 604, 84, 24, "#39b54a", 600, "end", "GPS");
+      return;
+    }
+
+    var band = alert.band || "unknown",
+        lit = alert.strength,
+        tone = typeof lit === "number" ? R8_STEPS[Math.max(0, Math.min(7, lit - 1))] : "#ff0000";
+    /* A muted signal is drawn grey on the real panel. */
+    if (alert.muted === true) tone = "#7a7f84";
+
+    if (band === "LASER") {
+      /* Laser has no arrow, no bars and no frequency -- the word, a beam and
+         a starburst. Drawing bars here would be inventing a reading. */
+      r8Text(screen, 300, 130, 54, "#ff2020", 700, "start", "Laser");
+      var beam = make("path");
+      beam.setAttribute("d", "M300 178 H560");
+      beam.setAttribute("stroke", "#ffb03b");
+      beam.setAttribute("stroke-width", 7);
+      screen.appendChild(beam);
+      r8Text(screen, 588, 196, 62, "#ffb03b", 700, "middle", "✳");
+      return;
+    }
+
+    r8Arrow(screen, alert.direction, alert.muted === true ? "#7a7f84" : "#ff0000");
+    r8Text(screen, 392, 128, 74, tone, 800, "start", band);
+    r8Text(screen, 610, 128, 32, "#ffffff", 500, "end",
+           typeof alert.frequency_ghz === "number"
+             ? alert.frequency_ghz.toFixed(3) + "GHz" : "");
+    r8Bars(screen, lit);
+  }
+
   function renderR8() {
     var d = state.r8;
-    clear(el["r8-state"]); clear(el["r8-alerts"]);
+    clear(el["r8-state"]);
+    drawR8Face(d);
     if (!d || !d.available) {
       el["r8-state"].appendChild(document.createTextNode(
         d && d.reason ? "Detector unavailable: " + d.reason : "Detector unavailable."));
+      el["r8-history"].textContent = "";
       return;
     }
     function fact(label, value) {
@@ -1592,27 +2047,17 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       ? "Last published " + duration(d.age_s) + " ago — the detector's logger has gone quiet."
       : "Live, published " + duration(d.age_s) + " ago.";
 
-    var live = d.alerts || [], recent = d.recent || [],
-        list = live.length ? live : recent,
-        heading = live.length ? "alerting now" : "most recent";
-    if (!list.length) {
-      el["r8-alerts"].appendChild(h("li", null, "No alerts recorded."));
-      return;
-    }
-    list.slice(0, 8).forEach(function (a) {
-      var li = h("li"),
-          band = h("span", "band band-" + (a.band || "unknown"), a.band || "?");
-      li.appendChild(band);
-      var mid = h("div");
-      mid.appendChild(h("span", "bars", bars(a.strength)));
-      var detail = [a.direction || "unknown"];
-      if (typeof a.frequency_ghz === "number") detail.push(a.frequency_ghz.toFixed(3) + " GHz");
-      if (typeof a.duration_s === "number") detail.push(a.duration_s.toFixed(1) + " s");
-      mid.appendChild(h("div", "prov", detail.join(" · ")));
-      li.appendChild(mid);
-      li.appendChild(h("span", "r8-meta", a.at ? a.at.slice(11, 19) : heading));
-      el["r8-alerts"].appendChild(li);
-    });
+    /* History belongs on the map, at the coordinate each alert was recorded
+       at -- a list of frequencies answers no question anyone actually has. */
+    var recent = d.recent || [],
+        located = recent.filter(function (a) {
+          return typeof a.lat === "number" && typeof a.lon === "number";
+        }).length;
+    el["r8-history"].textContent = recent.length
+      ? recent.length + " recent alert" + (recent.length === 1 ? "" : "s") + ", " +
+        (located ? located + " with a position — plotted on the track above."
+                 : "none with a position, so none can be placed on the map.")
+      : "No alerts recorded yet.";
   }
 
   /* ---------- legend + caveat ---------- */
@@ -1655,8 +2100,19 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     el["f-period"].textContent = num(s.period_s) === null ? "–" : s.period_s.toFixed(1) + " s";
     el["f-age"].textContent = num(s.age_s) === null ? "–" : duration(s.age_s) + " ago";
   }
-  function renderSessions(list) {
-    if (!Array.isArray(list)) return;
+  function renderSessions(payload) {
+    /* The endpoint answers {sessions:[{id,modified_utc}], latest}. An earlier
+       version of this assumed a bare array and silently returned when it was
+       not one, which left the picker showing "Latest session" and nothing
+       else -- 63 recorded trips unreachable, with no error anywhere. Both
+       shapes are accepted now, and an unexpected one leaves a note rather
+       than failing quietly. */
+    var list = Array.isArray(payload) ? payload
+             : (payload && Array.isArray(payload.sessions) ? payload.sessions : null);
+    if (!list) {
+      el["session-select"].title = "The session list was not in a recognised shape.";
+      return;
+    }
     var ids = list.map(function (x) { return typeof x === "string" ? x : (x && x.id); })
                   .filter(function (x) { return typeof x === "string"; });
     if (ids.join("|") === state.sessions.join("|")) return;
@@ -1688,9 +2144,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
      the loop, with a generation counter so a reply that arrives after the
      user changed session is dropped rather than rendered against the wrong
      one. Kept from the implementation this replaces; it was already right. */
-  function getJson(path) {
+  function getJson(path, timeout) {
     var controller = new AbortController(),
-        timer = window.setTimeout(function () { controller.abort(); }, TIMEOUT_MS);
+        timer = window.setTimeout(function () { controller.abort(); },
+                                  timeout === undefined ? TIMEOUT_MS : timeout);
     return fetch(path, {
       method: "GET", cache: "no-store", credentials: "same-origin",
       headers: { Accept: "application/json" }, signal: controller.signal
@@ -1708,10 +2165,23 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     state.busy = true; state.queued = false;
     if (state.timer !== null) { window.clearTimeout(state.timer); state.timer = null; }
     var generation = state.generation, wanted = state.selected;
+    /* Independent of the vehicle chain in both directions. It used to be
+       fetched only after a successful snapshot, so a slow or failed session
+       read blanked the detector panel as well -- one subsystem reporting
+       another subsystem's outage as its own. The detector is a separate
+       device on a separate bus and says so for itself. */
+    getJson("/api/r8").then(function (r8) {
+      if (generation !== state.generation) return;
+      state.r8 = r8; renderR8();
+    }).catch(function () {
+      if (generation !== state.generation) return;
+      state.r8 = { available: false, reason: "not reachable" }; renderR8();
+    });
     getJson("/api/sessions").then(function (sessions) {
       if (generation !== state.generation) return null;
       renderSessions(sessions);
-      return getJson("/api/snapshot?session=" + encodeURIComponent(wanted));
+      return getJson("/api/snapshot?session=" + encodeURIComponent(wanted),
+                     SNAPSHOT_TIMEOUT_MS);
     }).then(function (snapshot) {
       if (snapshot === null) return;
       if (generation !== state.generation || wanted !== state.selected) return;
@@ -1721,15 +2191,6 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       state.snapshot = snapshot; state.network = "ok"; state.error = "";
       state.retried = false;
       render();
-      /* The detector is a separate concern and must not be able to break the
-         vehicle view: fetched after the render that matters, and a failure
-         only clears the radar panel. */
-      getJson("/api/r8").then(function (r8) {
-        if (generation !== state.generation) return;
-        state.r8 = r8; renderR8();
-      }).catch(function () {
-        state.r8 = { available: false, reason: "not reachable" }; renderR8();
-      });
     }).catch(function (err) {
       if (generation !== state.generation) return;
       /* One dropped request is not an outage. A single poll is lost every
@@ -1758,8 +2219,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
   /* ---------- wiring ---------- */
   el["session-select"].addEventListener("change", function (ev) {
+    stopPlayback(); el.scrub.value = "0";
     state.selected = ev.target.value; state.snapshot = null;
     state.generation++; state.network = "loading"; render(); refresh();
+  });
+  el.play.addEventListener("click", togglePlayback);
+  el.scrub.addEventListener("input", function (ev) {
+    stopPlayback();
+    showFrame(Number(ev.target.value));
   });
   el["signal-search"].addEventListener("input", function (ev) {
     state.filter = ev.target.value || ""; renderSignals(viewState());
