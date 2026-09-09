@@ -1985,10 +1985,20 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
      nearest family it resembles. */
   function cordset(byte) {
     if (byte === null) return null;
-    if (byte === 0) return "not charging";
-    if (byte >= 0x90 && byte <= 0x9F) return "240 V AC family (0x" + byte.toString(16).toUpperCase() + ")";
-    if (byte === 0x0C || byte === 0x0D) return "120 V 12 A cordset (0x" + byte.toString(16).toUpperCase() + ")";
-    return "state 0x" + byte.toString(16).toUpperCase() + ", family not seen before";
+    var hex = "0x" + byte.toString(16).toUpperCase();
+    if (byte === 0) return { known: true, plugged: false, text: "not charging" };
+    if (byte >= 0x90 && byte <= 0x9F) {
+      return { known: true, plugged: true, text: "240 V AC family (" + hex + ")" };
+    }
+    if (byte === 0x0C || byte === 0x0D) {
+      return { known: true, plugged: true, text: "120 V 12 A cordset (" + hex + ")" };
+    }
+    /* Everything else is a state this project has not tied to a cordset. The
+       vehicle reports 0x1E and 0x1A while merely awake and unplugged, so a
+       non-zero byte is not evidence of a cable. Saying "connected" here would
+       be asserting the one thing that is not established. */
+    return { known: false, plugged: null,
+             text: "state " + hex + ", not tied to a cordset" };
   }
 
   /* Colour by distance from the median of the 24, not by absolute value.
@@ -2157,7 +2167,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     clear(chargeBadge);
     chargeBadge.hidden = !plugged;
     if (plugged) {
-      var head = h("span", "k", charging ? "charging" : "connected, idle");
+      var supplyState = cordset(stateByte.length ? stateByte[stateByte.length - 1] : null);
+      var head = h("span", "k",
+        charging ? "charging"
+                 : (supplyState && supplyState.plugged === true) ? "connected, idle"
+                 : "charge port state");
       chargeBadge.appendChild(head);
       var line = h("div");
       line.appendChild(h("b", null,
@@ -2165,9 +2179,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         (packA === null ? "–" : Math.abs(packA).toFixed(1)) + " A   " +
         (packKw === null ? "–" : Math.abs(packKw).toFixed(2)) + " kW"));
       chargeBadge.appendChild(line);
-      var supply = cordset(stateByte.length ? stateByte[stateByte.length - 1] : null);
       chargeBadge.appendChild(h("span", "note",
-        supply ? "supply: " + supply : "supply: not reported"));
+        supplyState ? "supply: " + supplyState.text : "supply: not reported"));
       chargeBadge.appendChild(h("span", "note",
         "DC measured at the pack; nothing here measures the wall."));
     }

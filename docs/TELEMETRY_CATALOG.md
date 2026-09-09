@@ -118,6 +118,10 @@ Every state in the corpus, against pack power and movement:
 | `1E` | 22 | **0** | **0** | 22 | 0 |
 | `17` | 8 | **0** | **0** | 8 | 0 |
 
+A second awake state, `0x1A`, appeared minutes later in the same session, also
+at zero power. So the non-charging non-zero states are at least `0x10`, `0x17`,
+`0x1A` and `0x1E`, and the list is open.
+
 Two things fall out. `00` is the **only** state ever observed while the vehicle
 is moving, across 1447 moving rows — which is what stops regen, pouring power
 into the pack under braking, from reading as a charge. And `0x1E` and `0x17`
