@@ -703,9 +703,17 @@ def record(
             #   3. adapter awake, vehicle session dead            -> reconnect
             #
             # State 3 looked exactly like state 2 and was handled as it. On
-            # 2026-09-09 the truck was driven 2.2 km while the recorder wrote
-            # `None` for every field across sixty-eight minutes, having decided
-            # the vehicle was asleep because ATRV kept answering 12.9 V.
+            # 2026-09-09 the truck was driven 2.2 km and not one of the samples
+            # taken while it was moving carried a single OBD field -- seven
+            # minutes of driving, 19:58 to 20:05, entirely lost, because ATRV
+            # kept answering 12.9 V and the recorder concluded "asleep".
+            #
+            # Stated precisely because the first telling of it was not: that
+            # session held 137 rows, and 120 of them were a genuinely parked
+            # truck reading nothing, which is correct behaviour and not a
+            # fault. Six rows are the bug. Counting the parked ones as failure
+            # would argue for exactly the over-eager reconnecting that the
+            # 2026-09-04 comment above exists to prevent.
             #
             # What tells 2 from 3 is not on the OBD bus at all: it is the
             # node's own GPS. A receiver moving at road speed is bolted to a
