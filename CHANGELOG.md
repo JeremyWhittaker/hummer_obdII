@@ -184,6 +184,31 @@ discount.
   the coordinates this project spent the day keeping local. 1,013 lines
   replacing 2,035, one self-contained file, no external anything.
 
+### Added
+
+- **The first outside measurement of this vehicle's own speed.** Everything the
+  project knew about how fast the truck goes came from the truck: `010D` from
+  module 17 and the wheel speeds from module 28, which agree with each other —
+  worth something, and not the same as being right, since two readings from one
+  driveline can be wrong together.
+
+  Re-derived against the **closed** 573-row session: three routes sharing no
+  hardware agree within 1 kph at the peak — `010D` **132**, wheels **133**, GPS
+  **132 kph**.
+
+  Sample-by-sample agreement looks poor (sd 18.32 kph, r = 0.831 over 253 moving
+  samples) and then explains itself: restricted to steady speed the scatter more
+  than halves to sd **8.30** with r = **0.9603**. That is the same intra-cycle
+  sampling skew already established between `010D` and the wheel speeds — a row
+  is one pass of a 7–9 s poll cycle, so the two are read seconds apart. This is
+  the **third** signal pair to show it and the first involving a source that is
+  not on the vehicle, which is what turns a plausible explanation into a
+  measured one.
+
+  The residual −1.01 kph bias is left unattributed: tyre circumference, the
+  legislated tendency of speedometers to read high, and GPS speed error could
+  each account for it alone, and nothing here separates them.
+
 ### Fixed
 
 - **Three faults found by rendering the page and looking at it**, none of which

@@ -375,6 +375,46 @@ sample (237.64 kW) compared against a 60-second average; the trailing mean at
 that same row was 42.01 kW against `−power_kw` of 37.82 — 10 % apart. Corpus-wide
 r = +0.9725 against the 60 s mean, versus +0.3988 against the instantaneous value.
 
+### GPS: the first outside measurement of this vehicle's own speed
+
+Everything this project knows about how fast the truck is going came from the
+truck. `010D` is the legislated PID from module 17; the four wheel speeds come
+from the brake controller at module 28. They agree with each other, which is
+worth something and is not the same as being right — two readings derived from
+the same driveline can be wrong together.
+
+A GPS receiver is outside that entirely. Re-derived against the **closed**
+573-row session of 2026-09-08, 318 rows carrying both a 3D fix and a vehicle
+speed:
+
+| route | module / source | peak |
+|---|---|---|
+| `010D` | standard OBD, module 17 | **132 kph** |
+| wheel speeds | brake controller, module 28 | **133 kph** |
+| GPS | satellites | **132 kph** |
+
+Three routes sharing no hardware, agreeing within 1 kph at the peak.
+
+Sample-by-sample the agreement looks worse and then explains itself. Over all
+253 moving samples, GPS reads **1.46 kph** below `010D` on average with a
+standard deviation of **18.32** and r = 0.831 — which reads like poor agreement
+until the samples are restricted to steady speed. Excluding rows where the
+speed was changing faster than 2 kph/s leaves 178, and the scatter more than
+halves: sd **8.30**, r = **0.9603**, mean difference −1.01 kph.
+
+That is the same intra-cycle sampling skew already established between `010D`
+and the wheel speeds. A row is one pass of a 7–9 second poll cycle, so the
+vehicle's speed and the GPS fix inside it are read seconds apart; under hard
+acceleration the truck genuinely *was* travelling at different speeds when each
+was sampled. Two signal pairs showed this before. This is the third, and the
+first involving a source that is not on the vehicle at all — which is what
+turns a plausible explanation into a measured one.
+
+**The bias is small and the direction is not established.** −1.01 kph at steady
+speed is within what tyre circumference, the legislated tendency of vehicle
+speedometers to read slightly high, and GPS speed error could each account for
+on their own. Nothing here separates them.
+
 ### The second drive: the independent repeat, which confirms two and dents one
 
 A 9.10 km drive later the same day, 93 samples, −325.8 to +577.5 A. Its whole
