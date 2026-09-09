@@ -313,6 +313,22 @@ and the body rolls and pitches from the vehicle's own `lateral_g` and
 `longitudinal_g`, so it leans in a corner because the accelerometer says it is
 leaning.
 
+**Both screens work.** The 13.4-inch centre screen carries the session's own
+track, north up, with the vehicle at the newest fix. The real one runs a
+Google-built-in app grid over a climate bar and this project has neither app
+state nor HVAC setpoints, so drawing that would be decoration wearing the
+costume of a readout. Showing where the vehicle went is something a centre
+screen genuinely does and this project can genuinely answer. It is vector
+only, with no map tiles: an image fetched cross-origin taints a canvas, and a
+tainted canvas cannot be uploaded as a texture at all — `texImage2D` throws
+rather than degrading.
+
+The steering wheel rim crosses the bottom of the cluster and hides the range
+figure. That is not a bug: GM's own press photograph from the driver's seat
+shows the rim cutting through the power gauge, and reviewers complain about
+having to read the display through the wheel. Raising the eye point to clear
+it would be drawing a truck that is easier to read than the real one.
+
 **The driver display works.** The 12.3-inch cluster renders GM's own Lunar
 layout — the one GM illustrates as the default — from this project's
 telemetry: the battery arc bowed left with 100% at the top, the range in

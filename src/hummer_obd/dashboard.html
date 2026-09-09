@@ -1381,6 +1381,28 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, clusterCanvas);
     }
 
+    var centreCanvas = document.createElement("canvas"),
+        centreTex = gl.createTexture(), centreStamp = null;
+    centreCanvas.width = CENTRE_W; centreCanvas.height = CENTRE_H;
+    var centreCtx = centreCanvas.getContext("2d");
+    gl.bindTexture(gl.TEXTURE_2D, centreTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    function refreshCentre() {
+      /* Keyed on a short summary rather than on the whole object. The track
+         can be hundreds of points and this runs every frame; stringifying it
+         sixty times a second to discover nothing changed would cost more than
+         drawing it. */
+      var d = live.centre || {}, key = d.key || "";
+      if (key === centreStamp) return;
+      centreStamp = key;
+      drawCentre(centreCtx, d);
+      gl.bindTexture(gl.TEXTURE_2D, centreTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, centreCanvas);
+    }
+
     var meshes = { box: makeMesh(gl, unitBox()), cyl: makeMesh(gl, unitCylinder(28)),
                        bev: makeMesh(gl, bevelBox(0.10)), tyre: makeMesh(gl, tyreMesh(0.58, 30)),
                        ring: makeMesh(gl, tyreMesh(0.86, 34)),
@@ -1490,6 +1512,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       gl.uniformMatrix4fv(loc.view, false, view);
       gl.uniform3fv(loc.eye, new Float32Array(eye));
       refreshCluster();
+      refreshCentre();
 
       /* Body attitude, from the vehicle's own accelerometer. +X is forward
          and Y is up, so a lateral reading rolls the body about X and a
@@ -1678,9 +1701,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         /* The screen sampled from world position. Set for every part, not
            only the textured one: a uniform left at 1 would paint the next
            object with the cluster. */
-        if (p.screen === "cluster" && live.awake) {
+        if (p.screen && live.awake) {
           gl.activeTexture(gl.TEXTURE0);
-          gl.bindTexture(gl.TEXTURE_2D, clusterTex);
+          gl.bindTexture(gl.TEXTURE_2D,
+                         p.screen === "centre" ? centreTex : clusterTex);
           gl.uniform1i(loc.tex, 0);
           gl.uniform4f(loc.screen,
                        p.t[2] - p.s[2] / 2, p.t[2] + p.s[2] / 2,
@@ -1812,6 +1836,68 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     ctx.fillText("12 V", 452, 158);
     ctx.fillStyle = "#e8eef2"; ctx.font = "700 20px " + FONT;
     ctx.fillText(d.lv === null ? "–" : d.lv.toFixed(1), 452, 180);
+  }
+
+  /* The centre screen. The real one runs a Google-built-in app grid over a
+     climate bar, and this project has neither app state nor HVAC setpoints,
+     so drawing that would be decoration wearing the costume of a readout.
+     What a centre screen genuinely does that this project can genuinely
+     answer is show where the vehicle is, so it shows the session's own
+     track, north up, with the vehicle at the newest fix.
+
+     Vector only, no tiles. The map card gets its ground from the node, but
+     an image fetched cross-origin taints a canvas, and a tainted canvas
+     cannot be uploaded as a texture -- texImage2D throws rather than
+     degrading. A route with no ground under it is still a route; a screen
+     that throws is nothing. */
+  var CENTRE_W = 512, CENTRE_H = 256;
+
+  function drawCentre(ctx, d) {
+    var FONT = "system-ui,-apple-system,Segoe UI,Roboto,sans-serif", i, xy;
+    ctx.fillStyle = "#05070a";
+    ctx.fillRect(0, 0, CENTRE_W, CENTRE_H);
+    ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "#6b7a82"; ctx.font = "600 13px " + FONT;
+    ctx.fillText("TRACK", 18, 22);
+
+    if (!d.pts || d.pts.length < 2) {
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#3d474d"; ctx.font = "600 20px " + FONT;
+      ctx.fillText(d.note || "no position", CENTRE_W / 2, CENTRE_H / 2);
+      return;
+    }
+
+    /* Points arrive normalised 0..1 with north up, so the only work here is
+       fitting them to the panel without changing their aspect. */
+    var pad = 34, w = CENTRE_W - pad * 2, hh = CENTRE_H - pad * 2 - 14,
+        k = Math.min(w, hh), ox = pad + (w - k) / 2, oy = pad + 8 + (hh - k) / 2;
+    function place(pt) { return [ox + pt[0] * k, oy + pt[1] * k]; }
+
+    ctx.strokeStyle = "#3fc7e0"; ctx.lineWidth = 3.4;
+    ctx.lineJoin = "round"; ctx.lineCap = "round";
+    ctx.beginPath();
+    for (i = 0; i < d.pts.length; i++) {
+      xy = place(d.pts[i]);
+      if (i === 0) ctx.moveTo(xy[0], xy[1]); else ctx.lineTo(xy[0], xy[1]);
+    }
+    ctx.stroke();
+
+    xy = place(d.pts[d.pts.length - 1]);
+    ctx.fillStyle = "rgba(238,82,26,0.28)";
+    ctx.beginPath(); ctx.arc(xy[0], xy[1], 13, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#ee521a";
+    ctx.beginPath(); ctx.arc(xy[0], xy[1], 6, 0, Math.PI * 2); ctx.fill();
+
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#8d9aa2"; ctx.font = "600 14px " + FONT;
+    ctx.fillText(d.label || "", CENTRE_W - 18, 22);
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#4d5960"; ctx.font = "600 12px " + FONT;
+    ctx.fillText("N", 18, 48);
+    ctx.strokeStyle = "#4d5960"; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(24, 60); ctx.lineTo(24, 44); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(20, 50); ctx.lineTo(24, 44); ctx.lineTo(28, 50);
+    ctx.stroke();
   }
 
   /* ---------- the vehicle ---------- */
@@ -1975,9 +2061,49 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         return b.length > 0 && b.some(function (x) { return x !== 0; });
       })(),
       fault: sigValue("mil_on") === 1 || (sigValue("dtc_count") || 0) > 0,
-      /* Awake if anything is actually moving or drawing: a live session with
-         power on the bus, or a charge in progress. */
-      awake: vs === "live" || derived("charging") === true,
+      /* Lit whenever the session being shown has readings in it. The first
+         rule here was "live or charging", which is a fair description of the
+         truck and the wrong one for the page: picking a past trip blanked the
+         two screens that exist to show what that trip recorded, while every
+         tile beside them went on showing it. The screens follow the session,
+         and go dark only when there is nothing to show. */
+      awake: !!(state.snapshot && state.snapshot.session
+                && state.snapshot.session.rows > 0),
+      /* The centre screen's track, normalised to a unit square with north up
+         and the aspect preserved, so the panel only has to fit it. */
+      centre: (function () {
+        var hist = (state.snapshot && state.snapshot.history) || [],
+            raw = [], i, la, lo;
+        for (i = 0; i < hist.length; i++) {
+          la = num(hist[i].gps_lat); lo = num(hist[i].gps_lon);
+          if (la !== null && lo !== null) raw.push([la, lo]);
+        }
+        if (raw.length < 2) {
+          return { key: "none", note: "no position in this session" };
+        }
+        var lats = [], lons = [];
+        for (i = 0; i < raw.length; i++) { lats.push(raw[i][0]); lons.push(raw[i][1]); }
+        var minLa = Math.min.apply(null, lats), maxLa = Math.max.apply(null, lats),
+            minLo = Math.min.apply(null, lons), maxLo = Math.max.apply(null, lons),
+            midLa = (minLa + maxLa) / 2,
+            mLat = 111320, mLon = 111320 * Math.cos(midLa * Math.PI / 180),
+            spanX = Math.max(1, (maxLo - minLo) * mLon),
+            spanY = Math.max(1, (maxLa - minLa) * mLat),
+            extent = Math.max(spanX, spanY), pts = [];
+        for (i = 0; i < raw.length; i++) {
+          pts.push([((raw[i][1] - minLo) * mLon) / extent + (1 - spanX / extent) / 2,
+                    ((maxLa - raw[i][0]) * mLat) / extent + (1 - spanY / extent) / 2]);
+        }
+        return {
+          key: raw.length + ":" + raw[0].join(",") + ":" + raw[raw.length - 1].join(","),
+          pts: pts,
+          /* Short: the housing crops the outer edges of the glass, so a
+             long label loses its last words rather than wrapping. */
+          label: extent < STATIONARY_M
+            ? "parked " + extent.toFixed(0) + " m"
+            : (extent / 1000).toFixed(1) + " km"
+        };
+      })(),
       cluster: {
         /* Rounded before it becomes the texture's cache key, so the display
            does not re-upload every poll because a reading moved a
