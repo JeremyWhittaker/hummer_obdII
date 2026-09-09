@@ -346,6 +346,19 @@ The gear indicator stays empty. Nothing in this project reports PRNDL, and
 inferring it from speed would be inventing the one number on that screen a
 driver would most reasonably trust.
 
+**Views and layers are separate controls.** Views are where the camera
+stands — Exterior, Driver's seat, Underside — and sit above the render because
+choosing one changes what every layer button means: from outside they strip a
+cutaway, from the seat they are the difference between seeing the dashboard
+and seeing through it. Layers stay below, as the parts you can take away.
+
+**The coolant flows.** The pipes carried a pulse before, which says "thermal
+system" rather than "flow". They now carry slugs running their length, the two
+pipes in opposite directions so the pair reads as the supply-and-return circuit
+it is. They move only while the thermal accumulator is advancing, at a speed
+taken from that same signal, and they vanish rather than parking mid-pipe when
+it stops — a stopped pump has to look stopped.
+
 **There is a driver's seat.** A toggle moves the camera into the cabin and
 dims the body so you can see out of it. The cabin carries what GM publishes:
 the 12.3-inch reconfigurable cluster and the 13.4-inch centre touchscreen —

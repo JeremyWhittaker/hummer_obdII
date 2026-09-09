@@ -178,6 +178,26 @@ select:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid 
 .scene-badge .note{color:var(--ink-3);font-size:10.5px;display:block;margin-top:4px}
 .scene-swatch{display:inline-block;width:9px;height:9px;border-radius:2px;
   vertical-align:baseline;margin-right:5px}
+/* Views are where the camera stands; layers are what is drawn. Two different
+   questions, so two different controls, and the view control comes first
+   because it changes what the layer buttons even mean -- from outside they
+   strip a cutaway, from the driver's seat they are the difference between
+   seeing the dashboard and seeing through it. */
+.views{display:flex;flex-wrap:wrap;gap:7px;margin:2px 0 12px}
+.views button{
+  font:inherit;font-size:12px;padding:7px 14px;border-radius:999px;
+  border:1px solid var(--line);background:var(--bg);color:var(--ink-2);
+  cursor:pointer;letter-spacing:.01em;
+}
+.views button:hover{border-color:var(--ink-3)}
+.views button[aria-pressed="true"]{
+  border-color:var(--ev-orange);color:var(--ev-orange);
+  background:rgba(238,82,26,.10);font-weight:600;
+}
+.views-label{
+  font-size:10.5px;letter-spacing:.10em;text-transform:uppercase;
+  color:var(--ink-3);align-self:center;margin-right:4px;
+}
 .layers{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
 .seat-toggle{border-color:var(--ev-orange)!important;color:var(--ev-orange)!important}
 .layers button{
@@ -386,6 +406,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   <div class="card bracket fadeable">
     <h2>The vehicle</h2>
     <p class="sub" id="vehicle-sub">Plan view, nose left. Driver's side at the bottom.</p>
+    <div class="views" id="views" role="group" aria-label="Camera views"></div>
     <div class="vehicle-wrap">
       <canvas id="scene" aria-label="Interactive 3D view of the vehicle"></canvas>
       <div class="scene-badge" id="charge-badge" hidden></div>
@@ -547,7 +568,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   var el = {}, state = {
     snapshot: null, sessions: [], selected: "latest", network: "loading",
     error: "", timer: null, busy: false, queued: false, generation: 0,
-    series: "power", filter: "", retried: false, sessionKey: "",
+    series: "power", filter: "", retried: false, sessionKey: "", view: "exterior",
     map: null, play: { timer: null },
     /* Coolant flow is animated from whether the thermal accumulator is
        actually advancing, which needs the previous poll to compare against.
@@ -565,7 +586,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     "module-caveat","map","map-tiles","map-grid","trail","trail-head","map-empty","map-stats",
     "alert-marks","playback","play","scrub","play-time",
     "tiles","chart","chart-empty","chart-sub","tab-power","tab-soc","tab-speed",
-    "notes","signal-search","signals-body","signal-sub","scene","scene-status","layers","charge-badge","thermal-badge","r8-state","r8-face","r8-history","r8-sub"
+    "notes","signal-search","signals-body","signal-sub","scene","scene-status","layers","views","charge-badge","thermal-badge","r8-state","r8-face","r8-history","r8-sub"
   ].forEach(function (id) { el[id] = byId(id); });
 
   /* ---------- small helpers ---------- */
@@ -1135,6 +1156,30 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           flow: true, t: [0.70, 0.32, VEH.packWidth / 2 + 0.14],
           s: [3.3, 0.08, 0.08], rot: "x" });
 
+    /* Coolant that actually moves. The pipes used to pulse in place, which
+       says "thermal system" and not "flow". These are slugs running the
+       length of each pipe, and the two pipes run in opposite directions so
+       the pair reads as a circuit rather than two hoses pointing the same
+       way -- which is what a supply and a return are.
+
+       They move only while the thermal accumulator is advancing or the HVAC
+       actuator is away from quiescent, and their speed comes from that same
+       signal, so a stopped pump means stopped coolant on screen. Decoration
+       that keeps running while the hardware is idle is the lie this whole
+       page is built to avoid. Their colour is the pack temperature, on the
+       same ramp as the pipe they are inside. */
+    var pipeBackX = 0.70 - 1.65, pipeFrontX = 0.70 + 1.65;
+    [[-(VEH.packWidth / 2 + 0.14), pipeBackX, pipeFrontX],
+     [VEH.packWidth / 2 + 0.14, pipeFrontX, pipeBackX]].forEach(function (run, side) {
+      for (var i = 0; i < 5; i++) {
+        add({ id: "coolant-" + side + "-" + i, mesh: "cyl", layer: "thermal",
+              colour: [0.30, 0.72, 0.82], coolant: true, chargeOnly: false,
+              travel: { axis: 0, from: run[1], to: run[2], phase: i / 5,
+                        rate: "coolant" },
+              t: [run[1], 0.32, run[0]], s: [0.115, 0.115, 0.20], rot: "x" });
+      }
+    });
+
     /* No ground plane. A floor would look better in a still, and it would
        also hide the half of this vehicle worth looking at -- the pack, the
        skid plate, the drive units and the coolant runs are all underneath,
@@ -1581,9 +1626,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           /* Position is a function of the clock, so it is computed here
              rather than stored: the parts list stays a description of the
              vehicle and not a place animation state accumulates. */
-          var speed = 0.20 + Math.min(1, Math.abs(live.chargeKw || 0) / 19.2) * 0.55,
+          var axis = p.travel.axis === undefined ? 2 : p.travel.axis,
+              speed = p.travel.rate === "coolant"
+                ? 0.55 * (live.flow || 0)
+                : 0.20 + Math.min(1, Math.abs(live.chargeKw || 0) / 19.2) * 0.55,
               along = ((now * 0.001 * speed + p.travel.phase) % 1);
-          p.t[2] = p.travel.from + (p.travel.to - p.travel.from) * along;
+          p.t[axis] = p.travel.from + (p.travel.to - p.travel.from) * along;
         }
         var mesh = meshes[p.mesh] || meshes.box;
         gl.bindBuffer(gl.ARRAY_BUFFER, mesh.position);
@@ -1638,6 +1686,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         }
         if (p.brake) {
           emissive = [live.brake * 0.9, live.brake * 0.08, live.brake * 0.08];
+        }
+        if (p.coolant) {
+          /* Invisible when nothing is moving, rather than parked mid-pipe
+             looking like a blockage. */
+          if (!live.flow) return;
+          var ct = typeof live.packTemp === "number"
+                   ? thermalColour(live.packTemp) : [0.30, 0.72, 0.82];
+          colour = ct;
+          emissive = [ct[0] * 0.55, ct[1] * 0.55, ct[2] * 0.55];
         }
         if (p.flow) {
           var pulse = 0.5 + 0.5 * Math.sin(now * 0.004 + p.t[2]),
@@ -1727,9 +1784,25 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     return {
       setLayer: function (name, value) { layers[name] = value; },
       layers: layers,
-      setCamera: function (mode) {
-        cam.mode = mode === "driver" ? "driver" : "orbit";
-        if (cam.mode === "driver") { cam.dyaw = 0; cam.dpitch = -0.06; }
+      setView: function (key) {
+        if (key === "driver") {
+          cam.mode = "driver"; cam.dyaw = 0; cam.dpitch = -0.06;
+          /* Dimmed harder than the cutaway default: at 0.40 the windshield
+             and the door card sit between the eye and everything worth
+             looking at. */
+          layers.shell = 0.14;
+          return "driver";
+        }
+        cam.mode = "orbit";
+        layers.shell = 0.40;
+        if (key === "underside") {
+          /* A preset for a place the camera can already reach by dragging,
+             which is exactly why it deserves a button: nobody discovers it
+             by accident. */
+          cam.pitch = -0.95; cam.yaw = -0.55; cam.dist = 7.4; cam.spin = 0;
+        } else {
+          cam.pitch = 0.34; cam.yaw = -0.72; cam.dist = 8.2; cam.spin = 0;
+        }
         return cam.mode;
       },
       camera: function () { return cam.mode; },
@@ -1911,30 +1984,44 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     ["wheels", "Wheels & brakes"], ["thermal", "Thermal"], ["aux", "12 V & charge"],
     ["underbody", "Underbody"], ["radar", "Radar"], ["cabin", "Cabin"],
     ];
+  /* Where the camera stands. Separate from the layer buttons because it is a
+     different question: layers are what is drawn, views are where you are
+     standing to look at it. The driver's seat in particular is not a filter
+     over the cutaway -- it is a place, and it changes what every other
+     control means. */
+  var VIEWS = [
+    { key: "exterior", label: "Exterior",
+      sub: "Drag to orbit, scroll to zoom." },
+    { key: "driver", label: "Driver's seat",
+      sub: "Looking forward from the seat. Drag to look around. The eye point "
+         + "is placed from the model's cabin, not from a published H-point "
+         + "\u2014 GM does not publish one for this truck." },
+    { key: "underside", label: "Underside",
+      sub: "Looking up from below. There is no ground plane, so the pack, the "
+         + "skid plates and the coolant runs are all visible." }
+  ];
+
+  function buildViewControls() {
+    clear(el.views);
+    el.views.appendChild(h("span", "views-label", "Views"));
+    VIEWS.forEach(function (view) {
+      var b = h("button", null, view.label);
+      b.setAttribute("aria-pressed", String(view.key === "exterior"));
+      b.addEventListener("click", function () {
+        if (!viewer) return;
+        state.view = view.key;
+        viewer.setView(view.key);
+        [].forEach.call(el.views.querySelectorAll("button"), function (other) {
+          other.setAttribute("aria-pressed", String(other === b));
+        });
+        renderVehicle(viewState());
+      });
+      el.views.appendChild(b);
+    });
+  }
+
   function buildLayerControls() {
     clear(el.layers);
-    /* The seat, first, because it changes what all the other buttons mean.
-       From outside they strip a cutaway; from inside they are the difference
-       between seeing the dashboard and seeing through it. */
-    var seat = h("button", "seat-toggle", "Driver's seat");
-    seat.setAttribute("aria-pressed", "false");
-    seat.addEventListener("click", function () {
-        if (!viewer) return;
-        var mode = viewer.setCamera(viewer.camera() === "driver" ? "orbit" : "driver"),
-            inside = mode === "driver";
-        seat.textContent = inside ? "Back outside" : "Driver's seat";
-        seat.setAttribute("aria-pressed", String(inside));
-        /* The body is dimmed further from inside: at 0.40 the windshield and
-           the door card sit between the eye and everything worth looking at.
-           Restored on the way out so the cutaway is as it was. */
-        viewer.setLayer("shell", inside ? 0.14 : 0.40);
-        el["vehicle-sub"].textContent = inside
-          ? "Driver's seat, looking forward. Drag to look around. The eye "
-            + "point is placed from the model's cabin, not from a published "
-            + "H-point \u2014 GM does not publish one for this truck."
-          : "Drag to orbit, scroll to zoom.";
-      });
-    el.layers.appendChild(seat);
     LAYER_LABELS.forEach(function (pair) {
       var name = pair[0], on = viewer ? viewer.layers[name] > 0.5 : true,
           b = h("button", null, pair[1]);
@@ -2199,9 +2286,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         "pack-side sensor. Which sensor, and where, is not established."));
     }
 
-    el["vehicle-sub"].textContent = usable
-      ? "Drag to orbit, scroll to zoom. Modules shaded by how far each sits from the median of the 24."
-      : "Drag to orbit, scroll to zoom. No per-module array in this sample.";
+    /* The caption belongs to the view, not to this function. Setting it here
+       unconditionally meant picking a view wrote a caption that the next poll,
+       five seconds later, quietly replaced with the orbit one -- so the
+       underside and the driver's seat both described themselves as "drag to
+       orbit" within a heartbeat of being selected. */
+    var view = VIEWS.filter(function (v) { return v.key === state.view; })[0] || VIEWS[0];
+    el["vehicle-sub"].textContent = view.sub + (usable
+      ? " Modules shaded by how far each sits from the median of the 24."
+      : " No per-module array in this sample.");
   }
 
   /* ---------- trip playback ----------
@@ -3339,6 +3432,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   });
 
   viewer = startViewer(el.scene, el["scene-status"]);
+  buildViewControls();
   buildLayerControls();
   renderLegend();
   render();
