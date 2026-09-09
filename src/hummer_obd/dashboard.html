@@ -153,7 +153,21 @@ select:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid 
 .hero{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:var(--gap);margin-bottom:var(--gap)}
 @media (max-width:1120px){.hero{grid-template-columns:1fr}}
 .vehicle-wrap{position:relative;padding:8px 4px 4px}
-#vehicle{width:100%;height:auto;display:block}
+#scene{
+  width:100%;height:430px;display:block;border-radius:var(--r-sm);
+  background:#0b0d0e;cursor:grab;touch-action:none;
+}
+#scene:active{cursor:grabbing}
+.scene-status{margin:8px 0 0;font-size:12px;color:var(--ink-3);min-height:1em}
+.layers{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
+.layers button{
+  background:var(--bg);border:1px solid var(--line);color:var(--ink-3);
+  font:inherit;font-size:12px;padding:6px 12px;border-radius:999px;cursor:pointer;
+  transition:background .18s ease,color .18s ease,border-color .18s ease;
+}
+.layers button[aria-pressed="true"]{
+  background:rgba(238,82,26,.16);border-color:var(--ev-orange);color:#ffc9b3;
+}
 .legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;font-size:11.5px;color:var(--ink-3)}
 .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
 .caveat{
@@ -332,163 +346,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     <h2>The vehicle</h2>
     <p class="sub" id="vehicle-sub">Plan view, nose left. Driver's side at the bottom.</p>
     <div class="vehicle-wrap">
-      <svg id="vehicle" viewBox="0 0 1000 400" role="img"
-           aria-labelledby="veh-title veh-desc">
-        <title id="veh-title">Cutaway plan view of the vehicle</title>
-        <desc id="veh-desc">Battery modules, drive units, brakes, coolant loops
-          and charge port in their physical locations, animated from live
-          telemetry.</desc>
-
-        <defs>
-          <linearGradient id="bodyGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#333a3f"/>
-            <stop offset=".5" stop-color="#242a2e"/>
-            <stop offset="1" stop-color="#171b1e"/>
-          </linearGradient>
-          <linearGradient id="floorGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#121618"/><stop offset="1" stop-color="#0b0e0f"/>
-          </linearGradient>
-          <linearGradient id="motorGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#3b444a"/><stop offset="1" stop-color="#232a2e"/>
-          </linearGradient>
-          <radialGradient id="packGlow" cx=".5" cy=".5" r=".5">
-            <stop offset="0" stop-color="#b9f227" stop-opacity=".10"/>
-            <stop offset="1" stop-color="#b9f227" stop-opacity="0"/>
-          </radialGradient>
-          <filter id="glowWarm" x="-60%" y="-60%" width="220%" height="220%">
-            <feGaussianBlur stdDeviation="4" result="b"/>
-            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-          </filter>
-          <filter id="glowCool" x="-60%" y="-60%" width="220%" height="220%">
-            <feGaussianBlur stdDeviation="3" result="b"/>
-            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-          </filter>
-          <filter id="drop" x="-25%" y="-25%" width="150%" height="150%">
-            <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity=".55"/>
-          </filter>
-        </defs>
-
-        <!-- ===== body. Boxy on purpose: squared arches, flat flanks, blunt
-             nose. 216.8 in long by 86.7 in wide, so 2.50:1. ===== -->
-        <!-- Silhouette. Squared-off nose, flat flanks, blunt tail, and wheel
-             arches that flare from the body rather than sitting beside it --
-             the arches are what make a Hummer read as a Hummer from above. -->
-        <g filter="url(#drop)">
-          <path d="M40,132 L40,268 L52,282 L52,318 L96,318
-                   L100,336 L212,336 L216,318 L262,318 L262,282
-                   L718,282 L718,318 L734,318 L738,336 L850,336 L854,318
-                   L946,318 L958,300 L958,100 L946,82 L854,82 L850,64
-                   L738,64 L734,82 L718,82 L718,118 L262,118 L262,82
-                   L216,82 L212,64 L100,64 L96,82 L52,82 L52,118 Z"
-                fill="url(#bodyGrad)" stroke="#535d63" stroke-width="2"
-                stroke-linejoin="round"/>
-          <!-- hood shut line and a bed lip, for depth -->
-          <line x1="262" y1="118" x2="262" y2="282" stroke="#3b4449" stroke-width="1.5"/>
-          <line x1="718" y1="118" x2="718" y2="282" stroke="#3b4449" stroke-width="1.5"/>
-          <line x1="40" y1="200" x2="52" y2="200" stroke="#3b4449" stroke-width="1.5"/>
-        </g>
-
-        <!-- Cab and bed as outlines only. This is a cutaway: the pack runs
-             underneath both, and a filled region on top of it would hide the
-             thing the whole diagram exists to show. -->
-        <path d="M300,98 L596,98 L596,302 L300,302" fill="none"
-              stroke="#2b3236" stroke-width="1.5" stroke-dasharray="4 6"/>
-        <rect x="612" y="104" width="316" height="192" rx="6" fill="none"
-              stroke="#2b3236" stroke-width="1.5" stroke-dasharray="4 6"/>
-        <text x="612" y="90" text-anchor="end" fill="#4b555b" font-size="10"
-              font-family="ui-sans-serif,system-ui" letter-spacing="3">CAB</text>
-        <text x="770" y="90" text-anchor="middle" fill="#4b555b" font-size="10"
-              font-family="ui-sans-serif,system-ui" letter-spacing="3">BED</text>
-
-        <!-- ===== battery floor ===== -->
-        <rect x="286" y="88" width="388" height="224" rx="11"
-              fill="url(#floorGrad)" stroke="#39434a" stroke-width="1.5"/>
-        <rect id="pack-glow" x="286" y="88" width="388" height="224" rx="11"
-              fill="url(#packGlow)" opacity="0"/>
-        <g id="modules"></g>
-        <text x="480" y="80" text-anchor="middle" fill="#66727a" font-size="11"
-              font-family="ui-sans-serif,system-ui" letter-spacing="2.4">24 MODULES · 2 LAYERS OF 12</text>
-
-        <!-- ===== coolant. Front loop serves the cabin and power electronics;
-             the pack loop runs the length of the battery. Both animate only
-             when the thermal system is actually doing something. ===== -->
-        <g fill="none" stroke-linecap="round">
-          <!-- front loop: HVAC pod out along the flank and back, clear of the
-               motor and the pack so a pipe reads as a pipe. -->
-          <path id="loop-front" class="flow" d="M108,278 L134,278 L134,84 L282,84"
-                stroke="#55d9ed" stroke-width="3" opacity=".85"/>
-          <path id="loop-front-b" class="flow" d="M282,316 L134,316 L134,296 L108,296"
-                stroke="#55d9ed" stroke-width="3" opacity=".85"/>
-          <!-- pack loop: along the battery's own long edges -->
-          <path id="loop-pack" class="flow" d="M292,84 L690,84 L690,200"
-                stroke="#55d9ed" stroke-width="2.6" opacity=".6"/>
-          <path id="loop-pack-b" class="flow" d="M690,200 L690,316 L292,316"
-                stroke="#55d9ed" stroke-width="2.6" opacity=".6"/>
-        </g>
-
-        <!-- ===== energy: pack to the axles it drives ===== -->
-        <g fill="none" stroke-linecap="round">
-          <path id="energy-front" class="energy" d="M286,200 L214,200"
-                stroke="#ee521a" stroke-width="4"/>
-          <path id="energy-rear" class="energy" d="M674,200 L738,200"
-                stroke="#ee521a" stroke-width="4"/>
-        </g>
-
-        <!-- ===== drive units ===== -->
-        <g id="motor-front">
-          <rect x="150" y="156" width="62" height="88" rx="10"
-                fill="url(#motorGrad)" stroke="#5a656b" stroke-width="1.5"/>
-          <circle id="motor-front-core" cx="181" cy="200" r="15" fill="#2c3439"/>
-          <text x="181" y="266" text-anchor="middle" fill="#7d8a90" font-size="10"
-                font-family="ui-sans-serif,system-ui">FRONT · 1</text>
-        </g>
-        <g id="motor-rear">
-          <rect x="740" y="140" width="70" height="120" rx="10"
-                fill="url(#motorGrad)" stroke="#5a656b" stroke-width="1.5"/>
-          <circle id="motor-rear-core-a" cx="775" cy="172" r="14" fill="#2c3439"/>
-          <circle id="motor-rear-core-b" cx="775" cy="228" r="14" fill="#2c3439"/>
-          <text x="775" y="278" text-anchor="middle" fill="#7d8a90" font-size="10"
-                font-family="ui-sans-serif,system-ui">REAR · 2</text>
-        </g>
-
-        <!-- ===== wheels, tyres and brakes. Nose left, driver's side bottom,
-             so front-left is bottom-left. ===== -->
-        <g id="wheels">
-          <g><rect id="w-fr" x="112" y="66" width="86" height="46" rx="8" fill="#0e1113" stroke="#6a757b" stroke-width="1.5"/>
-             <rect id="c-fr" class="caliper" x="122" y="104" width="66" height="10" rx="5" fill="#39424a"/></g>
-          <g><rect id="w-fl" x="112" y="288" width="86" height="46" rx="8" fill="#0e1113" stroke="#6a757b" stroke-width="1.5"/>
-             <rect id="c-fl" class="caliper" x="122" y="286" width="66" height="10" rx="5" fill="#39424a"/></g>
-          <g><rect id="w-rr" x="750" y="66" width="86" height="46" rx="8" fill="#0e1113" stroke="#6a757b" stroke-width="1.5"/>
-             <rect id="c-rr" class="caliper" x="760" y="104" width="66" height="10" rx="5" fill="#39424a"/></g>
-          <g><rect id="w-rl" x="750" y="288" width="86" height="46" rx="8" fill="#0e1113" stroke="#6a757b" stroke-width="1.5"/>
-             <rect id="c-rl" class="caliper" x="760" y="286" width="66" height="10" rx="5" fill="#39424a"/></g>
-        </g>
-        <text id="t-fr" x="155" y="58"  text-anchor="middle" fill="#93a1a5" font-size="11" class="num">–</text>
-        <text id="t-fl" x="155" y="350" text-anchor="middle" fill="#93a1a5" font-size="11" class="num">–</text>
-        <text id="t-rr" x="793" y="58"  text-anchor="middle" fill="#93a1a5" font-size="11" class="num">–</text>
-        <text id="t-rl" x="793" y="350" text-anchor="middle" fill="#93a1a5" font-size="11" class="num">–</text>
-
-        <!-- charge port: driver's side, rear quarter, aft of the rear wheel -->
-        <g id="charge-port">
-          <rect x="872" y="262" width="46" height="28" rx="7" fill="#1b2023" stroke="#5a656b" stroke-width="1.5"/>
-          <circle id="charge-led" cx="895" cy="276" r="6" fill="#394145"/>
-        </g>
-        <text x="895" y="302" text-anchor="middle" fill="#66727a" font-size="9.5"
-              font-family="ui-sans-serif,system-ui" letter-spacing="1.5">CHARGE</text>
-
-        <!-- 12 V in the frunk, passenger-side pod (passenger = top here) -->
-        <g id="lv-batt">
-          <rect x="58" y="104" width="50" height="32" rx="6" fill="#1b2023" stroke="#5a656b" stroke-width="1.5"/>
-          <text x="83" y="125" text-anchor="middle" fill="#93a1a5" font-size="10.5" font-family="ui-sans-serif,system-ui">12V</text>
-        </g>
-        <!-- thermal hardware sits in the front zone -->
-        <g id="thermal">
-          <rect x="58" y="264" width="50" height="32" rx="6" fill="#1b2023" stroke="#5a656b" stroke-width="1.5"/>
-          <text x="83" y="285" text-anchor="middle" fill="#93a1a5" font-size="10.5" font-family="ui-sans-serif,system-ui">HVAC</text>
-        </g>
-
-        <path d="M8,200 L26,189 L26,211 Z" fill="#5a656b"/>
-      </svg>
+      <canvas id="scene" aria-label="Interactive 3D view of the vehicle"></canvas>
+      <p class="scene-status" id="scene-status"></p>
+      <div class="layers" id="layers"></div>
     </div>
     <div class="legend" id="legend"></div>
     <div class="caveat" id="module-caveat"></div>
@@ -599,14 +459,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
   function byId(id) { return document.getElementById(id); }
   [ "status-primary","status-secondary","banner","session-select","f-samples",
-    "f-duration","f-period","f-age","vehicle-sub","modules","legend",
+    "f-duration","f-period","f-age","vehicle-sub","legend",
     "module-caveat","map","map-grid","trail","trail-head","map-empty","map-stats",
     "tiles","chart","chart-empty","chart-sub","tab-power","tab-soc","tab-speed",
-    "notes","signal-search","signals-body","signal-sub","charge-led",
-    "t-fl","t-fr","t-rl","t-rr","w-fl","w-fr","w-rl","w-rr",
-    "loop-front","loop-front-b","loop-pack","loop-pack-b","energy-front","energy-rear",
-    "c-fl","c-fr","c-rl","c-rr","motor-front-core","motor-rear-core-a",
-    "motor-rear-core-b","pack-glow","r8-state","r8-alerts","r8-sub"
+    "notes","signal-search","signals-body","signal-sub","scene","scene-status","layers","r8-state","r8-alerts","r8-sub"
   ].forEach(function (id) { el[id] = byId(id); });
 
   /* ---------- small helpers ---------- */
@@ -673,150 +529,535 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     return raw === "fresh" || raw === "stale" ? raw : "missing";
   }
 
-  /* ---------- the vehicle ---------- */
-  function buildModules() {
-    clear(el.modules);
-    var cw = PACK.w / PACK.cols, ch = PACK.h / PACK.rows, pad = 3;
-    for (var r = 0; r < PACK.rows; r++) {
-      for (var c = 0; c < PACK.cols; c++) {
-        for (var layer = 0; layer < 2; layer++) {
-          var x = PACK.x + c * cw + pad,
-              y = PACK.y + r * ch + layer * (ch / 2) + pad / 2,
-              rect = make("rect", "mod");
-          rect.setAttribute("x", x.toFixed(1));
-          rect.setAttribute("y", y.toFixed(1));
-          rect.setAttribute("width", (cw - pad * 2).toFixed(1));
-          rect.setAttribute("height", (ch / 2 - pad).toFixed(1));
-          rect.setAttribute("rx", "3");
-          rect.setAttribute("stroke", "#333a3e");
-          rect.setAttribute("stroke-width", "0.8");
-          /* index: layer A is 0-11, layer B is 12-23, both front to back */
-          rect.dataset.index = String(layer * 12 + r * PACK.cols + c);
-          el.modules.appendChild(rect);
+
+  /* ==================================================================
+   * Live 3D.
+   *
+   * Hand-written WebGL, no library. The page's CSP allows no external
+   * script at all, so three.js is not an option -- but WebGL is a canvas
+   * API rather than a fetch, so raw GL is fine, and the matrix maths and
+   * shaders below are the price of that.
+   *
+   * Everything is modelled in metres from published dimensions, with the
+   * origin on the ground at the centre of the wheelbase, +X forward,
+   * +Y up, +Z to the passenger side. A part in the wrong place here is a
+   * lie told in three dimensions rather than two, so the numbers are
+   * kept together at the top where they can be checked against a spec
+   * sheet.
+   * ================================================================== */
+  var VEH = {
+    length: 5.507, width: 2.202, height: 2.009, wheelbase: 3.444,
+    frontOverhang: 0.881, rearOverhang: 1.181,
+    wheelRadius: 0.44, wheelWidth: 0.34,
+    packLength: 2.135, packWidth: 1.420, packTop: 0.52, packBottom: 0.28,
+    groundClearance: 0.264
+  };
+  var AXLE = VEH.wheelbase / 2;              /* +X front, -X rear      */
+  var HALF_W = VEH.width / 2;
+
+  /* ---- 4x4 matrices, column-major, the way GL wants them ---- */
+  function m4() { return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); }
+  function m4mul(a, b) {
+    var o = new Float32Array(16);
+    for (var c = 0; c < 4; c++) for (var r = 0; r < 4; r++) {
+      var s = 0;
+      for (var k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
+      o[c * 4 + r] = s;
+    }
+    return o;
+  }
+  function m4persp(fovy, aspect, near, far) {
+    var f = 1 / Math.tan(fovy / 2), o = new Float32Array(16);
+    o[0] = f / aspect; o[5] = f; o[11] = -1;
+    o[10] = (far + near) / (near - far);
+    o[14] = (2 * far * near) / (near - far);
+    return o;
+  }
+  function m4look(eye, at, up) {
+    function sub(a, b) { return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
+    function norm(v) {
+      var l = Math.hypot(v[0], v[1], v[2]) || 1;
+      return [v[0]/l, v[1]/l, v[2]/l];
+    }
+    function cross(a, b) {
+      return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+    }
+    function dot(a, b) { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
+    var z = norm(sub(eye, at)), x = norm(cross(up, z)), y = cross(z, x);
+    return new Float32Array([
+      x[0], y[0], z[0], 0,
+      x[1], y[1], z[1], 0,
+      x[2], y[2], z[2], 0,
+      -dot(x, eye), -dot(y, eye), -dot(z, eye), 1
+    ]);
+  }
+  function m4trs(tx, ty, tz, sx, sy, sz) {
+    var o = m4();
+    o[0] = sx; o[5] = sy; o[10] = sz;
+    o[12] = tx; o[13] = ty; o[14] = tz;
+    return o;
+  }
+
+  /* ---- one unit cube, reused for every part ----
+     Boxes and cylinders are enough: this is a cutaway of where things are,
+     not a styling model, and a box in the right place says more than a
+     smooth shell in the wrong one. */
+  function unitBox() {
+    var p = [], n = [], i = [], faces = [
+      [[ .5,-.5,-.5],[ .5, .5,-.5],[ .5, .5, .5],[ .5,-.5, .5],[ 1, 0, 0]],
+      [[-.5,-.5, .5],[-.5, .5, .5],[-.5, .5,-.5],[-.5,-.5,-.5],[-1, 0, 0]],
+      [[-.5, .5,-.5],[-.5, .5, .5],[ .5, .5, .5],[ .5, .5,-.5],[ 0, 1, 0]],
+      [[-.5,-.5, .5],[-.5,-.5,-.5],[ .5,-.5,-.5],[ .5,-.5, .5],[ 0,-1, 0]],
+      [[-.5,-.5, .5],[ .5,-.5, .5],[ .5, .5, .5],[-.5, .5, .5],[ 0, 0, 1]],
+      [[ .5,-.5,-.5],[-.5,-.5,-.5],[-.5, .5,-.5],[ .5, .5,-.5],[ 0, 0,-1]]
+    ];
+    faces.forEach(function (f, fi) {
+      for (var v = 0; v < 4; v++) {
+        p.push(f[v][0], f[v][1], f[v][2]);
+        n.push(f[4][0], f[4][1], f[4][2]);
+      }
+      var b = fi * 4;
+      i.push(b, b + 1, b + 2, b, b + 2, b + 3);
+    });
+    return { position: new Float32Array(p), normal: new Float32Array(n),
+             index: new Uint16Array(i) };
+  }
+
+  /* A cylinder on the Z axis, for wheels and motor rotors. */
+  function unitCylinder(segments) {
+    var p = [], n = [], i = [], s = segments || 24;
+    for (var k = 0; k <= s; k++) {
+      var a = k / s * Math.PI * 2, cx = Math.cos(a) * 0.5, cy = Math.sin(a) * 0.5;
+      p.push(cx, cy, -0.5); n.push(cx * 2, cy * 2, 0);
+      p.push(cx, cy,  0.5); n.push(cx * 2, cy * 2, 0);
+    }
+    for (var k2 = 0; k2 < s; k2++) {
+      var b = k2 * 2;
+      i.push(b, b + 1, b + 2, b + 1, b + 3, b + 2);
+    }
+    var capStart = p.length / 3;
+    for (var e = 0; e < 2; e++) {
+      var z = e ? 0.5 : -0.5, centre = p.length / 3;
+      p.push(0, 0, z); n.push(0, 0, e ? 1 : -1);
+      for (var k3 = 0; k3 <= s; k3++) {
+        var a3 = k3 / s * Math.PI * 2;
+        p.push(Math.cos(a3) * 0.5, Math.sin(a3) * 0.5, z);
+        n.push(0, 0, e ? 1 : -1);
+      }
+      for (var k4 = 0; k4 < s; k4++) {
+        if (e) i.push(centre, centre + 1 + k4, centre + 2 + k4);
+        else i.push(centre, centre + 2 + k4, centre + 1 + k4);
+      }
+    }
+    void capStart;
+    return { position: new Float32Array(p), normal: new Float32Array(n),
+             index: new Uint16Array(i) };
+  }
+
+  var VERT = [
+    "attribute vec3 aPos; attribute vec3 aNormal;",
+    "uniform mat4 uProj, uView, uModel;",
+    "varying vec3 vNormal, vWorld;",
+    "void main(){",
+    "  vec4 w = uModel * vec4(aPos,1.0);",
+    "  vWorld = w.xyz;",
+    /* Uniform scaling per part, so the model matrix is safe for normals. */
+    "  vNormal = mat3(uModel) * aNormal;",
+    "  gl_Position = uProj * uView * w;",
+    "}"
+  ].join("\n");
+
+  var FRAG = [
+    "precision mediump float;",
+    "varying vec3 vNormal, vWorld;",
+    "uniform vec3 uColour, uEmissive, uEye;",
+    "uniform float uAlpha;",
+    "void main(){",
+    "  vec3 n = normalize(vNormal);",
+    "  vec3 key = normalize(vec3(0.55, 0.9, 0.35));",
+    "  vec3 fill = normalize(vec3(-0.6, 0.35, -0.5));",
+    "  float kd = max(dot(n, key), 0.0);",
+    "  float fd = max(dot(n, fill), 0.0) * 0.32;",
+    /* A rim term does most of the work of making a dark object read as a
+       solid shape against a dark background. */
+    "  vec3 v = normalize(uEye - vWorld);",
+    "  float rim = pow(1.0 - max(dot(n, v), 0.0), 2.5);",
+    "  vec3 h = normalize(key + v);",
+    "  float spec = pow(max(dot(n, h), 0.0), 42.0) * 0.30;",
+    "  vec3 lit = uColour * (0.20 + kd * 0.85 + fd) + vec3(spec);",
+    "  lit += uEmissive;",
+    "  lit += uColour * rim * 0.55;",
+    "  gl_FragColor = vec4(lit, uAlpha);",
+    "}"
+  ].join("\n");
+
+  function compile(gl, type, src) {
+    var sh = gl.createShader(type);
+    gl.shaderSource(sh, src); gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+      throw new Error(gl.getShaderInfoLog(sh) || "shader failed");
+    }
+    return sh;
+  }
+
+  function makeMesh(gl, geo) {
+    function buf(target, data) {
+      var b = gl.createBuffer();
+      gl.bindBuffer(target, b); gl.bufferData(target, data, gl.STATIC_DRAW);
+      return b;
+    }
+    return {
+      position: buf(gl.ARRAY_BUFFER, geo.position),
+      normal: buf(gl.ARRAY_BUFFER, geo.normal),
+      index: buf(gl.ELEMENT_ARRAY_BUFFER, geo.index),
+      count: geo.index.length
+    };
+  }
+
+  /* ---- the scene ----
+     Positions are in metres from the published dimensions above. Anything
+     whose real location this project does not know is not placed: an
+     invented position looks exactly as authoritative as a measured one,
+     which is the whole problem with drawing a vehicle from memory. */
+  function buildScene() {
+    var parts = [], BODY = [0.30, 0.34, 0.37], DARK = [0.13, 0.15, 0.16];
+    function add(o) { parts.push(o); return o; }
+
+    /* --- shell: hood, cab, bed sides. Transparent by default so the
+       hardware underneath is visible, which is the point of the view. --- */
+    /* The shell is four boxes that MEET. Earlier they were sized
+       independently and floated apart, which read as scattered slabs rather
+       than one vehicle -- so the seams are computed from shared edges. */
+    var sillTop = 0.92, hoodTop = 1.40, cabTop = 2.009, bedTop = 1.32,
+        noseX = AXLE + VEH.frontOverhang, tailX = -(AXLE + VEH.rearOverhang),
+        cowlX = 1.28, bulkX = -0.62;
+    function slab(id, x0, x1, y0, y1, width, colour) {
+      add({ id: id, mesh: "box", layer: "shell", colour: colour || BODY,
+            t: [(x0 + x1) / 2, (y0 + y1) / 2, 0],
+            s: [Math.abs(x1 - x0), y1 - y0, width] });
+    }
+    slab("shell-sill", tailX, noseX, VEH.groundClearance, sillTop,
+         VEH.width - 0.04, DARK);
+    slab("shell-hood", cowlX, noseX, sillTop, hoodTop, VEH.width - 0.02);
+    slab("shell-cab", bulkX, cowlX, sillTop, cabTop, VEH.width);
+    slab("shell-bed", tailX, bulkX, sillTop, bedTop, VEH.width - 0.02);
+
+    /* --- battery: 24 modules, two layers of twelve, two across the width
+       and six front to back, between the axles. --- */
+    var cols = 6, rows = 2, mL = VEH.packLength / cols, mW = VEH.packWidth / rows,
+        layerH = (VEH.packTop - VEH.packBottom) / 2;
+    add({ id: "pack-case", mesh: "box", layer: "pack", colour: [0.10, 0.12, 0.13],
+          t: [0, (VEH.packTop + VEH.packBottom) / 2, 0],
+          s: [VEH.packLength + 0.10, VEH.packTop - VEH.packBottom + 0.06,
+              VEH.packWidth + 0.10], alpha: 0.30 });
+    for (var layer = 0; layer < 2; layer++) {
+      for (var r = 0; r < rows; r++) {
+        for (var c = 0; c < cols; c++) {
+          add({
+            id: "mod-" + (layer * 12 + r * cols + c),
+            index: layer * 12 + r * cols + c,
+            mesh: "box", layer: "pack", colour: [0.30, 0.61, 0.41],
+            t: [VEH.packLength / 2 - mL * (c + 0.5),
+                VEH.packBottom + layerH * (layer + 0.5),
+                VEH.packWidth / 2 - mW * (r + 0.5)],
+            s: [mL - 0.03, layerH - 0.025, mW - 0.05]
+          });
         }
       }
     }
+
+    /* --- drive units: one on the front axle, two in one rear housing --- */
+    add({ id: "motor-front", mesh: "cyl", layer: "drive", colour: [0.24, 0.28, 0.31],
+          t: [AXLE, 0.46, 0], s: [0.44, 0.44, 0.72], rot: "z" });
+    add({ id: "motor-rear-a", mesh: "cyl", layer: "drive", colour: [0.24, 0.28, 0.31],
+          t: [-AXLE, 0.46, -0.28], s: [0.44, 0.44, 0.46], rot: "z" });
+    add({ id: "motor-rear-b", mesh: "cyl", layer: "drive", colour: [0.24, 0.28, 0.31],
+          t: [-AXLE, 0.46, 0.28], s: [0.44, 0.44, 0.46], rot: "z" });
+    add({ id: "halfshaft-f", mesh: "box", layer: "drive", colour: [0.30, 0.33, 0.35],
+          t: [AXLE, 0.46, 0], s: [0.09, 0.09, VEH.width - 0.42] });
+    add({ id: "halfshaft-r", mesh: "box", layer: "drive", colour: [0.30, 0.33, 0.35],
+          t: [-AXLE, 0.46, 0], s: [0.09, 0.09, VEH.width - 0.42] });
+
+    /* --- wheels and brakes, four corners --- */
+    [["fl", AXLE, -1], ["fr", AXLE, 1], ["rl", -AXLE, -1], ["rr", -AXLE, 1]]
+      .forEach(function (w) {
+        var z = w[2] * (HALF_W - VEH.wheelWidth / 2 - 0.03);
+        add({ id: "tyre-" + w[0], mesh: "cyl", layer: "wheels",
+              colour: [0.07, 0.08, 0.09], spin: true,
+              t: [w[1], VEH.wheelRadius, z],
+              s: [VEH.wheelRadius * 2, VEH.wheelRadius * 2, VEH.wheelWidth], rot: "z" });
+        add({ id: "brake-" + w[0], mesh: "cyl", layer: "wheels",
+              colour: [0.22, 0.25, 0.28], brake: true,
+              t: [w[1], VEH.wheelRadius, z - w[2] * 0.02],
+              s: [0.62, 0.62, VEH.wheelWidth * 0.42], rot: "z" });
+      });
+
+    /* --- thermal. The HV coolant heater is mounted outside the pack on a
+       cradle and the compressor and pumps are fed from the front fuse
+       block, so the hardware lives forward; the runs to the pack are drawn
+       because the pack is liquid cooled, not because their routing is
+       known. --- */
+    add({ id: "hvac", mesh: "box", layer: "thermal", colour: [0.20, 0.42, 0.48],
+          t: [2.25, 0.72, -0.42], s: [0.42, 0.34, 0.44] });
+    add({ id: "chiller", mesh: "box", layer: "thermal", colour: [0.20, 0.42, 0.48],
+          t: [2.25, 0.72, 0.42], s: [0.42, 0.34, 0.44] });
+    add({ id: "pipe-l", mesh: "box", layer: "thermal", colour: [0.16, 0.50, 0.58],
+          flow: true, t: [0.75, 0.30, -(VEH.packWidth / 2 + 0.12)],
+          s: [3.4, 0.07, 0.07] });
+    add({ id: "pipe-r", mesh: "box", layer: "thermal", colour: [0.16, 0.50, 0.58],
+          flow: true, t: [0.75, 0.30, VEH.packWidth / 2 + 0.12],
+          s: [3.4, 0.07, 0.07] });
+
+    /* --- 12 V in the frunk, passenger-side pod --- */
+    add({ id: "lv", mesh: "box", layer: "aux", colour: [0.36, 0.30, 0.16],
+          t: [2.05, 1.02, 0.62], s: [0.34, 0.24, 0.30] });
+    /* --- charge port: driver's side, rear quarter --- */
+    add({ id: "charge", mesh: "box", layer: "aux", colour: [0.20, 0.24, 0.26],
+          t: [-2.30, 1.06, -(HALF_W - 0.05)], s: [0.26, 0.22, 0.10] });
+    return parts;
+  }
+
+  /* ---- the renderer ---- */
+  function startViewer(canvas, statusNode) {
+    var gl = canvas.getContext("webgl", { antialias: true, alpha: false })
+          || canvas.getContext("experimental-webgl");
+    if (!gl) {
+      if (statusNode) statusNode.textContent =
+        "This browser has no WebGL, so the 3D view cannot run.";
+      return null;
+    }
+    var prog = gl.createProgram();
+    try {
+      gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, VERT));
+      gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, FRAG));
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+        throw new Error(gl.getProgramInfoLog(prog) || "link failed");
+      }
+    } catch (err) {
+      if (statusNode) statusNode.textContent = "3D view unavailable: " + err.message;
+      return null;
+    }
+    gl.useProgram(prog);
+    var loc = {
+      pos: gl.getAttribLocation(prog, "aPos"),
+      nrm: gl.getAttribLocation(prog, "aNormal"),
+      proj: gl.getUniformLocation(prog, "uProj"),
+      view: gl.getUniformLocation(prog, "uView"),
+      model: gl.getUniformLocation(prog, "uModel"),
+      colour: gl.getUniformLocation(prog, "uColour"),
+      emissive: gl.getUniformLocation(prog, "uEmissive"),
+      alpha: gl.getUniformLocation(prog, "uAlpha"),
+      eye: gl.getUniformLocation(prog, "uEye")
+    };
+    var meshes = { box: makeMesh(gl, unitBox()), cyl: makeMesh(gl, unitCylinder(28)) },
+        parts = buildScene(),
+        cam = { yaw: -0.72, pitch: 0.34, dist: 8.2, spin: 0 },
+        layers = { shell: 0.24, pack: 1, drive: 1, wheels: 1, thermal: 1, aux: 1 },
+        live = { modules: [], kw: 0, brake: 0, flow: 0, speed: 0, charging: false };
+
+    gl.enable(gl.DEPTH_TEST);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.clearColor(0.043, 0.051, 0.055, 1);
+
+    /* ---- orbit by dragging, zoom by wheel ---- */
+    var drag = null;
+    canvas.addEventListener("pointerdown", function (e) {
+      drag = { x: e.clientX, y: e.clientY };
+      canvas.setPointerCapture(e.pointerId);
+    });
+    canvas.addEventListener("pointermove", function (e) {
+      if (!drag) return;
+      cam.yaw += (e.clientX - drag.x) * 0.008;
+      cam.pitch = Math.max(-0.15, Math.min(1.45, cam.pitch + (e.clientY - drag.y) * 0.006));
+      drag.x = e.clientX; drag.y = e.clientY;
+    });
+    ["pointerup", "pointercancel", "pointerleave"].forEach(function (ev) {
+      canvas.addEventListener(ev, function () { drag = null; });
+    });
+    canvas.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      cam.dist = Math.max(4.2, Math.min(18, cam.dist + Math.sign(e.deltaY) * 0.6));
+    }, { passive: false });
+
+    function draw(now) {
+      var w = canvas.clientWidth || 640, h = canvas.clientHeight || 380,
+          ratio = Math.min(window.devicePixelRatio || 1, 2);
+      if (canvas.width !== Math.round(w * ratio)) {
+        canvas.width = Math.round(w * ratio); canvas.height = Math.round(h * ratio);
+      }
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+      if (!drag) cam.spin += 0.0013;              /* a slow idle orbit */
+      var yaw = cam.yaw + cam.spin,
+          eye = [Math.cos(yaw) * Math.cos(cam.pitch) * cam.dist,
+                 Math.sin(cam.pitch) * cam.dist + 0.7,
+                 Math.sin(yaw) * Math.cos(cam.pitch) * cam.dist],
+          proj = m4persp(0.72, w / h, 0.1, 120),
+          view = m4look(eye, [0, 0.85, 0], [0, 1, 0]);
+      gl.uniformMatrix4fv(loc.proj, false, proj);
+      gl.uniformMatrix4fv(loc.view, false, view);
+      gl.uniform3fv(loc.eye, new Float32Array(eye));
+
+      /* Opaque first, then the translucent shell back-to-front, or the
+         shell writes depth and hides everything it is meant to reveal. */
+      var order = parts.slice().sort(function (a, b) {
+        var aa = a.alpha !== undefined ? a.alpha : layers[a.layer],
+            ba = b.alpha !== undefined ? b.alpha : layers[b.layer];
+        if ((aa < 1) !== (ba < 1)) return aa < 1 ? 1 : -1;
+        if (aa < 1) {
+          var da = (a.t[0]-eye[0])*(a.t[0]-eye[0]) + (a.t[2]-eye[2])*(a.t[2]-eye[2]),
+              db = (b.t[0]-eye[0])*(b.t[0]-eye[0]) + (b.t[2]-eye[2])*(b.t[2]-eye[2]);
+          return db - da;
+        }
+        return 0;
+      });
+
+      order.forEach(function (p) {
+        var alpha = p.alpha !== undefined ? p.alpha * layers[p.layer] : layers[p.layer];
+        if (alpha <= 0.01) return;
+        var mesh = meshes[p.mesh === "cyl" ? "cyl" : "box"];
+        gl.bindBuffer(gl.ARRAY_BUFFER, mesh.position);
+        gl.enableVertexAttribArray(loc.pos);
+        gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, mesh.normal);
+        gl.enableVertexAttribArray(loc.nrm);
+        gl.vertexAttribPointer(loc.nrm, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.index);
+
+        var model = m4trs(p.t[0], p.t[1], p.t[2], p.s[0], p.s[1], p.s[2]);
+        if (p.rot === "z") {
+          /* Cylinders are built on Z; a wheel needs its axis across the
+             vehicle, which is already Z, so only the spin is applied. */
+          var a = p.spin ? live.speed * now * 0.00004 : 0,
+              ca = Math.cos(a), sa = Math.sin(a),
+              rot = m4();
+          rot[0] = ca; rot[1] = sa; rot[4] = -sa; rot[5] = ca;
+          model = m4mul(model, rot);
+        }
+        gl.uniformMatrix4fv(loc.model, false, model);
+
+        var colour = p.colour, emissive = [0, 0, 0];
+        if (p.index !== undefined && live.modules.length === 24) {
+          colour = live.modules[p.index] || p.colour;
+        }
+        if (p.id && p.id.indexOf("motor") === 0) {
+          var m = Math.min(1, Math.abs(live.kw) / 180);
+          emissive = live.kw < 0 ? [0, m * 0.55, m * 0.18] : [m * 0.62, m * 0.20, 0];
+        }
+        if (p.brake) {
+          emissive = [live.brake * 0.9, live.brake * 0.08, live.brake * 0.08];
+        }
+        if (p.flow) {
+          var pulse = 0.5 + 0.5 * Math.sin(now * 0.004 + p.t[2]);
+          emissive = [0, live.flow * pulse * 0.35, live.flow * pulse * 0.45];
+        }
+        if (p.id === "charge" && live.charging) emissive = [0.35, 0.62, 0.70];
+        gl.uniform3fv(loc.colour, new Float32Array(colour));
+        gl.uniform3fv(loc.emissive, new Float32Array(emissive));
+        gl.uniform1f(loc.alpha, alpha);
+        gl.drawElements(gl.TRIANGLES, mesh.count, gl.UNSIGNED_SHORT, 0);
+      });
+      requestAnimationFrame(draw);
+    }
+    requestAnimationFrame(draw);
+    return {
+      setLayer: function (name, value) { layers[name] = value; },
+      layers: layers,
+      update: function (data) { live = data; }
+    };
+  }
+
+  /* ---------- the vehicle ---------- */
+  var viewer = null;
+
+  var LAYER_LABELS = [
+    ["shell", "Body"], ["pack", "Battery"], ["drive", "Drive units"],
+    ["wheels", "Wheels & brakes"], ["thermal", "Thermal"], ["aux", "12 V & charge"]
+  ];
+  function buildLayerControls() {
+    clear(el.layers);
+    LAYER_LABELS.forEach(function (pair) {
+      var name = pair[0], on = viewer ? viewer.layers[name] > 0.5 : true,
+          b = h("button", null, pair[1]);
+      b.setAttribute("aria-pressed", String(on));
+      b.addEventListener("click", function () {
+        if (!viewer) return;
+        /* The body is dimmed rather than removed: at 0.16 it still reads as
+           a vehicle around the hardware, which is the whole reason to draw
+           a shell over a cutaway at all. */
+        var current = viewer.layers[name],
+            next = current > 0.5 ? (name === "shell" ? 0.24 : 0) : 1;
+        viewer.setLayer(name, next);
+        b.setAttribute("aria-pressed", String(next > 0.5));
+      });
+      el.layers.appendChild(b);
+    });
   }
 
   /* Colour by distance from the median of the 24, not by absolute value.
      The array's scaling is unproven, so an absolute ramp would be inventing
-     units. What is genuinely useful and honest is which module is unlike its
-     neighbours -- that is what a failing module looks like. */
+     units. What is honest and useful is which module is unlike its
+     neighbours -- that is what a failing one looks like. */
   function moduleColour(value, median, spread) {
-    if (value === null || spread <= 0) return "#262b2e";
+    if (value === null || spread <= 0) return [0.16, 0.18, 0.19];
     var z = (value - median) / spread;
-    if (z > 2.2) return "#ff5c5c";
-    if (z > 1.1) return "#ffb454";
-    if (z < -2.2) return "#55d9ed";
-    if (z < -1.1) return "#7fd3e8";
-    return "#4e9c68";
+    if (z > 2.2) return [1.0, 0.36, 0.36];
+    if (z > 1.1) return [1.0, 0.71, 0.33];
+    if (z < -2.2) return [0.33, 0.85, 0.93];
+    if (z < -1.1) return [0.50, 0.83, 0.91];
+    return [0.30, 0.61, 0.41];
   }
 
   function renderVehicle(vs) {
+    if (!viewer) return;
     var bytes = hexBytes(sig("array_2af1") ? sig("array_2af1").value : null),
-        cells = el.modules.childNodes, usable = bytes.length >= 24, median = 0, spread = 0;
+        usable = bytes.length >= 24, median = 0, spread = 0, colours = [];
     if (usable) {
       var sorted = bytes.slice(0, 24).sort(function (a, b) { return a - b; });
       median = sorted[12];
       var devs = bytes.slice(0, 24).map(function (v) { return Math.abs(v - median); })
                       .sort(function (a, b) { return a - b; });
       spread = devs[12] || 1;
+      for (var i = 0; i < 24; i++) colours.push(moduleColour(bytes[i], median, spread));
     }
-    for (var i = 0; i < cells.length; i++) {
-      var idx = Number(cells[i].dataset.index),
-          value = usable && idx < 24 ? bytes[idx] : null;
-      cells[i].setAttribute("fill", moduleColour(value, median, spread));
-      clear(cells[i]);
-      var t = make("title", null, usable && value !== null
-        ? "Module " + (idx < 12 ? "A" : "B") + (idx % 12 + 1) + " — 0x2AF1 byte " + idx + " = " + value
-        : "Module " + (idx < 12 ? "A" : "B") + (idx % 12 + 1) + " — no reading");
-      cells[i].appendChild(t);
-    }
-    el["vehicle-sub"].textContent = usable
-      ? "Plan view, nose left, driver's side at the bottom. Modules shaded by how far each sits from the median of the 24."
-      : "Plan view, nose left, driver's side at the bottom. No per-module array in this sample.";
 
-    /* wheels */
-    [["fl","wheel_fl_kph"],["fr","wheel_fr_kph"],["rl","wheel_rl_kph"],["rr","wheel_rr_kph"]]
-      .forEach(function (pair) {
-        var v = sigValue(pair[1]);
-        el["t-" + pair[0]].textContent = v === null ? "–" : v.toFixed(0);
-        el["w-" + pair[0]].setAttribute("fill", v === null ? "#20262a" : (v > 1 ? "#2f4a35" : "#20262a"));
-      });
-
-    /* ---- coolant. Rate from the thermal accumulator's own advance. ---- */
-    var thermalNow = hexBytes(sig("thermal_energy_raw") ? sig("thermal_energy_raw").value : null),
-        thermalVal = thermalNow.length ? thermalNow.reduce(function (a, b) { return a * 256 + b; }, 0) : null,
+    /* Coolant flow from whether the thermal accumulator is actually
+       advancing, so a system that has stopped stops the animation rather
+       than decorating. Needs the previous poll to compare against. */
+    var thermalBytes = hexBytes(sig("thermal_energy_raw") ? sig("thermal_energy_raw").value : null),
+        thermalVal = thermalBytes.length
+          ? thermalBytes.reduce(function (a, b) { return a * 256 + b; }, 0) : null,
         stamp = Date.now();
     if (thermalVal !== null) {
       if (state.thermal.value !== null && stamp > state.thermal.at) {
         var advance = thermalVal - state.thermal.value,
             minutes = (stamp - state.thermal.at) / 60000;
         if (advance >= 0 && minutes > 0) {
-          /* Smoothed: a counter that ticks in steps of 10 would otherwise make
-             the animation stutter between "stopped" and "fast" every poll. */
           state.thermal.rate = state.thermal.rate * 0.6 + (advance / minutes) * 0.4;
         }
       }
-      state.thermal.value = thermalVal;
-      state.thermal.at = stamp;
+      state.thermal.value = thermalVal; state.thermal.at = stamp;
     }
     var hvac = sigValue("group_v1_raw"),
         hvacActive = hvac !== null && Math.abs(hvac - 999) > 150,
-        flowing = state.thermal.rate > 0.5 || hvacActive;
-    [el["loop-front"], el["loop-front-b"], el["loop-pack"], el["loop-pack-b"]].forEach(function (node) {
-      if (!node) return;
-      node.classList.toggle("halted", !flowing);
-      /* Faster counter, faster pump. Clamped so it never becomes a strobe. */
-      var seconds = Math.max(0.7, Math.min(4.5, 3.2 - state.thermal.rate * 0.18));
-      node.style.setProperty("--rate", seconds.toFixed(2) + "s");
-      /* Heat and cooling are different jobs and get different colours: the
-         vehicle's own instrument language uses amber for heat. */
-      node.setAttribute("stroke", hvac !== null && hvac < 999 ? "#ffb454" : "#55d9ed");
+        kpa = sigValue("brake_kpa"),
+        speed = num(derived("speed_now_kph"));
+
+    viewer.update({
+      modules: colours,
+      kw: num(derived("pack_kw")) || 0,
+      brake: kpa === null ? 0 : Math.min(1, kpa / 4000),
+      flow: (state.thermal.rate > 0.5 || hvacActive) ? 1 : 0,
+      speed: speed === null ? 0 : speed,
+      charging: derived("charging") === true
     });
 
-    /* ---- energy between the pack and the axles it drives ---- */
-    var kw = num(derived("pack_kw"));
-    [el["energy-front"], el["energy-rear"]].forEach(function (node) {
-      if (!node) return;
-      var moving = kw !== null && Math.abs(kw) > 0.4;
-      node.classList.toggle("halted", !moving);
-      /* Regen literally runs the other way, and turns green -- which is the
-         colour the vehicle's own power gauge uses for it. */
-      node.classList.toggle("reverse", kw !== null && kw < 0);
-      node.setAttribute("stroke", kw !== null && kw < 0 ? "#7ddc6a" : "#ee521a");
-      var rate = kw === null ? 2 : Math.max(0.25, Math.min(2.4, 60 / (Math.abs(kw) + 25)));
-      node.style.setProperty("--rate", rate.toFixed(2) + "s");
-    });
-    /* Motor cores brighten with the power actually flowing. */
-    var lit = kw === null ? 0 : Math.min(1, Math.abs(kw) / 180),
-        core = kw !== null && kw < 0 ? "#7ddc6a" : "#ee521a";
-    ["motor-front-core", "motor-rear-core-a", "motor-rear-core-b"].forEach(function (id) {
-      if (!el[id]) return;
-      el[id].setAttribute("fill", lit < 0.04 ? "#2c3439" : core);
-      el[id].setAttribute("opacity", String(0.35 + lit * 0.65));
-      if (lit > 0.15) el[id].setAttribute("filter", "url(#glowWarm)");
-      else el[id].removeAttribute("filter");
-    });
-    if (el["pack-glow"]) el["pack-glow"].setAttribute("opacity", String(Math.min(1, lit * 1.4)));
-
-    /* ---- brakes. One system pressure, so all four calipers share it. ---- */
-    var kpa = sigValue("brake_kpa"),
-        heat = kpa === null ? 0 : Math.min(1, kpa / 4000);
-    ["c-fl", "c-fr", "c-rl", "c-rr"].forEach(function (id) {
-      if (!el[id]) return;
-      el[id].setAttribute("fill", heat < 0.03 ? "#39424a" : "#ff5c5c");
-      el[id].setAttribute("opacity", String(0.5 + heat * 0.5));
-      if (heat > 0.12) el[id].setAttribute("filter", "url(#glowWarm)");
-      else el[id].removeAttribute("filter");
-    });
-
-    /* charge port */
-    var chg = derived("charging"), raw = derived("charger_raw");
-    el["charge-led"].setAttribute("fill", chg ? "#beeaf7" : "#394145");
-    clear(el["charge-led"]);
-    el["charge-led"].appendChild(make("title", null,
-      chg ? "Charging — 0x5401 = " + (raw || "?") : "Not charging"));
+    el["vehicle-sub"].textContent = usable
+      ? "Drag to orbit, scroll to zoom. Modules shaded by how far each sits from the median of the 24."
+      : "Drag to orbit, scroll to zoom. No per-module array in this sample.";
   }
 
   /* ---------- the map ----------
@@ -1312,7 +1553,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     raf = window.requestAnimationFrame(function () { raf = null; drawChart(); });
   });
 
-  buildModules();
+  viewer = startViewer(el.scene, el["scene-status"]);
+  buildLayerControls();
   renderLegend();
   render();
   refresh();

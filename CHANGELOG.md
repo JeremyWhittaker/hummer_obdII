@@ -247,6 +247,36 @@ discount.
   cutaway, and a filled cab drawn over the battery hid the thing the diagram
   exists to show.
 
+### Changed
+
+- **The vehicle is now live 3D.** Hand-written WebGL — no library. The page's
+  CSP allows no external script at all, so three.js was never an option; WebGL
+  is a canvas API rather than a fetch, so raw GL works, and the matrix maths,
+  shaders and geometry are the price of that.
+
+  Everything is modelled in **metres from published dimensions**, origin on the
+  ground at the centre of the wheelbase: 5.507 m long on a 3.444 m wheelbase,
+  the 2.135 × 1.420 m pack between the axles, 24 modules in two layers of
+  twelve — two across and six front-to-back — one motor on the front axle and
+  two on the rear. Wheels, brake discs, thermal hardware, the frunk 12 V pod
+  and the driver's-side rear charge port all sit at their real coordinates.
+  Anything whose location this project does not know is **not drawn**: an
+  invented position looks exactly as authoritative as a measured one.
+
+  Drag to orbit, scroll to zoom, and six layer toggles dim or remove the body,
+  battery, drive units, wheels, thermal and auxiliary groups. The shell is
+  translucent by default rather than hidden, so the hardware reads as being
+  *inside a vehicle* rather than floating.
+
+  Live data drives it: module colour from deviation across the 24, motor
+  emissive from pack power — green and reversed under regen — brake discs
+  glowing with `brake_kpa`, coolant pipes pulsing only while `0x27BB` is
+  actually advancing, wheels spinning at road speed, and the charge port lit
+  when `0x5401` says charging.
+
+  Translucent parts are sorted back-to-front and drawn after opaque ones,
+  because a shell that writes depth first hides everything it exists to reveal.
+
 ### Fixed
 
 - **Three faults found by rendering the page and looking at it**, none of which
