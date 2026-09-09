@@ -669,13 +669,34 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
    * kept together at the top where they can be checked against a spec
    * sheet.
    * ================================================================== */
+  /* Everything here is a published GMC figure unless a comment says otherwise.
+     `width` is the body without mirrors; with them it is 2.380 m, so each
+     mirror stands 0.089 m proud, which is why they are not part of the body
+     half-width used for placement. */
   var VEH = {
     length: 5.507, width: 2.202, height: 2.009, wheelbase: 3.444,
     frontOverhang: 0.881, rearOverhang: 1.181,
-    wheelRadius: 0.44, wheelWidth: 0.34,
+    /* Track 73.33 in front and rear, from GMC's own specification page, so
+       the wheel centre planes are +/-0.9313 m. The wheels used to be placed
+       at the body half-width less two centimetres, which put them 0.15 m too
+       far out on each side -- the tyres stood proud of the bodywork rather
+       than tucking just inside it. Published track is the only thing that
+       fixes that, and it is published. */
+    trackWidth: 1.8626,
+    /* LT305/55R22: 558.8 mm rim + 2 x 167.8 mm sidewall = 894.3 mm overall,
+       so a 0.4471 m radius. Section width is 305 mm nominal. */
+    wheelRadius: 0.4471, wheelWidth: 0.305,
     packLength: 2.135, packWidth: 1.420, packTop: 0.52, packBottom: 0.28,
-    groundClearance: 0.264
+    /* 10.1 in at standard ride height. GMC's website quotes only Terrain
+       (11.9 in) and Extract (16.0 in); the standard figure is in the 2022
+       brochure. The old 0.264 sat between standard and Terrain, which is a
+       ride height this truck is never actually at. */
+    groundClearance: 0.2565,
+    /* Bed, published: 60.10 in inner length, 61.02 in floor width, 21.7 in
+       inner depth, 50.08 in between the wheelhousings. */
+    bedLength: 1.5265, bedWidth: 1.5499, bedDepth: 0.5512, bedInnerWidth: 1.2720
   };
+  var HALF_TRACK = VEH.trackWidth / 2;
   var AXLE = VEH.wheelbase / 2;              /* +X front, -X rear      */
   var HALF_W = VEH.width / 2;
 
@@ -976,9 +997,41 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         W = HALF_W, rocker = 0.46, beltline = 1.30, roof = VEH.height,
         cowlX = 1.22, bulkX = -0.58;
 
-    /* --- lower body. One continuous slab from nose to tail is what makes a
-       vehicle read as one object rather than three parked together. --- */
-    slab("shell-rocker", tailX, noseX, rocker, beltline, -W + 0.03, W - 0.03, BODY);
+    /* --- lower body -------------------------------------------------
+       This was one slab from nose to tail at a constant 0.46 m, and GMC's own
+       published angles prove that shape wrong. Approach is 41.5 degrees and
+       departure 31.6, both measured from a tyre contact patch to the lowest
+       body point beyond it. Over the 0.881 m front overhang that puts the
+       nose's lowest point at 0.881 x tan(41.5) = 0.78 m, and over the 1.181 m
+       rear overhang the tail's at 1.181 x tan(31.6) = 0.73 m -- roughly 0.3 m
+       above where a constant rocker line would leave them.
+
+       So the overhangs are stepped up toward the extremities rather than
+       running level. Steps rather than a true ramp because every mesh here is
+       an axis-aligned box; three of them read as a chamfer at this scale, and
+       the alternative is a new mesh generator for two corners.
+
+       The between-axles section stays low, and the breakover angle says it is
+       not flat either: 22.3 degrees over a 3.444 m wheelbase needs a belly
+       that rises to about 0.34 m at mid-wheelbase, where a flat slab at the
+       0.2565 m ground clearance would give only 16.9. That much is left to
+       the skid plates, which already sit above the rockers. --- */
+    var frontCutX = AXLE + 0.18, rearCutX = -AXLE - 0.24;
+    slab("shell-rocker", rearCutX, frontCutX, rocker, beltline, -W + 0.03, W - 0.03, BODY);
+    /* Front overhang, stepping up to the approach angle. */
+    [[frontCutX, noseX - 0.58, rocker + 0.10],
+     [noseX - 0.58, noseX - 0.28, rocker + 0.21],
+     [noseX - 0.28, noseX, rocker + 0.32]].forEach(function (step, i) {
+      slab("shell-front-" + i, step[0], step[1], step[2], beltline,
+           -W + 0.03, W - 0.03, BODY);
+    });
+    /* Rear overhang, stepping up to the departure angle. */
+    [[rearCutX, tailX + 0.72, rocker + 0.09],
+     [tailX + 0.72, tailX + 0.36, rocker + 0.18],
+     [tailX + 0.36, tailX, rocker + 0.27]].forEach(function (step, i) {
+      slab("shell-rear-" + i, step[1], step[0], step[2], beltline,
+           -W + 0.03, W - 0.03, BODY);
+    });
     /* skid plate and rear bumper, darker, proud of the body */
     slab("shell-skid", noseX - 0.30, noseX + 0.02, rocker - 0.10, rocker + 0.34,
          -W + 0.10, W - 0.10, TRIM);
@@ -1084,7 +1137,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     /* --- wheels: tyre, rim face, brake disc --- */
     [["fl", AXLE, -1], ["fr", AXLE, 1], ["rl", -AXLE, -1], ["rr", -AXLE, 1]]
       .forEach(function (w) {
-        var z = w[2] * (W - 0.02), d = VEH.wheelRadius * 2;
+        /* On the published track, not guessed from the body width. */
+        var z = w[2] * HALF_TRACK, d = VEH.wheelRadius * 2;
         var front = w[1] > 0;
         /* Translucent so the disc and caliper behind it are visible. A tyre
            you cannot see past is the one part of a wheel with nothing to
@@ -1291,7 +1345,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            recognisable thing under this truck after the pack. */
         add({ id: "airspring-" + w[0], mesh: "cyl", layer: "underbody",
               colour: [0.07, 0.07, 0.08],
-              t: [w[1], 0.62, w[2] * (W - 0.46)],
+              t: [w[1], 0.62, w[2] * (HALF_TRACK - 0.30)],
               s: [0.30, 0.54, 0.30], rot: "y" });
       });
 

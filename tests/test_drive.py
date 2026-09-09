@@ -1274,6 +1274,71 @@ class TestTheWakeThresholdAgainstMeasuredStates(unittest.TestCase):
         self.assertFalse(drive._asleep(_Silent(), 1.0))
 
 
+class MovingVehicleIsNotAsleepTests(unittest.TestCase):
+    """ATRV answering says the serial link is alive, and nothing more.
+
+    It is an adapter-only command: it reaches no vehicle module. So it tells a
+    dead serial link from a live one and says nothing about whether the
+    adapter still has a session with the vehicle. The recorder treated those
+    as the only two states, and on 2026-09-09 the truck was driven 2.2 km
+    while it wrote `None` for every field across sixty-eight minutes, having
+    concluded the vehicle was asleep because ATRV kept answering 12.9 V.
+
+    The node's own GPS settles it: a receiver moving at road speed is bolted
+    to a vehicle being driven, and a vehicle being driven is not asleep.
+    """
+
+    class Reader:
+        def __init__(self, columns):
+            self._columns = columns
+
+        def columns(self):
+            return dict(self._columns)
+
+    def test_a_moving_node_is_moving(self):
+        reader = self.Reader({"gps_mode": 3, "gps_speed_mps": 25.0})
+        self.assertAlmostEqual(drive._gps_speed(reader), 90.0)
+        self.assertTrue(drive._gps_moving(reader))
+
+    def test_a_parked_node_is_not(self):
+        reader = self.Reader({"gps_mode": 3, "gps_speed_mps": 0.4})
+        self.assertFalse(drive._gps_moving(reader))
+
+    def test_receiver_wander_does_not_count_as_movement(self):
+        # A stationary receiver reports a metre or two per second of drift.
+        # Reading that as "being driven" would force reconnect loops on a
+        # truck that is genuinely asleep -- the exact failure this sits next
+        # to, in the opposite direction.
+        for mps in (0.0, 0.5, 1.0, 1.8):
+            with self.subTest(mps=mps):
+                self.assertFalse(drive._gps_moving(
+                    self.Reader({"gps_mode": 3, "gps_speed_mps": mps})))
+
+    def test_no_fix_is_never_movement(self):
+        # Mode 1 is "no fix". Whatever speed accompanies it means nothing.
+        for mode in (0, 1, None, "3"):
+            with self.subTest(mode=mode):
+                self.assertFalse(drive._gps_moving(
+                    self.Reader({"gps_mode": mode, "gps_speed_mps": 30.0})))
+
+    def test_a_missing_receiver_claims_nothing(self):
+        # No gpsd, no GPS hardware, or a reader that throws. Each must fall
+        # back to "not moving" so a sleeping truck is still allowed to sleep.
+        self.assertFalse(drive._gps_moving(None))
+        self.assertFalse(drive._gps_moving(self.Reader({})))
+
+        class Broken:
+            def columns(self):
+                raise RuntimeError("gpsd went away")
+
+        self.assertFalse(drive._gps_moving(Broken()))
+        self.assertEqual(drive._gps_speed(Broken()), 0.0)
+
+    def test_the_threshold_sits_between_wander_and_driving(self):
+        self.assertGreater(drive.GPS_MOVING_KPH, 7.0)
+        self.assertLess(drive.GPS_MOVING_KPH, 20.0)
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
 

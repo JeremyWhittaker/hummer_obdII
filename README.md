@@ -427,6 +427,17 @@ page still loads from Home Assistant, the geometry still draws, every fact
 reads as a dash, and the detector's screen goes dark saying "not reachable"
 rather than showing a plausible idle display of a device that is not there.
 
+**`ATRV` answering means the serial link is alive, and nothing more.** It is
+an adapter-only command that reaches no vehicle module, so it separates a dead
+serial link from a live one and says nothing about whether the adapter still
+has a session with the vehicle. The recorder treated that as two states when
+there are three — link dead, vehicle asleep, and *adapter awake with a dead
+vehicle session* — and the third looked exactly like the second. The node's own
+GPS settles it: a receiver moving at road speed is bolted to a vehicle being
+driven, and a vehicle being driven is not asleep. A missing or unfixed receiver
+falls back to "not moving", so it can never force a reconnect loop on a truck
+that is genuinely asleep.
+
 **The session picker separates journeys from parking.** Three quarters of the
 recordings on this node contain no movement — the vehicle wakes by itself
 every couple of hours and the recorder faithfully writes a few hundred rows of

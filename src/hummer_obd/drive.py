@@ -692,11 +692,32 @@ def record(
             # and it is the question actually being asked -- is the LINK
             # broken, or is the VEHICLE quiet?
             volts = _volts(transport, timeout)
-            if volts is not None:
-                # The adapter answers, so the link is healthy and it is the
-                # vehicle that is quiet.  Reconnecting would be treating a
-                # working link as a broken one, and every reconnect re-sends a
-                # full session init to a sleeping truck.
+            # ...but "the adapter answers" is not the whole question, and this
+            # cost a real drive to learn.  ``ATRV`` is adapter-only: it reaches
+            # no vehicle module.  So it separates a dead *serial* link from a
+            # live one, and says nothing at all about whether the adapter still
+            # has a session with the vehicle.  There are three states, not two:
+            #
+            #   1. serial link dead      -- ATRV silent           -> reconnect
+            #   2. vehicle asleep        -- ATRV answers, quiet   -> end session
+            #   3. adapter awake, vehicle session dead            -> reconnect
+            #
+            # State 3 looked exactly like state 2 and was handled as it. On
+            # 2026-09-09 the truck was driven 2.2 km while the recorder wrote
+            # `None` for every field across sixty-eight minutes, having decided
+            # the vehicle was asleep because ATRV kept answering 12.9 V.
+            #
+            # What tells 2 from 3 is not on the OBD bus at all: it is the
+            # node's own GPS. A receiver moving at road speed is bolted to a
+            # vehicle that is being driven, and a vehicle being driven is not
+            # asleep. So movement turns a decode failure back into what it
+            # actually is -- a link fault worth reconnecting for.
+            moving = _gps_moving(gps_reader)
+            if volts is not None and not moving:
+                # The adapter answers and the node is not moving, so the link
+                # is healthy and it is the vehicle that is quiet. Reconnecting
+                # would be treating a working link as a broken one, and every
+                # reconnect re-sends a full session init to a sleeping truck.
                 if dead_cycles >= DEAD_CYCLES_BEFORE_EXIT:
                     say(f"  nothing answered, but the adapter replies ({volts} V); "
                         f"vehicle asleep, ending the session")
@@ -704,11 +725,15 @@ def record(
                     break
                 sleeper(interval_s)
                 continue
-            # The adapter is silent too, so the link itself is suspect.
+            # Either the adapter is silent, or it answers while the node is
+            # moving. Both are link faults; only the wording differs.
             if dead_cycles >= DEAD_CYCLES_BEFORE_EXIT:
                 raise TransportError(
-                    f"{dead_cycles} consecutive cycles decoded nothing and the "
-                    f"adapter is silent too; exiting so the link is re-established"
+                    f"{dead_cycles} consecutive cycles decoded nothing and "
+                    + (f"the node is moving at {_gps_speed(gps_reader):.0f} km/h, "
+                       f"so the vehicle is not asleep"
+                       if moving else "the adapter is silent too")
+                    + "; exiting so the link is re-established"
                 )
             try:
                 _revive(transport, timeout=timeout, attempt=dead_cycles - 1)
@@ -850,6 +875,39 @@ def write_csv(session: Session, path: str) -> None:
 #: ambiguous one, so every ambiguous case is resolved by asking rather than by
 #: guessing.
 WAKE_VOLTS: float = 12.8
+
+
+#: Road speed, in km/h, above which the node is being carried by a vehicle
+#: that is moving.  Set well clear of the metre-or-two of wander a stationary
+#: receiver reports, and well below any speed a truck is driven at.
+GPS_MOVING_KPH: float = 8.0
+
+
+def _gps_speed(gps_reader) -> float:
+    """The node's own ground speed in km/h, or 0.0 when it cannot say.
+
+    Deliberately falls back to "not moving": a missing or unfixed receiver
+    must not be able to claim movement and force reconnect loops on a truck
+    that is genuinely asleep, which is the failure this sits next to.
+    """
+    if gps_reader is None:
+        return 0.0
+    try:
+        columns = gps_reader.columns()
+    except Exception:
+        return 0.0
+    mode = columns.get("gps_mode")
+    speed = columns.get("gps_speed_mps")
+    if not isinstance(mode, (int, float)) or mode < 2:
+        return 0.0
+    if not isinstance(speed, (int, float)) or speed != speed:
+        return 0.0
+    return max(0.0, float(speed) * 3.6)
+
+
+def _gps_moving(gps_reader) -> bool:
+    """Whether the node is moving fast enough to rule out a sleeping vehicle."""
+    return _gps_speed(gps_reader) >= GPS_MOVING_KPH
 
 
 def _volts(transport: Transport, timeout: float) -> Optional[float]:
