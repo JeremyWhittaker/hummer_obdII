@@ -3116,6 +3116,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         primary = { live: "Live", stale: "Vehicle asleep", historical: "Historical",
                     error: "Refresh unavailable", empty: "No sessions", loading: "Connecting" }[vs];
     el["status-primary"].textContent = primary;
+    el["status-secondary"].title = state.errorRaw || "";
     el["status-secondary"].textContent = vs === "error" ? (state.error || "")
       : (num(s.age_s) !== null ? "newest sample " + duration(s.age_s) + " ago" : "reading the local session");
     el.banner.textContent = BANNERS[vs] || "";
@@ -3197,6 +3198,26 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
      the loop, with a generation counter so a reply that arrives after the
      user changed session is dropped rather than rendered against the wrong
      one. Kept from the implementation this replaces; it was already right. */
+  /* Browsers describe a failed fetch in their own words, and those words end
+     up on screen. A real outage today put "signal is aborted without reason"
+     under the status heading -- which is a DOM exception's idea of a
+     sentence, not a statement about the vehicle. The distinction that matters
+     to whoever is reading is between "the node did not answer" and "the node
+     answered something wrong", so that is what this says. The original text
+     is kept as the element's title for anyone debugging. */
+  function explain(err) {
+    var message = (err && err.message) || "";
+    if (/abort/i.test(message) || (err && err.name === "AbortError")) {
+      return "the node did not answer in time";
+    }
+    if (/failed to fetch|networkerror|load failed/i.test(message)) {
+      return "the node could not be reached";
+    }
+    var status = /^HTTP (\d{3})$/.exec(message);
+    if (status) return "the node answered " + status[1];
+    return message || "the refresh failed";
+  }
+
   function getJson(path, timeout) {
     path = API + path;
     var controller = new AbortController(),
@@ -3260,7 +3281,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         return;
       }
       state.network = "error";
-      state.error = err && err.message ? err.message : "Refresh failed";
+      state.error = explain(err);
+      state.errorRaw = (err && err.message) || String(err || "");
       render();
     }).finally(function () {
       /* The retry path above has already cleared busy and queued its own

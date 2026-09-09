@@ -401,6 +401,19 @@ manual, and laser drawn as the word, a beam and a starburst rather than bars,
 because laser carries no strength reading. Alert *history* is plotted on the
 map at the coordinate each alert was recorded at, not listed as frequencies.
 
+When the node cannot be reached the page says so in its own words. A real
+outage — the vehicle left the network with the Pi in it — put "signal is
+aborted without reason" under the status heading, which is a DOM exception's
+idea of a sentence rather than a statement about a vehicle. The distinction
+that matters to a reader is between the node not answering and the node
+answering something wrong, so that is what it says now; the browser's original
+text stays as the element's tooltip for anyone debugging.
+
+That outage was also the first real test of the offline path, and it held: the
+page still loads from Home Assistant, the geometry still draws, every fact
+reads as a dash, and the detector's screen goes dark saying "not reachable"
+rather than showing a plausible idle display of a device that is not there.
+
 **The session picker separates journeys from parking.** Three quarters of the
 recordings on this node contain no movement — the vehicle wakes by itself
 every couple of hours and the recorder faithfully writes a few hundred rows of
