@@ -490,6 +490,17 @@ A session that cannot be read is reported as *unknown*, not as parked. Failing
 to read a file says nothing about whether the vehicle moved, and filing it
 under "parked" would hide a real trip.
 
+**Two tabs: Live, and Data & logs.** The live view is the vehicle, the map and
+the detector — three tiles, the truck down the left and the map with the
+detector stacked beside it. Everything that is a number or a log lives behind
+the second tab. A chart, a sixty-two row signal table and a notes list loading
+beside a 3D render made the live view slower to reach and harder to read, for
+material almost nobody wants at the same moment.
+
+The detector's card is the same drawing, smaller. It had a full-width row of
+its own below everything, which gave a 98 × 38.8 mm device more of the page
+than the truck.
+
 Sessions are listed by when they happened, in the viewer's own timezone —
 "Tue, Sep 8, 6:10 PM · 8.1 km" rather than `20260908T231018Z`. The id stays the
 id, because that is what the API is asked for; only the menu is readable.

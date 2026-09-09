@@ -150,8 +150,24 @@ select:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid 
 .fact strong{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
 
 /* --- the vehicle ---------------------------------------------------- */
-.hero{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:var(--gap);margin-bottom:var(--gap)}
-@media (max-width:1120px){.hero{grid-template-columns:1fr}}
+/* Three tiles, two columns: the vehicle down the left, the map and the
+   detector stacked down the right. The detector used to have a full-width row
+   of its own below everything, which gave a 98 x 38.8 mm device more of the
+   page than the truck. It is the same drawing, smaller. */
+.hero{
+  display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);
+  grid-template-rows:auto auto;gap:var(--gap);margin-bottom:var(--gap);
+  align-items:start;
+}
+.hero > :first-child{grid-row:1 / span 2}
+@media (max-width:1120px){
+  .hero{grid-template-columns:1fr;grid-template-rows:none}
+  .hero > :first-child{grid-row:auto}
+}
+.r8-card .r8-face-wrap{margin:8px 0 10px;padding:10px}
+.r8-card #r8-face{max-width:340px}
+.r8-card .r8-state{font-size:11.5px}
+.r8-card h2{font-size:13px}
 .vehicle-wrap{position:relative;padding:8px 4px 4px}
 #scene{
   width:100%;height:430px;display:block;border-radius:var(--r-sm);
@@ -183,6 +199,21 @@ select:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid 
    because it changes what the layer buttons even mean -- from outside they
    strip a cutaway, from the driver's seat they are the difference between
    seeing the dashboard and seeing through it. */
+/* The page's own sections. The live view is the vehicle, the map and the
+   detector; everything that is a number or a log lives behind the second tab.
+   Loading a chart, a signal table of sixty-two rows and a notes list beside a
+   3D render made the live view slower to reach and harder to read, for
+   material almost nobody wants at the same moment. */
+.mainviews{display:flex;gap:8px;margin:0 0 var(--gap);flex-wrap:wrap}
+.mainviews button{
+  font:inherit;font-size:13px;font-weight:600;padding:9px 18px;
+  border-radius:var(--r-sm);border:1px solid var(--line);
+  background:var(--bg);color:var(--ink-3);cursor:pointer;letter-spacing:.01em;
+}
+.mainviews button:hover{color:var(--ink-2);border-color:var(--ink-3)}
+.mainviews button[aria-selected="true"]{
+  background:var(--panel-2);border-color:var(--ev-orange);color:var(--ev-orange);
+}
 .views{display:flex;flex-wrap:wrap;gap:7px;margin:2px 0 12px}
 .views button{
   font:inherit;font-size:12px;padding:7px 14px;border-radius:999px;
@@ -400,6 +431,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   </div>
 </section>
 
+<div class="mainviews" id="mainviews" role="tablist" aria-label="Sections"></div>
+
+<div id="panel-live">
 <div class="hero">
 
   <!-- ================= THE VEHICLE ================= -->
@@ -448,9 +482,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     </div>
     <div class="map-stats" id="map-stats"></div>
   </div>
-</div>
 
-<section class="card bracket fadeable" style="margin-bottom:var(--gap)">
+  <div class="card bracket fadeable r8-card">
   <h2>Radar &middot; Uniden R8</h2>
   <p class="sub" id="r8-sub">From the detector's own logger on this node.</p>
   <div class="r8-face-wrap"><svg id="r8-face" viewBox="0 0 980 388"
@@ -458,8 +491,13 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        aria-label="Uniden R8 front panel"></svg></div>
   <div class="r8-state" id="r8-state"></div>
   <p class="prov" id="r8-history"></p>
-</section>
+  </div>
+</div>
 
+
+</div>
+
+<div id="panel-numbers" role="tabpanel" hidden>
 <section class="tiles fadeable" id="tiles"></section>
 
 <div class="grid-2">
@@ -509,6 +547,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   </table>
 </section>
 
+</div>
 </div>
 <script>
 "use strict";
@@ -570,7 +609,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     error: "", timer: null, busy: false, queued: false, generation: 0,
     series: "power", filter: "", retried: false, sessionKey: "", view: "exterior",
     /* The history row the replay is sitting on, or null when it is not. */
-    frame: null, autoplay: false,
+    frame: null, autoplay: false, mainView: "live",
     map: null, play: { timer: null },
     /* Coolant flow is animated from whether the thermal accumulator is
        actually advancing, which needs the previous poll to compare against.
@@ -588,7 +627,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     "module-caveat","map","map-tiles","map-grid","trail","trail-head","map-empty","map-stats",
     "alert-marks","playback","play","scrub","play-time",
     "tiles","chart","chart-empty","chart-sub","tab-power","tab-soc","tab-speed",
-    "notes","signal-search","signals-body","signal-sub","scene","scene-status","layers","views","charge-badge","thermal-badge","r8-state","r8-face","r8-history","r8-sub"
+    "notes","signal-search","signals-body","signal-sub","scene","scene-status","layers","views","mainviews","panel-live","panel-numbers","charge-badge","thermal-badge","r8-state","r8-face","r8-history","r8-sub"
   ].forEach(function (id) { el[id] = byId(id); });
 
   /* ---------- small helpers ---------- */
@@ -2089,6 +2128,41 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
          + "skid plates and the coolant runs are all visible." }
   ];
 
+  /* Which half of the page is showing. The live view is the default because
+     it is what the page is for; the numbers are there when they are wanted. */
+  var MAIN_VIEWS = [
+    { key: "live", label: "Live", panel: "panel-live" },
+    { key: "numbers", label: "Data & logs", panel: "panel-numbers" }
+  ];
+
+  function buildMainViews() {
+    clear(el.mainviews);
+    MAIN_VIEWS.forEach(function (view) {
+      var b = h("button", null, view.label);
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", String(view.key === state.mainView));
+      b.setAttribute("aria-controls", view.panel);
+      b.addEventListener("click", function () {
+        state.mainView = view.key;
+        MAIN_VIEWS.forEach(function (other) {
+          el[other.panel].hidden = other.key !== view.key;
+        });
+        [].forEach.call(el.mainviews.querySelectorAll("button"), function (other) {
+          other.setAttribute("aria-selected", String(other === b));
+        });
+        /* The renderer stops drawing while its canvas is hidden -- a
+           requestAnimationFrame loop on a display:none canvas is work with no
+           viewer -- so it is nudged when the live view comes back. */
+        /* The draw loop sizes the canvas from its own client rect every
+           frame, and a hidden canvas measures zero. Coming back needs no
+           nudge -- the next frame reads a real size again -- so there is
+           nothing to call here, and calling something that does not exist is
+           how a tab switch throws. */
+      });
+      el.mainviews.appendChild(b);
+    });
+  }
+
   function buildViewControls() {
     clear(el.views);
     el.views.appendChild(h("span", "views-label", "Views"));
@@ -3384,7 +3458,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     state.sessions = entries.map(function (e) { return e.id; });
 
     clear(el["session-select"]);
-    var latest = h("option", null, "Latest session");
+    /* "Live" rather than "Latest session": it is what the entry means, it is
+       what the header beside it says, and it is the default. */
+    var latest = h("option", null, "Live");
     latest.value = "latest"; el["session-select"].appendChild(latest);
 
     /* "20260909T215047Z" is a filename, not a time anyone reads. The id stays
@@ -3578,6 +3654,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   });
 
   viewer = startViewer(el.scene, el["scene-status"]);
+  buildMainViews();
   buildViewControls();
   buildLayerControls();
   renderLegend();
