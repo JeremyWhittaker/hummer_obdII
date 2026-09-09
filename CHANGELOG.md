@@ -313,6 +313,19 @@ discount.
   and at 0.24 the body read as a ghost rather than as bodywork you can see
   through, which is a different thing and the point of a cutaway.
 
+### Added
+
+- **Each wheel turns at its own measured speed.** The brake controller reports
+  four wheel speeds and they are the only genuinely per-corner data on this
+  vehicle, so spinning all four from one number would throw away the one signal
+  that can show a corner behaving differently. Angles are **integrated** per
+  corner rather than derived from the clock, so a speed change alters the rate
+  instead of teleporting the phase.
+
+- **Grille bars and a tapered roofline.** The roof is now narrower than the
+  flanks: a slab-sided vehicle still tapers at the top, and a roof the full
+  width of the body is what makes a cab read as a crate.
+
 ### Fixed
 
 - **Coolant pipes were stretched along the wrong axis.** The model matrix is

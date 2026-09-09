@@ -852,6 +852,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     slab("shell-lightbar", noseX - 0.04, noseX + 0.03, beltline - 0.02, beltline + 0.14,
          -W + 0.30, W - 0.30, [0.62, 0.66, 0.70], { emissiveTag: "lights" });
 
+    /* --- grille: horizontal bars across the fascia. Cheap in geometry and
+       it is the feature a front three-quarter view looks for first. --- */
+    for (var g = 0; g < 4; g++) {
+      var gy = rocker + 0.42 + g * 0.13;
+      slab("grille-" + g, noseX - 0.06, noseX + 0.01, gy, gy + 0.07,
+           -W + 0.34, W - 0.34, [0.16, 0.18, 0.20]);
+    }
+
     /* --- greenhouse. Glass is its own material and its own layer so the
        cabin can be cleared without losing the body around it. --- */
     slab("glass-side-l", bulkX + 0.06, cowlX - 0.04, beltline + 0.16, roof - 0.10,
@@ -861,7 +869,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     slab("glass-wind", cowlX - 0.06, cowlX + 0.02, beltline + 0.16, roof - 0.10,
          -W + 0.06, W - 0.06, GLASS, { alpha: 0.42, layer: "shell" });
     slab("shell-cabbase", bulkX, cowlX, beltline, beltline + 0.20, -W + 0.02, W - 0.02, BODY);
-    slab("shell-roof", bulkX + 0.02, cowlX - 0.02, roof - 0.12, roof, -W + 0.02, W - 0.02, BODY);
+    slab("shell-roof", bulkX + 0.06, cowlX - 0.06, roof - 0.12, roof,
+         -W + 0.10, W - 0.10, BODY);
     /* roof rails */
     slab("rail-l", bulkX + 0.10, cowlX - 0.10, roof, roof + 0.06, -W + 0.16, -W + 0.28, TRIM);
     slab("rail-r", bulkX + 0.10, cowlX - 0.10, roof, roof + 0.06, W - 0.28, W - 0.16, TRIM);
@@ -937,10 +946,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         var z = w[2] * (W - 0.02), d = VEH.wheelRadius * 2;
         var front = w[1] > 0;
         add({ id: "tyre-" + w[0], mesh: "tyre", layer: "wheels", colour: TYRE,
-              spin: true, steer: front, t: [w[1], VEH.wheelRadius, z],
+              spin: true, corner: w[0], steer: front,
+              t: [w[1], VEH.wheelRadius, z],
               s: [d, d, VEH.wheelWidth], rot: "z", flip: w[2] < 0 });
         add({ id: "rim-" + w[0], mesh: "rim", layer: "wheels", colour: RIM,
-              spin: true, steer: front, t: [w[1], VEH.wheelRadius, z],
+              spin: true, corner: w[0], steer: front,
+              t: [w[1], VEH.wheelRadius, z],
               s: [d * 0.98, d * 0.98, VEH.wheelWidth * (w[2] < 0 ? -1.02 : 1.02)],
               rot: "z" });
         add({ id: "brake-" + w[0], mesh: "cyl", layer: "wheels", colour: [0.24, 0.27, 0.30],
@@ -1020,7 +1031,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         parts = buildScene(),
         cam = { yaw: -0.72, pitch: 0.34, dist: 8.2, spin: 0 },
         layers = { shell: 0.40, pack: 1, drive: 1, wheels: 1, thermal: 1, aux: 1, ground: 1 },
-        live = { modules: [], kw: 0, brake: 0, flow: 0, speed: 0, steer: 0, charging: false };
+        live = { modules: [], kw: 0, brake: 0, flow: 0, speed: 0, steer: 0,
+                 corners: {}, charging: false },
+        angle = { fl: 0, fr: 0, rl: 0, rr: 0 }, lastFrame = 0;
 
     gl.enable(gl.DEPTH_TEST);
     gl.enable(gl.BLEND);
@@ -1056,6 +1069,16 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
+      /* Advance each wheel by its own measured speed. Integrating an angle
+         rather than deriving one from the clock means a speed change alters
+         the rate instead of teleporting the phase. */
+      var dt = lastFrame ? Math.min(0.1, (now - lastFrame) / 1000) : 0;
+      lastFrame = now;
+      ["fl", "fr", "rl", "rr"].forEach(function (corner) {
+        var kph = live.corners && typeof live.corners[corner] === "number"
+                  ? live.corners[corner] : live.speed;
+        angle[corner] += (kph / 3.6) / VEH.wheelRadius * dt;
+      });
       if (!drag) cam.spin += 0.0013;              /* a slow idle orbit */
       var yaw = cam.yaw + cam.spin,
           eye = [Math.cos(yaw) * Math.cos(cam.pitch) * cam.dist,
@@ -1113,7 +1136,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         } else if (p.rot === "z") {
           /* Cylinders are built on Z; a wheel needs its axis across the
              vehicle, which is already Z, so only the spin is applied. */
-          var a = p.spin ? live.speed * now * 0.00004 : 0,
+          var a = p.spin ? (angle[p.corner] || 0) : 0,
               ca = Math.cos(a), sa = Math.sin(a),
               rot = m4();
           rot[0] = ca; rot[1] = sa; rot[4] = -sa; rot[5] = ca;
@@ -1236,6 +1259,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       flow: (state.thermal.rate > 0.5 || hvacActive) ? 1 : 0,
       speed: speed === null ? 0 : speed,
       steer: sigValue("steering_deg") || 0,
+      corners: {
+        fl: sigValue("wheel_fl_kph"), fr: sigValue("wheel_fr_kph"),
+        rl: sigValue("wheel_rl_kph"), rr: sigValue("wheel_rr_kph")
+      },
       charging: derived("charging") === true
     });
 
