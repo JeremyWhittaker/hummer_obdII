@@ -398,12 +398,27 @@ def _integrate(
     total = 0.0
     intervals = 0
     gap_limit = _integration_gap_limit(rows)
-    for before, after in zip(rows, rows[1:]):
+    # Every row is asked about twice here -- once as an interval's end, once as
+    # the next one's start -- and the report integrates six different keys, so
+    # a 573-row session used to answer the same question about the same row
+    # some twelve times.  `sane` is a pure function of the row, so remembering
+    # the answer by position is exact.  Populated lazily rather than up front:
+    # rows that fail the cheaper finiteness test above are never asked at all,
+    # which keeps this strictly no worse than asking every time.
+    verdicts: dict[int, bool] = {}
+
+    def usable(index: int, row: dict) -> bool:
+        answer = verdicts.get(index)
+        if answer is None:
+            answer = verdicts[index] = sane(row)
+        return answer
+
+    for index, (before, after) in enumerate(zip(rows, rows[1:])):
         t0, t1 = before.get("elapsed_s"), after.get("elapsed_s")
         a, b = before.get(key), after.get(key)
         if not all(_is_finite_number(v) for v in (t0, t1, a, b)):
             continue
-        if not sane(before) or not sane(after):
+        if not usable(index, before) or not usable(index + 1, after):
             continue
         period = t1 - t0
         if period <= 0 or (gap_limit is not None and period > gap_limit):

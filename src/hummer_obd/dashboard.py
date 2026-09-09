@@ -13,6 +13,7 @@ import re
 import statistics
 import threading
 import time
+from collections import OrderedDict
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
@@ -27,6 +28,14 @@ MAX_SESSION_BYTES = 16 * 1024 * 1024
 MAX_SESSION_ROWS = 20000
 MAX_SESSIONS = 200
 MAX_HISTORY = 600
+# The cache used to hold exactly one session.  The page polls `latest` every
+# few seconds, so picking a past trip meant the two evicted each other turn by
+# turn and every poll paid the full cold cost -- the picker was unusable for
+# the reason a one-entry cache is always unusable under two callers.  Both
+# bounds matter on a 415 MiB Pi: the entry count caps ordinary use, the byte
+# budget stops one large session from pinning the rest out.
+CACHE_ENTRIES = 4
+CACHE_SOURCE_BYTES = 4 * 1024 * 1024
 # Only named recorder fields may leave this API. Raw identity transcripts are
 # never part of the browser's data contract.
 #
@@ -134,9 +143,13 @@ def _history(rows: list[dict], *, location: bool = False) -> list[dict]:
     """Keep actual recent samples; no averaging across missing readings."""
     result = []
     for row in rows[-MAX_HISTORY:]:
-        def reading(name):
+        # Asked once for the row, not once for each of the five to seven
+        # fields read out of it -- see the note in `_snapshot`.
+        usable = analyze.sane(row)
+
+        def reading(name, usable=usable, row=row):
             value = row.get(name)
-            valid_row = name == "elapsed_s" or analyze.sane(row)
+            valid_row = name == "elapsed_s" or usable
             return value if valid_row and _finite(value) and _valid(name, value) else None
         v, a = reading("pack_v"), reading("pack_a")
         point = {
@@ -183,9 +196,20 @@ def energy_budget(rows: list[dict]) -> dict:
             speed = statistics.mean(wheels) if len(wheels) == 4 else None
         return (v * a / 1000.0, speed) if speed is not None else None
 
-    for before, after in zip(rows, rows[1:]):
+    # Each row is an interval's end and then the next one's start, so `pair`
+    # -- and the `sane` call inside it -- ran twice for every row.
+    paired: dict[int, object] = {}
+    sentinel = object()
+
+    def pair_at(index, row):
+        answer = paired.get(index, sentinel)
+        if answer is sentinel:
+            answer = paired[index] = pair(row)
+        return answer
+
+    for index, (before, after) in enumerate(zip(rows, rows[1:])):
         t0, t1 = before.get("elapsed_s"), after.get("elapsed_s")
-        a, b = pair(before), pair(after)
+        a, b = pair_at(index, before), pair_at(index + 1, after)
         if (not _finite(t0) or not _finite(t1) or not 0 < t1 - t0 <= gap_limit
                 or a is None or b is None):
             skipped += 1
@@ -250,8 +274,7 @@ class SessionStore:
         self.expose_location = bool(expose_location)
         self.columns = public_columns(self.expose_location)
         self._lock = threading.Lock()
-        self._cache_key = None
-        self._cached = None
+        self._cache: OrderedDict = OrderedDict()
 
     def _paths(self) -> list[Path]:
         candidates = []
@@ -271,6 +294,19 @@ class SessionStore:
             except OSError:
                 continue
         return {"sessions": sessions, "latest": sessions[0]["id"] if sessions else None}
+
+    def _evict(self) -> None:
+        """Drop least-recently-used entries until both bounds hold.
+
+        The entry just inserted is never evicted, even if it alone exceeds the
+        byte budget: refusing to cache the session being asked for would turn
+        one slow response into an unbounded run of them.
+        """
+        while len(self._cache) > CACHE_ENTRIES:
+            self._cache.popitem(last=False)
+        total = sum(k[2] for k in self._cache)
+        while total > CACHE_SOURCE_BYTES and len(self._cache) > 1:
+            total -= self._cache.popitem(last=False)[0][2]
 
     def snapshot(self, session: str = "latest", *, now: float | None = None) -> dict:
         with self._lock:
@@ -294,7 +330,10 @@ class SessionStore:
         if stat.st_size > MAX_SESSION_BYTES:
             raise ValueError("session exceeds the 16 MiB dashboard limit; use offline analysis")
         key = (str(path), stat.st_mtime_ns, stat.st_size)
-        if key != self._cache_key:
+        entry = self._cache.get(key)
+        if entry is not None:
+            self._cache.move_to_end(key)
+        else:
             # Bound memory before the shared CSV reader materializes rows.
             with path.open("rb") as handle:
                 for index, _ in enumerate(handle):
@@ -311,18 +350,28 @@ class SessionStore:
                         {"utc": r.get("utc"), "elapsed_s": None} for r in rows]
             # Preserve time slots even for transition/invalid rows, so offline
             # integration cannot join across samples the dashboard rejected.
-            report_rows = [
-                {c: v if c in live.BOOKKEEPING or (analyze.sane(r) and _valid(c, v)) else None
-                 for c, v in r.items()} for r in rows
-            ]
+            # `sane` is a property of the row, not of any one field, but it
+            # used to sit inside the inner comprehension -- so it ran once per
+            # column per row, 41,784 times for a 573-row session, and was 89%
+            # of the seven seconds a cold snapshot took.  Hoisting it is the
+            # whole difference between a picker that works and one that times
+            # out in the browser.
+            report_rows = []
+            for r in rows:
+                usable = analyze.sane(r)
+                report_rows.append({
+                    c: v if c in live.BOOKKEEPING or (usable and _valid(c, v)) else None
+                    for c, v in r.items()
+                })
             report = analyze.analyze(report_rows, path=path.name, extra_warnings=warnings)
             derived = _clean(live.derive(rows))
             snap = live.snapshot(rows)
-            self._cached = (rows, warnings, report, derived, snap,
-                            _history(rows, location=self.expose_location),
-                            energy_budget(rows))
-            self._cache_key = key
-        rows, read_warnings, report, base_derived, snap, history, budget = self._cached
+            entry = (rows, warnings, report, derived, snap,
+                     _history(rows, location=self.expose_location),
+                     energy_budget(rows))
+            self._cache[key] = entry
+            self._evict()
+        rows, read_warnings, report, base_derived, snap, history, budget = entry
         warnings = list(read_warnings)
         newest = snap.get("newest_utc")
         stamp = _timestamp(newest)

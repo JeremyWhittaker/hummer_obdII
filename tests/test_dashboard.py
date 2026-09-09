@@ -12,7 +12,9 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from hummer_obd.dashboard import MAX_HISTORY, SessionStore, energy_budget, make_server
+from hummer_obd import analyze
+from hummer_obd.dashboard import (CACHE_ENTRIES, MAX_HISTORY, SessionStore,
+                                  energy_budget, make_server)
 
 
 class DashboardTests(unittest.TestCase):
@@ -237,6 +239,111 @@ class DashboardTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join(timeout=3)
+
+
+class CostTests(unittest.TestCase):
+    """What a snapshot costs, not only what it answers.
+
+    A cold snapshot of a 573-row session took 7.1 seconds on the Pi Zero 2 W
+    the dashboard runs on, against a browser that gives up after 4.5 -- so the
+    session picker showed "No position in this session" for a trip that had
+    526 GPS fixes.  Nothing was broken in a way any existing test could see:
+    the answers were all correct, just too late to reach the page.  These
+    tests are about the shape of the work, because that is the part that was
+    wrong and the part that will regress silently again.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.directory = Path(self.temp.name)
+        self.rows = [
+            {"utc": f"2026-01-01T12:00:{i:02d}Z", "elapsed_s": i * 10,
+             "pack_v": 390 - i * 0.1, "pack_a": 20, "speed_kph": i % 50,
+             "soc_pct": 80 - i * 0.01, "energy_kwh": 152 - i * 0.01}
+            for i in range(30)
+        ]
+
+    def write(self, name):
+        path = self.directory / name
+        fields = list(dict.fromkeys(k for row in self.rows for k in row))
+        with path.open("w", newline="") as handle:
+            writer = csv.DictWriter(handle, fields)
+            writer.writeheader()
+            writer.writerows(self.rows)
+        return path
+
+    def count_sane(self):
+        """Count `sane` calls, with the report stubbed out to isolate ours."""
+        calls = []
+        real = analyze.sane
+
+        def counted(row):
+            calls.append(id(row))
+            return real(row)
+
+        store = SessionStore(self.directory)
+        with patch.object(analyze, "sane", counted), \
+             patch.object(analyze, "analyze", return_value={}):
+            store.snapshot("latest")
+        return len(calls)
+
+    def test_sanity_is_asked_once_per_row_not_once_per_field(self):
+        # `sane` describes a row, so asking it per field was 55 identical
+        # answers per row -- 89% of a cold snapshot.  The count must track the
+        # row count alone; if it ever tracks the column count again, the
+        # picker times out in the browser and nothing else complains.
+        self.write("drive-20260101T120000Z.csv")
+        columns = len(SessionStore(self.directory).columns)
+        self.assertGreater(columns, 20, "a wide contract is the point of this test")
+        # The dashboard walks the rows three times -- to build the report's
+        # input, the history trail, and the energy budget -- and each pass may
+        # ask about a row once.  Before this was fixed all three asked once per
+        # *field*, so the count rose with the contract's width instead: 55 per
+        # row here, 73 on the vehicle.  A count that scales with `columns` is
+        # the regression; a fourth pass is a decision worth updating this for.
+        count = self.count_sane()
+        self.assertLessEqual(
+            count, 3 * len(self.rows),
+            f"{count / len(self.rows):.0f} sanity checks per row over "
+            f"{columns} columns -- a pass is asking per field again",
+        )
+
+    def test_a_second_session_does_not_evict_the_one_being_watched(self):
+        # The page polls `latest` every few seconds while a past trip is
+        # selected.  With a single-entry cache the two evicted each other turn
+        # by turn, so *every* poll paid the full cold cost and the dashboard
+        # served a selected trip in 18 seconds rather than 0.07.
+        self.write("drive-20260101T120000Z.csv")
+        older = self.write("drive-20260101T110000Z.csv")
+        os.utime(older, (1_760_000_000, 1_760_000_000))
+        store = SessionStore(self.directory)
+        reads = []
+        real = analyze.read_session
+
+        def counted(path, *a, **kw):
+            reads.append(Path(path).name)
+            return real(path, *a, **kw)
+
+        with patch.object(analyze, "read_session", counted):
+            for _ in range(3):
+                store.snapshot("latest")
+                store.snapshot("drive-20260101T110000Z.csv")
+        self.assertEqual(sorted(set(reads)), sorted(set(reads)))
+        self.assertEqual(len(reads), 2, f"re-read sessions already cached: {reads}")
+
+    def test_the_cache_is_bounded_so_a_long_session_list_cannot_exhaust_memory(self):
+        # 415 MiB of RAM total on the node, and a browser can ask for every
+        # session in the picker in a row.
+        names = [f"drive-202601{day:02d}T120000Z.csv" for day in range(1, CACHE_ENTRIES + 4)]
+        for name in names:
+            self.write(name)
+        store = SessionStore(self.directory)
+        for name in names:
+            store.snapshot(name)
+        self.assertLessEqual(len(store._cache), CACHE_ENTRIES)
+        # The one just asked for is the one still held.
+        self.assertIn(names[-1], [Path(key[0]).name for key in store._cache])
 
 
 if __name__ == "__main__":
