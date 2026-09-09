@@ -159,6 +159,25 @@ select:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid 
 }
 #scene:active{cursor:grabbing}
 .scene-status{margin:8px 0 0;font-size:12px;color:var(--ink-3);min-height:1em}
+/* Readouts over the render. WebGL has no text, and the alternative -- a tile
+   somewhere else on the page -- makes you look away from the part the number
+   is about. */
+.scene-badge{
+  /* Anchored to the top of the frame. At the bottom they sat on top of the
+     layer toggles, which is the sort of thing that only shows up when you
+     render it and look. */
+  position:absolute;right:14px;top:16px;pointer-events:none;max-width:44%;
+  padding:9px 12px;border-radius:var(--r-sm);
+  background:rgba(8,10,11,.82);border:1px solid var(--line);
+  font-size:11.5px;line-height:1.5;color:var(--ink-2);backdrop-filter:blur(3px);
+}
+.scene-badge-left{right:auto;left:14px}
+.scene-badge b{color:var(--ink);font-weight:600;font-family:var(--mono)}
+.scene-badge .k{color:var(--ink-3);font-size:10.5px;letter-spacing:.05em;
+  text-transform:uppercase;display:block;margin-bottom:3px}
+.scene-badge .note{color:var(--ink-3);font-size:10.5px;display:block;margin-top:4px}
+.scene-swatch{display:inline-block;width:9px;height:9px;border-radius:2px;
+  vertical-align:baseline;margin-right:5px}
 .layers{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
 .layers button{
   background:var(--bg);border:1px solid var(--line);color:var(--ink-3);
@@ -368,6 +387,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     <p class="sub" id="vehicle-sub">Plan view, nose left. Driver's side at the bottom.</p>
     <div class="vehicle-wrap">
       <canvas id="scene" aria-label="Interactive 3D view of the vehicle"></canvas>
+      <div class="scene-badge" id="charge-badge" hidden></div>
+      <div class="scene-badge scene-badge-left" id="thermal-badge" hidden></div>
       <p class="scene-status" id="scene-status"></p>
       <div class="layers" id="layers"></div>
     </div>
@@ -543,7 +564,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     "module-caveat","map","map-tiles","map-grid","trail","trail-head","map-empty","map-stats",
     "alert-marks","playback","play","scrub","play-time",
     "tiles","chart","chart-empty","chart-sub","tab-power","tab-soc","tab-speed",
-    "notes","signal-search","signals-body","signal-sub","scene","scene-status","layers","r8-state","r8-face","r8-history","r8-sub"
+    "notes","signal-search","signals-body","signal-sub","scene","scene-status","layers","charge-badge","thermal-badge","r8-state","r8-face","r8-history","r8-sub"
   ].forEach(function (id) { el[id] = byId(id); });
 
   /* ---------- small helpers ---------- */
@@ -1102,6 +1123,23 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        and the camera is allowed below the axle line so they can be seen.
        Grounding the object is not worth blindfolding the view. */
 
+    /* --- the detector, where it actually sits --------------------------
+       124.11 x 98.00 x 38.80 mm, from Uniden's own specification, high on the
+       centreline of the windshield behind the mirror -- which is where these
+       are mounted and where this one is. Drawn translucent so it reads as
+       something suckered to glass rather than a block hanging in the cabin,
+       and so the screen behind it stays visible.
+
+       It lights from the detector's real state, which for most of the time
+       means it does not light at all. A detector reporting no link is a dark
+       detector, and the panel below the render says the same thing. */
+    add({ id: "r8-detector", mesh: "bev", layer: "radar", colour: [0.05, 0.05, 0.06],
+          alpha: 0.62, radar: true,
+          t: [cowlX - 0.11, roof - 0.21, 0], s: [0.124, 0.039, 0.098] });
+    add({ id: "r8-mount", mesh: "cyl", layer: "radar", colour: [0.10, 0.11, 0.12],
+          alpha: 0.5, t: [cowlX - 0.04, roof - 0.19, 0],
+          s: [0.09, 0.012, 0.012], rot: "x" });
+
     /* --- underbody ---------------------------------------------------
        The camera is allowed below the axle line, so the underside has to be
        worth arriving at. Everything here is on GM's own published feature
@@ -1224,14 +1262,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            a NaN alpha and a part that silently does not draw. Every layer a
            part can name has to have a value here. */
         layers = { shell: 0.40, pack: 1, drive: 1, wheels: 1, thermal: 1,
-                   aux: 1, underbody: 1 },
+                   aux: 1, underbody: 1, radar: 1 },
         /* Every field the draw loop reads has to exist before the first
            snapshot arrives, or a frame renders NaN into the shader and the
            part disappears without an error anywhere. */
         live = { modules: [], kw: 0, brake: 0, flow: 0, speed: 0, steer: 0,
                  corners: {}, charging: false, roll: 0, pitch: 0,
                  fill: null, packTemp: null, lv: null, port: false,
-                 fault: false, chargeKw: 0 },
+                 fault: false, chargeKw: 0, radar: [0, 0, 0] },
         angle = { fl: 0, fr: 0, rl: 0, rr: 0 }, lastFrame = 0;
 
     gl.enable(gl.DEPTH_TEST);
@@ -1410,8 +1448,13 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           emissive = [live.brake * 0.9, live.brake * 0.08, live.brake * 0.08];
         }
         if (p.flow) {
-          var pulse = 0.5 + 0.5 * Math.sin(now * 0.004 + p.t[2]);
-          emissive = [0, live.flow * pulse * 0.35, live.flow * pulse * 0.45];
+          var pulse = 0.5 + 0.5 * Math.sin(now * 0.004 + p.t[2]),
+              tint = typeof live.packTemp === "number"
+                     ? thermalColour(live.packTemp) : [0.16, 0.52, 0.60];
+          colour = tint;
+          emissive = [tint[0] * live.flow * pulse * 0.45,
+                      tint[1] * live.flow * pulse * 0.45,
+                      tint[2] * live.flow * pulse * 0.45];
         }
         if (p.id === "charge" && (live.charging || live.port)) {
           emissive = [0.35, 0.62, 0.70];
@@ -1443,6 +1486,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           var rail = Math.max(0, Math.min(1, (live.lv - 11.8) / 1.6));
           emissive = [(1 - rail) * 0.55, rail * 0.30, 0];
         }
+        if (p.radar) {
+          emissive = live.radar || [0, 0, 0];
+        }
         if (p.layer === "shell" && live.fault) {
           emissive = [0.42, 0.05, 0.05];
         }
@@ -1467,7 +1513,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   var LAYER_LABELS = [
     ["shell", "Body"], ["pack", "Battery"], ["drive", "Drive units"],
     ["wheels", "Wheels & brakes"], ["thermal", "Thermal"], ["aux", "12 V & charge"],
-    ["underbody", "Underbody"],
+    ["underbody", "Underbody"], ["radar", "Radar"],
     ];
   function buildLayerControls() {
     clear(el.layers);
@@ -1487,6 +1533,44 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       });
       el.layers.appendChild(b);
     });
+  }
+
+  /* Coolant colour from an actual temperature.
+
+     The pipes used to be a fixed cyan, which said "coolant" and nothing else.
+     They are coloured from `temp_f` now -- the pack-side temperature, level 4,
+     the only thermal reading in this project with a unit anyone can defend.
+     The other thermal fields are raw counts whose scaling is unknown, and a
+     least-squares fit against them lands on 1/17.2, 1/5.7 and 1/1.3 degrees
+     per count; the project's own test for that is "no designer picks that".
+     So the pipes carry the reading that has a unit, and the badge says which
+     reading it is and where it is measured, rather than implying the model
+     knows the temperature of the coolant in the pipe it is drawing.
+
+     Ramp runs 40 to 120 F, which spans everything this pack has been seen at
+     -- 102.2 F while charging, well under 80 F on a cold morning. */
+  function thermalColour(f) {
+    var t = Math.max(0, Math.min(1, (f - 40) / 80)), k;
+    if (t < 0.34) { k = t / 0.34; return [0.14, 0.42 + 0.22 * k, 0.80 - 0.18 * k]; }
+    if (t < 0.67) { k = (t - 0.34) / 0.33; return [0.14 + 0.70 * k, 0.64 + 0.08 * k, 0.62 - 0.44 * k]; }
+    k = (t - 0.67) / 0.33;
+    return [0.84 + 0.14 * k, 0.72 - 0.52 * k, 0.18 - 0.06 * k];
+  }
+  function cssColour(rgb) {
+    return "rgb(" + rgb.map(function (c) {
+      return Math.round(Math.max(0, Math.min(1, c)) * 255); }).join(",") + ")";
+  }
+
+  /* The charge-state byte's observed families. 0x5401 is a state, not a
+     current -- it plateaus across a nine-fold power range -- so it is read as
+     one, and an unrecognised value says so rather than being folded into the
+     nearest family it resembles. */
+  function cordset(byte) {
+    if (byte === null) return null;
+    if (byte === 0) return "not charging";
+    if (byte >= 0x90 && byte <= 0x9F) return "240 V AC family (0x" + byte.toString(16).toUpperCase() + ")";
+    if (byte === 0x0C || byte === 0x0D) return "120 V 12 A cordset (0x" + byte.toString(16).toUpperCase() + ")";
+    return "state 0x" + byte.toString(16).toUpperCase() + ", family not seen before";
   }
 
   /* Colour by distance from the median of the 24, not by absolute value.
@@ -1562,6 +1646,18 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         return b.length > 0 && b.some(function (x) { return x !== 0; });
       })(),
       fault: sigValue("mil_on") === 1 || (sigValue("dtc_count") || 0) > 0,
+      radar: (function () {
+        /* Same rule the panel's screen follows: lit only when the detector is
+           there and talking. Alerting takes the band's colour, idle a low
+           green, no link nothing at all. */
+        var d = state.r8;
+        if (!d || !d.available || d.stale || d.connected !== true) return [0, 0, 0];
+        var alert = (d.alerts || [])[0];
+        if (!alert) return [0, 0.16, 0.07];
+        return { KA: [0.85, 0.14, 0.14], K: [0.90, 0.52, 0.12],
+                 X: [0.20, 0.55, 0.90], LASER: [0.80, 0.16, 0.75]
+               }[alert.band] || [0.55, 0.55, 0.55];
+      })(),
       corners: {
         fl: sigValue("wheel_fl_kph"), fr: sigValue("wheel_fr_kph"),
         rl: sigValue("wheel_rl_kph"), rr: sigValue("wheel_rr_kph")
@@ -1569,6 +1665,47 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       charging: derived("charging") === true,
       chargeKw: Math.abs(num(derived("pack_kw")) || 0)
     });
+
+    /* --- what is happening at the cord, in numbers -------------------
+       Pack-side DC, and said to be pack-side. The wall end of this is AC and
+       nothing here measures it: `evse_current_raw` was falsified as charge
+       current twice, independently, so the only honest thing to say about the
+       supply is which cordset family the state byte belongs to. */
+    var chargeBadge = el["charge-badge"], packV = sigValue("pack_v"),
+        packA = sigValue("pack_a"), packKw = num(derived("pack_kw")),
+        stateByte = hexBytes(sig("charger_5401_raw") ? sig("charger_5401_raw").value : null),
+        charging = derived("charging") === true;
+    clear(chargeBadge);
+    chargeBadge.hidden = !charging;
+    if (charging) {
+      var head = h("span", "k", "at the pack");
+      chargeBadge.appendChild(head);
+      var line = h("div");
+      line.appendChild(h("b", null,
+        (packV === null ? "–" : packV.toFixed(1)) + " V   " +
+        (packA === null ? "–" : Math.abs(packA).toFixed(1)) + " A   " +
+        (packKw === null ? "–" : Math.abs(packKw).toFixed(2)) + " kW"));
+      chargeBadge.appendChild(line);
+      var supply = cordset(stateByte.length ? stateByte[stateByte.length - 1] : null);
+      chargeBadge.appendChild(h("span", "note",
+        supply ? "supply: " + supply : "supply: not reported"));
+      chargeBadge.appendChild(h("span", "note",
+        "DC measured at the pack; nothing here measures the wall."));
+    }
+
+    var thermalBadge = el["thermal-badge"], degF = sigValue("temp_f");
+    clear(thermalBadge);
+    thermalBadge.hidden = degF === null;
+    if (degF !== null) {
+      thermalBadge.appendChild(h("span", "k", "coolant colour"));
+      var row = h("div"), sw = h("i", "scene-swatch");
+      sw.style.background = cssColour(thermalColour(degF));
+      row.appendChild(sw);
+      row.appendChild(h("b", null, degF.toFixed(1) + " \u00B0F"));
+      thermalBadge.appendChild(row);
+      thermalBadge.appendChild(h("span", "note",
+        "pack-side sensor. Which sensor, and where, is not established."));
+    }
 
     el["vehicle-sub"].textContent = usable
       ? "Drag to orbit, scroll to zoom. Modules shaded by how far each sits from the median of the 24."

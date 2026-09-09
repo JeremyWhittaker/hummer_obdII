@@ -294,6 +294,24 @@ and the body rolls and pitches from the vehicle's own `lateral_g` and
 `longitudinal_g`, so it leans in a corner because the accelerometer says it is
 leaning.
 
+Two readouts sit over the render, because WebGL has no text and putting the
+number somewhere else on the page makes you look away from the part it is
+about. While charging, one gives pack volts, amps and kilowatts, and names the
+cordset family the `0x5401` state byte belongs to — and says plainly that this
+is measured at the pack, because nothing in this project measures the wall.
+The other gives the pack temperature in °F next to the colour the coolant
+pipes are currently drawn in, so the ramp has a number attached to it rather
+than being decorative. `temp_f` is the only thermal reading here with a unit
+anyone can defend; the rest are raw counts whose scaling is unknown, so they
+do not get to colour anything.
+
+**The radar detector is on the windshield, at its real size** — 124.11 × 98.00
+× 38.80 mm from Uniden's specification, high on the centreline behind the
+mirror, drawn translucent so it reads as suckered to glass. It lights from the
+detector's actual state: the band's colour while alerting, a low green while
+idle, and nothing at all when the logger reports no link — which is what the
+detector's own screen is doing at that moment.
+
 **Every recorded column says which part shows it.** The signals table carries a
 *Shown on* column, and 47 of the 62 name a part. The other 15 say plainly that
 they are not drawn, and why — there is no front- or rear-axle telemetry on this
