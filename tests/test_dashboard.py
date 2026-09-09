@@ -454,6 +454,127 @@ class CrossOriginTests(unittest.TestCase):
             self.assertIn("text/html", r.headers.get("Content-Type", ""))
 
 
+class SessionListTests(unittest.TestCase):
+    """Which recordings are journeys, so the picker can say so.
+
+    On the vehicle node 51 of 66 recorded sessions contain no movement: the
+    truck wakes by itself every couple of hours and the recorder faithfully
+    writes a few hundred rows of it sitting still. Correct behaviour, and
+    useless in a menu that offered all 66 with nothing to distinguish them.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.directory = Path(self.temp.name)
+
+    def write(self, name, rows):
+        path = self.directory / name
+        fields = list(dict.fromkeys(k for row in rows for k in row))
+        with path.open("w", newline="") as handle:
+            writer = csv.DictWriter(handle, fields)
+            writer.writeheader()
+            writer.writerows(rows)
+        return path
+
+    def entry(self, name):
+        store = SessionStore(self.directory)
+        return [e for e in store.sessions()["sessions"] if e["id"] == name][0]
+
+    def test_a_parked_session_is_marked_parked(self):
+        self.write("drive-20260101T120000Z.csv",
+                   [{"utc": f"2026-01-01T12:00:{i:02d}Z", "elapsed_s": i,
+                     "speed_kph": "0", "odometer_km": "1000.0"} for i in range(20)])
+        entry = self.entry("drive-20260101T120000Z.csv")
+        self.assertFalse(entry["moved"])
+        self.assertEqual(entry["km"], 0.0)
+
+    def test_a_journey_reports_its_distance(self):
+        self.write("drive-20260101T130000Z.csv",
+                   [{"utc": f"2026-01-01T13:00:{i:02d}Z", "elapsed_s": i,
+                     "speed_kph": str(i * 4), "odometer_km": str(1000 + i * 0.4)}
+                    for i in range(20)])
+        entry = self.entry("drive-20260101T130000Z.csv")
+        self.assertTrue(entry["moved"])
+        self.assertAlmostEqual(entry["km"], 7.6, places=1)
+
+    def test_speed_alone_is_enough_to_be_a_journey(self):
+        # Module 17 goes quiet often enough that a real trip can record speed
+        # with the odometer never answering. Requiring both would file that
+        # trip under "parked".
+        self.write("drive-20260101T140000Z.csv",
+                   [{"utc": f"2026-01-01T14:00:{i:02d}Z", "elapsed_s": i,
+                     "speed_kph": "55"} for i in range(5)])
+        entry = self.entry("drive-20260101T140000Z.csv")
+        self.assertTrue(entry["moved"])
+        self.assertIsNone(entry["km"])
+
+    def test_odometer_alone_is_enough_too(self):
+        # And the reverse: a crawl that never exceeds the speed threshold, or
+        # a session whose speed column is empty, still moved if the odometer
+        # says it did.
+        self.write("drive-20260101T150000Z.csv",
+                   [{"utc": f"2026-01-01T15:00:{i:02d}Z", "elapsed_s": i,
+                     "odometer_km": str(1000 + i * 0.5)} for i in range(10)])
+        self.assertTrue(self.entry("drive-20260101T150000Z.csv")["moved"])
+
+    def test_the_verdict_is_not_recomputed_for_a_file_that_has_not_changed(self):
+        # A finished session never changes, and the picker is refreshed on
+        # every poll. Re-reading every CSV every five seconds on a Pi Zero
+        # would cost more than everything else the page does.
+        self.write("drive-20260101T160000Z.csv",
+                   [{"utc": "2026-01-01T16:00:00Z", "elapsed_s": 0,
+                     "speed_kph": "40", "odometer_km": "1000"}])
+        store = SessionStore(self.directory)
+        store.sessions()
+        opens = []
+        real = Path.open
+
+        def counted(self, *a, **kw):
+            opens.append(self.name)
+            return real(self, *a, **kw)
+
+        with patch.object(Path, "open", counted):
+            store.sessions()
+        self.assertEqual([o for o in opens if o.endswith(".csv")], [])
+
+    def test_an_unreadable_session_is_not_silently_called_parked(self):
+        # Failing to read a file says nothing about whether the vehicle moved,
+        # and filing it under "parked" would hide a real trip.
+        #
+        # The first version of this test wrote a few bytes of binary and
+        # expected a failure. It got a verdict instead: the csv module reads
+        # almost anything as one strange row and raises nothing, so the file
+        # was judged "parked" and the test passed for the wrong reason. The
+        # failure has to be a real one.
+        self.write("drive-20260101T170000Z.csv",
+                   [{"utc": "2026-01-01T17:00:00Z", "elapsed_s": 0,
+                     "speed_kph": "70", "odometer_km": "1000"}])
+        store = SessionStore(self.directory)
+        real = Path.open
+
+        def refuse(self, *a, **kw):
+            if self.suffix == ".csv":
+                raise OSError("the card went away")
+            return real(self, *a, **kw)
+
+        with patch.object(Path, "open", refuse):
+            entry = [e for e in store.sessions()["sessions"]
+                     if e["id"] == "drive-20260101T170000Z.csv"][0]
+        self.assertIsNone(entry["moved"],
+                          "not knowing was reported as knowing it stood still")
+        self.assertIsNone(entry["km"])
+
+    def test_a_file_of_nonsense_is_not_mistaken_for_a_journey(self):
+        # The other side of the same coin: the csv module will parse binary
+        # rubbish without complaint, and nothing in it looks like speed or an
+        # odometer, so the honest verdict is that it did not move.
+        path = self.write("drive-20260101T180000Z.csv",
+                          [{"utc": "2026-01-01T18:00:00Z", "elapsed_s": 0}])
+        path.write_bytes(b"\xff\xfe not a csv at all")
+        self.assertFalse(self.entry("drive-20260101T180000Z.csv")["moved"])
+
+
 class PartIndexTests(unittest.TestCase):
     """The page claims where every signal is shown. That claim must stay true.
 

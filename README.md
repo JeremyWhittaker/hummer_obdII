@@ -401,6 +401,20 @@ manual, and laser drawn as the word, a beam and a starburst rather than bars,
 because laser carries no strength reading. Alert *history* is plotted on the
 map at the coordinate each alert was recorded at, not listed as frequencies.
 
+**The session picker separates journeys from parking.** Three quarters of the
+recordings on this node contain no movement — the vehicle wakes by itself
+every couple of hours and the recorder faithfully writes a few hundred rows of
+it sitting still. That is correct behaviour and useless in a menu, so
+`/api/sessions` says whether each session moved and how far, and the picker
+groups them: 15 journeys with their distances, 51 parked, in that order. The
+verdict is read once per file and cached on the file's own identity, because a
+finished session never changes and the picker refreshes every poll — a full
+re-read every five seconds would cost more than everything else the page does.
+
+A session that cannot be read is reported as *unknown*, not as parked. Failing
+to read a file says nothing about whether the vehicle moved, and filing it
+under "parked" would hide a real trip.
+
 **Past trips play back.** Pick a session and the marker walks the route with a
 trip clock and a scrub bar. A five-second poll used to rebuild the map and
 reset the marker with it; the track is compared before it is touched, so a

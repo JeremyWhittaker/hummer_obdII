@@ -7,6 +7,7 @@ The listener defaults to loopback; use an SSH tunnel for remote viewing.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import math
 import re
@@ -34,6 +35,13 @@ MAX_HISTORY = 600
 # the reason a one-entry cache is always unusable under two callers.  Both
 # bounds matter on a 415 MiB Pi: the entry count caps ordinary use, the byte
 # budget stops one large session from pinning the rest out.
+#: A session counts as a journey if the vehicle reported moving faster than
+#: this, or travelled at least this far on the odometer. Both are needed: a
+#: short trip can begin and end on the same odometer reading, and a session
+#: can record speed while the odometer never answers.
+MOVING_KPH = 3.0
+MOVED_KM = 0.2
+
 CACHE_ENTRIES = 4
 CACHE_SOURCE_BYTES = 4 * 1024 * 1024
 # Only named recorder fields may leave this API. Raw identity transcripts are
@@ -294,6 +302,7 @@ class SessionStore:
         self.columns = public_columns(self.expose_location)
         self._lock = threading.Lock()
         self._cache: OrderedDict = OrderedDict()
+        self._distance: OrderedDict = OrderedDict()
 
     def _paths(self) -> list[Path]:
         candidates = []
@@ -305,11 +314,66 @@ class SessionStore:
                 continue
         return [p for _, _, p in sorted(candidates, reverse=True)[:MAX_SESSIONS]]
 
+    def _movement(self, path: Path, stat) -> dict:
+        """How far this session actually went, cached by content.
+
+        Three quarters of the recorded sessions on this node contain no
+        movement at all -- the vehicle wakes on its own every couple of hours
+        and the recorder faithfully writes a few hundred rows of a truck
+        sitting still. That is correct behaviour and useless in a menu: the
+        picker offered sixty-six entries of which fifteen were journeys, with
+        nothing to say which.
+
+        Read once and remembered. Sessions are append-only and a finished one
+        never changes, so the key is the file's own identity; only the session
+        still being written is ever re-read.
+        """
+        key = (str(path), stat.st_mtime_ns, stat.st_size)
+        hit = self._distance.get(key)
+        if hit is not None:
+            return hit
+        km, moving, read = None, False, False
+        try:
+            with path.open(newline="", encoding="utf-8", errors="replace") as handle:
+                first = last = None
+                for row in csv.DictReader(handle):
+                    odo = analyze._number(row.get("odometer_km"))
+                    if odo is not None and odo > 0:
+                        if first is None:
+                            first = odo
+                        last = odo
+                    speed = analyze._number(row.get("speed_kph"))
+                    if speed is not None and speed > MOVING_KPH:
+                        moving = True
+            if first is not None and last is not None and last >= first:
+                km = last - first
+            read = True
+        except (OSError, ValueError, csv.Error):
+            pass
+        # Movement is either odometer travel or a speed the vehicle reported.
+        # Either alone is enough; a short trip can start and end on the same
+        # odometer reading, and a session can record speed with the odometer
+        # never answering.
+        # A file that could not be read says nothing about whether the vehicle
+        # moved. `False` would file it under "parked" and hide a real journey,
+        # so the verdict is None -- unknown -- and the page treats not knowing
+        # as different from knowing it stood still.
+        answer = {"moved": bool(moving or (km is not None and km >= MOVED_KM))
+                           if read else None,
+                  "km": round(km, 2) if km is not None else None}
+        self._distance[key] = answer
+        while len(self._distance) > MAX_SESSIONS * 2:
+            self._distance.pop(next(iter(self._distance)))
+        return answer
+
     def sessions(self) -> dict:
         sessions = []
         for path in self._paths():
             try:
-                sessions.append({"id": path.name, "modified_utc": _utc(path.stat().st_mtime)})
+                stat = path.stat()
+                entry = {"id": path.name, "modified_utc": _utc(stat.st_mtime)}
+                entry.update(self._movement(path, stat))
+                sessions.append(entry)
             except OSError:
                 continue
         return {"sessions": sessions, "latest": sessions[0]["id"] if sessions else None}

@@ -547,7 +547,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   var el = {}, state = {
     snapshot: null, sessions: [], selected: "latest", network: "loading",
     error: "", timer: null, busy: false, queued: false, generation: 0,
-    series: "power", filter: "", retried: false,
+    series: "power", filter: "", retried: false, sessionKey: "",
     map: null, play: { timer: null },
     /* Coolant flow is animated from whether the thermal accumulator is
        actually advancing, which needs the previous poll to compare against.
@@ -3125,29 +3125,58 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     el["f-age"].textContent = num(s.age_s) === null ? "–" : duration(s.age_s) + " ago";
   }
   function renderSessions(payload) {
-    /* The endpoint answers {sessions:[{id,modified_utc}], latest}. An earlier
-       version of this assumed a bare array and silently returned when it was
-       not one, which left the picker showing "Latest session" and nothing
+    /* The endpoint answers {sessions:[{id,modified_utc,moved,km}], latest}.
+       An earlier version assumed a bare array and silently returned when it
+       was not one, which left the picker showing "Latest session" and nothing
        else -- 63 recorded trips unreachable, with no error anywhere. Both
-       shapes are accepted now, and an unexpected one leaves a note rather
-       than failing quietly. */
+       shapes are accepted; an unexpected one leaves a note rather than
+       failing quietly. */
     var list = Array.isArray(payload) ? payload
              : (payload && Array.isArray(payload.sessions) ? payload.sessions : null);
     if (!list) {
       el["session-select"].title = "The session list was not in a recognised shape.";
       return;
     }
-    var ids = list.map(function (x) { return typeof x === "string" ? x : (x && x.id); })
-                  .filter(function (x) { return typeof x === "string"; });
-    if (ids.join("|") === state.sessions.join("|")) return;
-    state.sessions = ids;
+    var entries = list.map(function (x) {
+      return typeof x === "string" ? { id: x } : x;
+    }).filter(function (x) { return x && typeof x.id === "string"; });
+
+    /* Three quarters of the sessions on this node are the vehicle waking by
+       itself and sitting still. They are real recordings and worth keeping,
+       and they are not what anyone opens this menu to find, so the journeys
+       come first and the rest are labelled for what they are. */
+    var key = entries.map(function (e) {
+      return e.id + ":" + (e.moved ? 1 : 0) + ":" + (e.km === undefined ? "" : e.km);
+    }).join("|");
+    if (key === state.sessionKey) return;
+    state.sessionKey = key;
+    state.sessions = entries.map(function (e) { return e.id; });
+
     clear(el["session-select"]);
     var latest = h("option", null, "Latest session");
     latest.value = "latest"; el["session-select"].appendChild(latest);
-    ids.forEach(function (id) {
-      var o = h("option", null, id.replace(/^drive-|\.csv$/g, ""));
-      o.value = id; el["session-select"].appendChild(o);
-    });
+
+    function label(e) {
+      var when = e.id.replace(/^drive-|\.csv$/g, "");
+      if (e.moved === false) return when + "  \u00B7  parked";
+      if (typeof e.km === "number" && e.km > 0) return when + "  \u00B7  " + e.km.toFixed(1) + " km";
+      return when;
+    }
+    function group(name, of) {
+      if (!of.length) return;
+      var g = document.createElement("optgroup");
+      g.label = name + "  (" + of.length + ")";
+      of.forEach(function (e) {
+        var o = h("option", null, label(e));
+        o.value = e.id; g.appendChild(o);
+      });
+      el["session-select"].appendChild(g);
+    }
+    /* An entry with no verdict at all -- an older reader, or a file that
+       could not be read -- is grouped with the journeys rather than hidden
+       among the parked ones. Being unsure is not the same as being empty. */
+    group("Journeys", entries.filter(function (e) { return e.moved !== false; }));
+    group("Parked", entries.filter(function (e) { return e.moved === false; }));
     el["session-select"].value = state.selected;
   }
 
