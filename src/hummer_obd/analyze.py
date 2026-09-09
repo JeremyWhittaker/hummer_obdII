@@ -85,6 +85,11 @@ _TEXT_COLUMNS = frozenset({
     # The 0x2429 rename escaped this only because no session had ever been
     # written under its old name.  0x4127 and 0x4124 had 25.
     "batt_temp_a_raw", "batt_temp_b_raw",
+    # The satellite timestamp is an ISO-8601 string, not a number. Left out of
+    # this set it goes through _number(), which strips the trailing "Z" and
+    # every letter before it and then fails -- so the column reads permanently
+    # empty while looking like a receiver fault rather than a parsing one.
+    "gps_time",
 })
 
 #: A sample period more than this multiple of the median is treated as a gap

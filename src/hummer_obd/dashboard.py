@@ -27,10 +27,35 @@ MAX_SESSION_BYTES = 16 * 1024 * 1024
 MAX_SESSION_ROWS = 20000
 MAX_SESSIONS = 200
 MAX_HISTORY = 600
-# Only named recorder fields may leave this API. GPS location and raw identity
-# transcripts are intentionally not part of the browser's data contract.
-PUBLIC_COLUMNS = tuple(c for c in live.drive.COLUMNS if not c.startswith("gps_")
-                       or c in ("gps_mode", "gps_sats"))
+# Only named recorder fields may leave this API. Raw identity transcripts are
+# never part of the browser's data contract.
+#
+# Location is a separate, deliberate decision and defaults to WITHHELD. Fix
+# quality (mode, satellites) says whether the receiver is working and reveals
+# nothing about where the vehicle is; coordinates, altitude and heading say
+# exactly that. The original author excluded all of it, and the default here
+# keeps their behaviour: a reader that is merely started gets no position.
+#
+# --expose-location turns it on. It is a flag rather than a deletion so that
+# publishing location is a visible act recorded in the command line that
+# started the server, and so the safe behaviour survives someone reading this
+# file and deleting the comment.
+LOCATION_COLUMNS = ("gps_lat", "gps_lon", "gps_alt_m", "gps_speed_mps",
+                    "gps_track_deg", "gps_epx_m", "gps_time")
+FIX_QUALITY_COLUMNS = ("gps_mode", "gps_sats")
+
+
+def public_columns(expose_location: bool = False) -> tuple[str, ...]:
+    """Recorder fields permitted to leave this API."""
+    allowed = set(FIX_QUALITY_COLUMNS)
+    if expose_location:
+        allowed |= set(LOCATION_COLUMNS)
+    return tuple(c for c in live.drive.COLUMNS
+                 if not c.startswith("gps_") or c in allowed)
+
+
+#: Kept for callers that predate the flag; location withheld, as before.
+PUBLIC_COLUMNS = public_columns(False)
 CURRENT_FIELDS = {
     "pack_v": ("pack_v",), "pack_a": ("pack_a",),
     "pack_kw": ("pack_v", "pack_a"), "soc_pct": ("soc_pct",),
@@ -84,6 +109,16 @@ def _valid(column: str, value) -> bool:
             return False
         if column == "cell_spread_mv" and value < 0:
             return False
+        # Coordinates have hard physical bounds, and a decoder fault here puts
+        # the vehicle in the sea rather than producing an obviously silly
+        # number. 0,0 is Null Island: a real place no vehicle of ours is in,
+        # and the classic signature of a fix that failed open.
+        if column == "gps_lat" and not -90.0 <= value <= 90.0:
+            return False
+        if column == "gps_lon" and not -180.0 <= value <= 180.0:
+            return False
+        if column == "gps_track_deg" and not 0.0 <= value < 360.0:
+            return False
         if column in ("cell_min_v", "cell_max_v") and not 2 <= value <= 5:
             return False
         return True
@@ -95,7 +130,7 @@ def _valid(column: str, value) -> bool:
             and bool(re.fullmatch(r"[0-9A-Fa-f ]+", value)))
 
 
-def _history(rows: list[dict]) -> list[dict]:
+def _history(rows: list[dict], *, location: bool = False) -> list[dict]:
     """Keep actual recent samples; no averaging across missing readings."""
     result = []
     for row in rows[-MAX_HISTORY:]:
@@ -104,13 +139,19 @@ def _history(rows: list[dict]) -> list[dict]:
             valid_row = name == "elapsed_s" or analyze.sane(row)
             return value if valid_row and _finite(value) and _valid(name, value) else None
         v, a = reading("pack_v"), reading("pack_a")
-        result.append({
+        point = {
             "elapsed_s": reading("elapsed_s"),
             "speed_kph": reading("speed_kph"),
             "pack_kw": v * a / 1000 if v is not None and a is not None else None,
             "soc_pct": reading("soc_pct"),
             "cell_spread_mv": reading("cell_spread_mv"),
-        })
+        }
+        if location:
+            # Only when the operator asked for it. The trail is what a map is
+            # drawn from, so it carries the same decision as the coordinates.
+            point["gps_lat"] = reading("gps_lat")
+            point["gps_lon"] = reading("gps_lon")
+        result.append(point)
     return result
 
 
@@ -200,11 +241,14 @@ def _insights(report: dict, derived: dict, signals: dict) -> list[dict]:
 class SessionStore:
     """One cached session, bounded files and responses for a small Pi."""
 
-    def __init__(self, directory: str | Path, stale_after: float = 45.0):
+    def __init__(self, directory: str | Path, stale_after: float = 45.0,
+                 *, expose_location: bool = False):
         if not math.isfinite(stale_after) or stale_after <= 0:
             raise ValueError("stale-after must be positive and finite")
         self.directory = Path(directory).resolve()
         self.stale_after = stale_after
+        self.expose_location = bool(expose_location)
+        self.columns = public_columns(self.expose_location)
         self._lock = threading.Lock()
         self._cache_key = None
         self._cached = None
@@ -259,7 +303,7 @@ class SessionStore:
             rows, warnings, _ = analyze.read_session(path)
             # Drop fields outside the contract before any report or derived
             # computation, including completeness keys from future CSV columns.
-            rows = [{c: r.get(c) for c in PUBLIC_COLUMNS if c in r} for r in rows]
+            rows = [{c: r.get(c) for c in self.columns if c in r} for r in rows]
             # A complete row with no usable time cannot support a live view.
             if any(not _finite(r.get("elapsed_s")) for r in rows):
                 warnings.append("Rows with invalid elapsed time were withheld from measurements.")
@@ -274,7 +318,9 @@ class SessionStore:
             report = analyze.analyze(report_rows, path=path.name, extra_warnings=warnings)
             derived = _clean(live.derive(rows))
             snap = live.snapshot(rows)
-            self._cached = (rows, warnings, report, derived, snap, _history(rows), energy_budget(rows))
+            self._cached = (rows, warnings, report, derived, snap,
+                            _history(rows, location=self.expose_location),
+                            energy_budget(rows))
             self._cache_key = key
         rows, read_warnings, report, base_derived, snap, history, budget = self._cached
         warnings = list(read_warnings)
@@ -414,9 +460,16 @@ def main(argv=None) -> int:
     parser.add_argument("--stale-after", type=float, default=45.0)
     parser.add_argument("--json", action="store_true", help="print a snapshot and exit without a listener")
     parser.add_argument("--session", default="latest", help="session for --json, default latest")
+    parser.add_argument(
+        "--expose-location", action="store_true",
+        help="serve GPS coordinates, altitude and heading to the browser. Off "
+             "by default: fix quality alone says whether the receiver works "
+             "without saying where the vehicle is. Only turn this on for a "
+             "listener you control -- check --host.")
     args = parser.parse_args(argv)
     try:
-        store = SessionStore(args.dir, args.stale_after)
+        store = SessionStore(args.dir, args.stale_after,
+                             expose_location=args.expose_location)
         if args.json:
             print(json.dumps(store.snapshot(args.session), indent=2, allow_nan=False))
             return 0

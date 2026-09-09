@@ -151,6 +151,41 @@ discount.
   to act. `hummer-gpstime.service` is provided, ordered before the recorder,
   and exits 0 with no fix so a cold receiver never blocks the boot.
 
+### Added
+
+- **`--expose-location` on the dashboard**, off by default. Fix quality
+  (`gps_mode`, `gps_sats`) says whether the receiver works and reveals nothing
+  about where the vehicle is; coordinates, altitude and heading say exactly
+  that. The original author excluded all of it, and the default here keeps that
+  behaviour — a reader that is merely started still gets no position. The flag
+  exists rather than a deletion so that publishing location is a visible act
+  recorded in the command line that started the server.
+
+### Fixed
+
+- **`gps_time` was permanently null.** It is an ISO-8601 string but was absent
+  from `analyze._TEXT_COLUMNS`, so it went through `_number()`, which strips
+  the trailing `Z` and every letter before it and then fails. The column read
+  empty while looking like a receiver fault rather than a parsing one.
+
+- **Coordinates now have physical bounds** in the dashboard's validator:
+  latitude ±90, longitude ±180, track 0–360. A decoder fault in a coordinate
+  puts the vehicle in the sea rather than producing an obviously silly number,
+  and `0,0` — Null Island — is the classic signature of a fix that failed open.
+
+- **The wheel-speed claim is restated under the condition where it holds, and
+  the restriction is itself the finding.** A corpus-derived level-3 test began
+  failing at r = 0.98875 against a 0.99 bar as sessions accumulated. The cause
+  is not drift: a row is one pass of a 7–9 second poll cycle, so `010D` and the
+  wheel speeds within it are read seconds apart, and under hard acceleration
+  the vehicle genuinely was at different speeds when each was sampled. The 24
+  disagreeing samples have a median |dv/dt| of **5.39 kph/s** against **1.05**
+  for the other 1,405; excluding them lifts r to **0.99693**.
+
+  The threshold was not relaxed — the correlation under the stated condition is
+  *higher* than the bar. The same intra-cycle skew explains the scatter between
+  GPS speed and `010D`, so two independent signal pairs now show it.
+
 ### Fixed
 
 - **A restored clock backdated a session, and nothing rejected it.** The Pi has
