@@ -714,106 +714,247 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     };
   }
 
+
+  /* A box with chamfered edges. Almost everything on a vehicle that reads as
+     solid reads that way because its edges catch light differently from its
+     faces, and a plain cube has no edges to catch anything -- which is why
+     the first version of this looked like a stack of cardboard. */
+  function bevelBox(bevel) {
+    var b = bevel === undefined ? 0.12 : bevel, o = 0.5, i = 0.5 - b,
+        verts = [], norms = [], idx = [];
+    function quad(a, bb, c, d, n) {
+      var base = verts.length / 3;
+      [a, bb, c, d].forEach(function (v) {
+        verts.push(v[0], v[1], v[2]); norms.push(n[0], n[1], n[2]);
+      });
+      idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+    var S = 1 / Math.sqrt(2);
+    /* six faces, inset by the bevel */
+    quad([ o,-i,-i],[ o, i,-i],[ o, i, i],[ o,-i, i],[ 1,0,0]);
+    quad([-o,-i, i],[-o, i, i],[-o, i,-i],[-o,-i,-i],[-1,0,0]);
+    quad([-i, o,-i],[-i, o, i],[ i, o, i],[ i, o,-i],[0, 1,0]);
+    quad([-i,-o, i],[-i,-o,-i],[ i,-o,-i],[ i,-o, i],[0,-1,0]);
+    quad([-i,-i, o],[ i,-i, o],[ i, i, o],[-i, i, o],[0,0, 1]);
+    quad([ i,-i,-o],[-i,-i,-o],[-i, i,-o],[ i, i,-o],[0,0,-1]);
+    /* twelve edge chamfers */
+    quad([ o,-i, i],[ o, i, i],[ i, i, o],[ i,-i, o],[ S,0, S]);
+    quad([ i,-i,-o],[ i, i,-o],[ o, i,-i],[ o,-i,-i],[ S,0,-S]);
+    quad([-i,-i, o],[-i, i, o],[-o, i, i],[-o,-i, i],[-S,0, S]);
+    quad([-o,-i,-i],[-o, i,-i],[-i, i,-o],[-i,-i,-o],[-S,0,-S]);
+    quad([ o, i,-i],[ o, i, i],[ i, o, i],[ i, o,-i],[ S, S,0]);
+    quad([ o,-i, i],[ o,-i,-i],[ i,-o,-i],[ i,-o, i],[ S,-S,0]);
+    quad([-o, i, i],[-o, i,-i],[-i, o,-i],[-i, o, i],[-S, S,0]);
+    quad([-o,-i,-i],[-o,-i, i],[-i,-o, i],[-i,-o,-i],[-S,-S,0]);
+    quad([-i, o, i],[-i, i, o],[ i, i, o],[ i, o, i],[0, S, S]);
+    quad([ i, o,-i],[ i, i,-o],[-i, i,-o],[-i, o,-i],[0, S,-S]);
+    quad([-i,-i, o],[-i,-o, i],[ i,-o, i],[ i,-i, o],[0,-S, S]);
+    quad([ i,-o,-i],[ i,-i,-o],[-i,-i,-o],[-i,-o,-i],[0,-S,-S]);
+    return { position: new Float32Array(verts), normal: new Float32Array(norms),
+             index: new Uint16Array(idx) };
+  }
+
+  /* A tyre: an annulus swept round, so it has a hole and a sidewall rather
+     than being a solid drum. Built on Z, like the plain cylinder. */
+  function tyreMesh(innerRatio, segments) {
+    var s = segments || 30, ri = innerRatio === undefined ? 0.58 : innerRatio,
+        p = [], n = [], i = [];
+    function ring(radius, z, nx, ny, nz) {
+      var start = p.length / 3;
+      for (var k = 0; k <= s; k++) {
+        var a = k / s * Math.PI * 2, c = Math.cos(a), si = Math.sin(a);
+        p.push(c * radius, si * radius, z);
+        n.push(nx === null ? c : nx, ny === null ? si : ny, nz);
+      }
+      return start;
+    }
+    function band(a, b) {
+      for (var k = 0; k < s; k++) {
+        i.push(a + k, a + k + 1, b + k, a + k + 1, b + k + 1, b + k);
+      }
+    }
+    var outF = ring(0.5, 0.5, null, null, 0), outB = ring(0.5, -0.5, null, null, 0);
+    band(outF, outB);                                     /* tread          */
+    var fO = ring(0.5, 0.5, 0, 0, 1), fI = ring(ri * 0.5, 0.5, 0, 0, 1);
+    band(fI, fO);                                          /* outer sidewall */
+    var bO = ring(0.5, -0.5, 0, 0, -1), bI = ring(ri * 0.5, -0.5, 0, 0, -1);
+    band(bO, bI);                                          /* inner sidewall */
+    return { position: new Float32Array(p), normal: new Float32Array(n),
+             index: new Uint16Array(i) };
+  }
+
+  /* A wheel face: hub plus spokes, so a wheel reads as a wheel and not a
+     washer. Flat on Z, drawn just proud of the tyre's outer sidewall. */
+  function rimMesh(spokes) {
+    var count = spokes || 6, p = [], n = [], i = [];
+    function disc(radius, z) {
+      var centre = p.length / 3;
+      p.push(0, 0, z); n.push(0, 0, 1);
+      for (var k = 0; k <= 24; k++) {
+        var a = k / 24 * Math.PI * 2;
+        p.push(Math.cos(a) * radius, Math.sin(a) * radius, z); n.push(0, 0, 1);
+      }
+      for (var k2 = 0; k2 < 24; k2++) i.push(centre, centre + 1 + k2, centre + 2 + k2);
+    }
+    disc(0.17, 0.5);
+    for (var sp = 0; sp < count; sp++) {
+      var a0 = sp / count * Math.PI * 2, w = 0.055, base = p.length / 3,
+          c = Math.cos(a0), si = Math.sin(a0), px = -si * w, py = c * w;
+      p.push(c * 0.14 + px, si * 0.14 + py, 0.5); n.push(0, 0, 1);
+      p.push(c * 0.14 - px, si * 0.14 - py, 0.5); n.push(0, 0, 1);
+      p.push(c * 0.44 - px, si * 0.44 - py, 0.5); n.push(0, 0, 1);
+      p.push(c * 0.44 + px, si * 0.44 + py, 0.5); n.push(0, 0, 1);
+      i.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+    return { position: new Float32Array(p), normal: new Float32Array(n),
+             index: new Uint16Array(i) };
+  }
+
   /* ---- the scene ----
      Positions are in metres from the published dimensions above. Anything
      whose real location this project does not know is not placed: an
      invented position looks exactly as authoritative as a measured one,
      which is the whole problem with drawing a vehicle from memory. */
   function buildScene() {
-    var parts = [], BODY = [0.30, 0.34, 0.37], DARK = [0.13, 0.15, 0.16];
+    var parts = [],
+        BODY  = [0.34, 0.38, 0.41],
+        TRIM  = [0.11, 0.13, 0.14],
+        GLASS = [0.14, 0.22, 0.27],
+        TYRE  = [0.055, 0.06, 0.065],
+        RIM   = [0.42, 0.45, 0.47];
     function add(o) { parts.push(o); return o; }
-
-    /* --- shell: hood, cab, bed sides. Transparent by default so the
-       hardware underneath is visible, which is the point of the view. --- */
-    /* The shell is four boxes that MEET. Earlier they were sized
-       independently and floated apart, which read as scattered slabs rather
-       than one vehicle -- so the seams are computed from shared edges. */
-    var sillTop = 0.92, hoodTop = 1.40, cabTop = 2.009, bedTop = 1.32,
-        noseX = AXLE + VEH.frontOverhang, tailX = -(AXLE + VEH.rearOverhang),
-        cowlX = 1.28, bulkX = -0.62;
-    function slab(id, x0, x1, y0, y1, width, colour) {
-      add({ id: id, mesh: "box", layer: "shell", colour: colour || BODY,
-            t: [(x0 + x1) / 2, (y0 + y1) / 2, 0],
-            s: [Math.abs(x1 - x0), y1 - y0, width] });
+    function slab(id, x0, x1, y0, y1, z0, z1, colour, opts) {
+      var o = { id: id, mesh: "bev", layer: "shell", colour: colour || BODY,
+                t: [(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2],
+                s: [Math.abs(x1 - x0), Math.abs(y1 - y0), Math.abs(z1 - z0)] };
+      if (opts) for (var k in opts) if (opts.hasOwnProperty(k)) o[k] = opts[k];
+      return add(o);
     }
-    slab("shell-sill", tailX, noseX, VEH.groundClearance, sillTop,
-         VEH.width - 0.04, DARK);
-    slab("shell-hood", cowlX, noseX, sillTop, hoodTop, VEH.width - 0.02);
-    slab("shell-cab", bulkX, cowlX, sillTop, cabTop, VEH.width);
-    slab("shell-bed", tailX, bulkX, sillTop, bedTop, VEH.width - 0.02);
 
-    /* --- battery: 24 modules, two layers of twelve, two across the width
-       and six front to back, between the axles. --- */
+    var noseX = AXLE + VEH.frontOverhang, tailX = -(AXLE + VEH.rearOverhang),
+        W = HALF_W, rocker = 0.46, beltline = 1.30, roof = VEH.height,
+        cowlX = 1.22, bulkX = -0.58;
+
+    /* --- lower body. One continuous slab from nose to tail is what makes a
+       vehicle read as one object rather than three parked together. --- */
+    slab("shell-rocker", tailX, noseX, rocker, beltline, -W + 0.03, W - 0.03, BODY);
+    /* skid plate and rear bumper, darker, proud of the body */
+    slab("shell-skid", noseX - 0.30, noseX + 0.02, rocker - 0.10, rocker + 0.34,
+         -W + 0.10, W - 0.10, TRIM);
+    slab("shell-bumper", tailX - 0.02, tailX + 0.26, rocker - 0.06, rocker + 0.30,
+         -W + 0.06, W - 0.06, TRIM);
+
+    /* --- hood, upright and flat, the way this vehicle's is --- */
+    slab("shell-hood", cowlX, noseX - 0.06, beltline, beltline + 0.22, -W + 0.06, W - 0.06, BODY);
+    /* front fascia and light bar */
+    slab("shell-fascia", noseX - 0.10, noseX, rocker + 0.28, beltline + 0.20,
+         -W + 0.05, W - 0.05, TRIM);
+    slab("shell-lightbar", noseX - 0.04, noseX + 0.03, beltline - 0.02, beltline + 0.14,
+         -W + 0.30, W - 0.30, [0.62, 0.66, 0.70], { emissiveTag: "lights" });
+
+    /* --- greenhouse. Glass is its own material and its own layer so the
+       cabin can be cleared without losing the body around it. --- */
+    slab("glass-side-l", bulkX + 0.06, cowlX - 0.04, beltline + 0.16, roof - 0.10,
+         -W + 0.01, -W + 0.06, GLASS, { alpha: 0.42, layer: "shell" });
+    slab("glass-side-r", bulkX + 0.06, cowlX - 0.04, beltline + 0.16, roof - 0.10,
+         W - 0.06, W - 0.01, GLASS, { alpha: 0.42, layer: "shell" });
+    slab("glass-wind", cowlX - 0.06, cowlX + 0.02, beltline + 0.16, roof - 0.10,
+         -W + 0.06, W - 0.06, GLASS, { alpha: 0.42, layer: "shell" });
+    slab("shell-cabbase", bulkX, cowlX, beltline, beltline + 0.20, -W + 0.02, W - 0.02, BODY);
+    slab("shell-roof", bulkX + 0.02, cowlX - 0.02, roof - 0.12, roof, -W + 0.02, W - 0.02, BODY);
+    /* roof rails */
+    slab("rail-l", bulkX + 0.10, cowlX - 0.10, roof, roof + 0.06, -W + 0.16, -W + 0.28, TRIM);
+    slab("rail-r", bulkX + 0.10, cowlX - 0.10, roof, roof + 0.06, W - 0.28, W - 0.16, TRIM);
+
+    /* --- bed --- */
+    slab("bed-l", tailX + 0.10, bulkX, beltline, beltline + 0.34, -W + 0.02, -W + 0.16, BODY);
+    slab("bed-r", tailX + 0.10, bulkX, beltline, beltline + 0.34, W - 0.16, W - 0.02, BODY);
+    slab("bed-tail", tailX + 0.10, tailX + 0.24, beltline, beltline + 0.34, -W + 0.02, W - 0.02, BODY);
+    slab("bed-bulk", bulkX - 0.12, bulkX, beltline, beltline + 0.40, -W + 0.02, W - 0.02, BODY);
+    slab("bed-floor", tailX + 0.16, bulkX - 0.06, beltline - 0.04, beltline + 0.02,
+         -W + 0.06, W - 0.06, TRIM);
+
+    /* --- fender flares. Squared and proud of the body: the single feature
+       that makes this vehicle recognisable from any angle. --- */
+    [[AXLE, "f"], [-AXLE, "r"]].forEach(function (ax) {
+      [-1, 1].forEach(function (side) {
+        var z0 = side < 0 ? -W - 0.09 : W - 0.02, z1 = side < 0 ? -W + 0.02 : W + 0.09;
+        slab("flare-" + ax[1] + (side < 0 ? "l" : "r"),
+             ax[0] - 0.62, ax[0] + 0.62, rocker + 0.02, beltline + 0.06, z0, z1, TRIM);
+      });
+    });
+
+    /* --- battery: 24 modules, two layers of twelve, two across, six along,
+       between the axles --- */
     var cols = 6, rows = 2, mL = VEH.packLength / cols, mW = VEH.packWidth / rows,
         layerH = (VEH.packTop - VEH.packBottom) / 2;
-    add({ id: "pack-case", mesh: "box", layer: "pack", colour: [0.10, 0.12, 0.13],
+    add({ id: "pack-case", mesh: "bev", layer: "pack", colour: [0.09, 0.11, 0.12],
           t: [0, (VEH.packTop + VEH.packBottom) / 2, 0],
-          s: [VEH.packLength + 0.10, VEH.packTop - VEH.packBottom + 0.06,
-              VEH.packWidth + 0.10], alpha: 0.30 });
+          s: [VEH.packLength + 0.12, VEH.packTop - VEH.packBottom + 0.08,
+              VEH.packWidth + 0.12], alpha: 0.28 });
     for (var layer = 0; layer < 2; layer++) {
       for (var r = 0; r < rows; r++) {
         for (var c = 0; c < cols; c++) {
-          add({
-            id: "mod-" + (layer * 12 + r * cols + c),
-            index: layer * 12 + r * cols + c,
-            mesh: "box", layer: "pack", colour: [0.30, 0.61, 0.41],
-            t: [VEH.packLength / 2 - mL * (c + 0.5),
-                VEH.packBottom + layerH * (layer + 0.5),
-                VEH.packWidth / 2 - mW * (r + 0.5)],
-            s: [mL - 0.03, layerH - 0.025, mW - 0.05]
-          });
+          add({ id: "mod-" + (layer * 12 + r * cols + c),
+                index: layer * 12 + r * cols + c,
+                mesh: "bev", layer: "pack", colour: [0.30, 0.61, 0.41],
+                t: [VEH.packLength / 2 - mL * (c + 0.5),
+                    VEH.packBottom + layerH * (layer + 0.5),
+                    VEH.packWidth / 2 - mW * (r + 0.5)],
+                s: [mL - 0.04, layerH - 0.03, mW - 0.06] });
         }
       }
     }
 
-    /* --- drive units: one on the front axle, two in one rear housing --- */
-    add({ id: "motor-front", mesh: "cyl", layer: "drive", colour: [0.24, 0.28, 0.31],
-          t: [AXLE, 0.46, 0], s: [0.44, 0.44, 0.72], rot: "z" });
-    add({ id: "motor-rear-a", mesh: "cyl", layer: "drive", colour: [0.24, 0.28, 0.31],
-          t: [-AXLE, 0.46, -0.28], s: [0.44, 0.44, 0.46], rot: "z" });
-    add({ id: "motor-rear-b", mesh: "cyl", layer: "drive", colour: [0.24, 0.28, 0.31],
-          t: [-AXLE, 0.46, 0.28], s: [0.44, 0.44, 0.46], rot: "z" });
-    add({ id: "halfshaft-f", mesh: "box", layer: "drive", colour: [0.30, 0.33, 0.35],
-          t: [AXLE, 0.46, 0], s: [0.09, 0.09, VEH.width - 0.42] });
-    add({ id: "halfshaft-r", mesh: "box", layer: "drive", colour: [0.30, 0.33, 0.35],
-          t: [-AXLE, 0.46, 0], s: [0.09, 0.09, VEH.width - 0.42] });
+    /* --- drive units --- */
+    add({ id: "motor-front", mesh: "cyl", layer: "drive", colour: [0.26, 0.30, 0.33],
+          t: [AXLE, 0.50, 0], s: [0.46, 0.46, 0.70], rot: "z" });
+    add({ id: "motor-rear-a", mesh: "cyl", layer: "drive", colour: [0.26, 0.30, 0.33],
+          t: [-AXLE, 0.50, -0.27], s: [0.46, 0.46, 0.44], rot: "z" });
+    add({ id: "motor-rear-b", mesh: "cyl", layer: "drive", colour: [0.26, 0.30, 0.33],
+          t: [-AXLE, 0.50, 0.27], s: [0.46, 0.46, 0.44], rot: "z" });
+    [["f", AXLE], ["r", -AXLE]].forEach(function (a) {
+      add({ id: "shaft-" + a[0], mesh: "cyl", layer: "drive", colour: [0.32, 0.35, 0.37],
+            t: [a[1], 0.50, 0], s: [0.10, 0.10, VEH.width - 0.34], rot: "z" });
+    });
 
-    /* --- wheels and brakes, four corners --- */
+    /* --- wheels: tyre, rim face, brake disc --- */
     [["fl", AXLE, -1], ["fr", AXLE, 1], ["rl", -AXLE, -1], ["rr", -AXLE, 1]]
       .forEach(function (w) {
-        var z = w[2] * (HALF_W - VEH.wheelWidth / 2 - 0.03);
-        add({ id: "tyre-" + w[0], mesh: "cyl", layer: "wheels",
-              colour: [0.07, 0.08, 0.09], spin: true,
-              t: [w[1], VEH.wheelRadius, z],
-              s: [VEH.wheelRadius * 2, VEH.wheelRadius * 2, VEH.wheelWidth], rot: "z" });
-        add({ id: "brake-" + w[0], mesh: "cyl", layer: "wheels",
-              colour: [0.22, 0.25, 0.28], brake: true,
-              t: [w[1], VEH.wheelRadius, z - w[2] * 0.02],
-              s: [0.62, 0.62, VEH.wheelWidth * 0.42], rot: "z" });
+        var z = w[2] * (W - 0.02), d = VEH.wheelRadius * 2;
+        add({ id: "tyre-" + w[0], mesh: "tyre", layer: "wheels", colour: TYRE,
+              spin: true, t: [w[1], VEH.wheelRadius, z],
+              s: [d, d, VEH.wheelWidth], rot: "z", flip: w[2] < 0 });
+        add({ id: "rim-" + w[0], mesh: "rim", layer: "wheels", colour: RIM,
+              spin: true, t: [w[1], VEH.wheelRadius, z],
+              s: [d * 0.98, d * 0.98, VEH.wheelWidth * (w[2] < 0 ? -1.02 : 1.02)],
+              rot: "z" });
+        add({ id: "brake-" + w[0], mesh: "cyl", layer: "wheels", colour: [0.24, 0.27, 0.30],
+              brake: true, t: [w[1], VEH.wheelRadius, z - w[2] * 0.10],
+              s: [0.60, 0.60, 0.06], rot: "z" });
       });
 
-    /* --- thermal. The HV coolant heater is mounted outside the pack on a
-       cradle and the compressor and pumps are fed from the front fuse
-       block, so the hardware lives forward; the runs to the pack are drawn
-       because the pack is liquid cooled, not because their routing is
-       known. --- */
-    add({ id: "hvac", mesh: "box", layer: "thermal", colour: [0.20, 0.42, 0.48],
-          t: [2.25, 0.72, -0.42], s: [0.42, 0.34, 0.44] });
-    add({ id: "chiller", mesh: "box", layer: "thermal", colour: [0.20, 0.42, 0.48],
-          t: [2.25, 0.72, 0.42], s: [0.42, 0.34, 0.44] });
-    add({ id: "pipe-l", mesh: "box", layer: "thermal", colour: [0.16, 0.50, 0.58],
-          flow: true, t: [0.75, 0.30, -(VEH.packWidth / 2 + 0.12)],
-          s: [3.4, 0.07, 0.07] });
-    add({ id: "pipe-r", mesh: "box", layer: "thermal", colour: [0.16, 0.50, 0.58],
-          flow: true, t: [0.75, 0.30, VEH.packWidth / 2 + 0.12],
-          s: [3.4, 0.07, 0.07] });
+    /* --- thermal --- */
+    add({ id: "hvac", mesh: "bev", layer: "thermal", colour: [0.19, 0.44, 0.50],
+          t: [2.18, 0.80, -0.44], s: [0.40, 0.34, 0.42] });
+    add({ id: "chiller", mesh: "bev", layer: "thermal", colour: [0.19, 0.44, 0.50],
+          t: [2.18, 0.80, 0.44], s: [0.40, 0.34, 0.42] });
+    /* Scale is applied AFTER the rotation in the model matrix, so these are
+       world axes: a pipe turned onto X is stretched along X. Scaling the
+       cylinder's original Z instead made it short and fat and left a stray
+       bar sticking out past the body. */
+    add({ id: "pipe-l", mesh: "cyl", layer: "thermal", colour: [0.16, 0.52, 0.60],
+          flow: true, t: [0.70, 0.32, -(VEH.packWidth / 2 + 0.14)],
+          s: [3.3, 0.08, 0.08], rot: "x" });
+    add({ id: "pipe-r", mesh: "cyl", layer: "thermal", colour: [0.16, 0.52, 0.60],
+          flow: true, t: [0.70, 0.32, VEH.packWidth / 2 + 0.14],
+          s: [3.3, 0.08, 0.08], rot: "x" });
 
-    /* --- 12 V in the frunk, passenger-side pod --- */
-    add({ id: "lv", mesh: "box", layer: "aux", colour: [0.36, 0.30, 0.16],
-          t: [2.05, 1.02, 0.62], s: [0.34, 0.24, 0.30] });
-    /* --- charge port: driver's side, rear quarter --- */
-    add({ id: "charge", mesh: "box", layer: "aux", colour: [0.20, 0.24, 0.26],
-          t: [-2.30, 1.06, -(HALF_W - 0.05)], s: [0.26, 0.22, 0.10] });
+    /* --- 12 V and charge port --- */
+    add({ id: "lv", mesh: "bev", layer: "aux", colour: [0.40, 0.33, 0.16],
+          t: [2.02, 1.10, 0.60], s: [0.32, 0.22, 0.28] });
+    add({ id: "charge", mesh: "bev", layer: "aux", colour: [0.20, 0.24, 0.26],
+          t: [-2.26, 1.12, -(W + 0.02)], s: [0.24, 0.20, 0.08] });
     return parts;
   }
 
@@ -850,7 +991,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       alpha: gl.getUniformLocation(prog, "uAlpha"),
       eye: gl.getUniformLocation(prog, "uEye")
     };
-    var meshes = { box: makeMesh(gl, unitBox()), cyl: makeMesh(gl, unitCylinder(28)) },
+    var meshes = { box: makeMesh(gl, unitBox()), cyl: makeMesh(gl, unitCylinder(28)),
+                       bev: makeMesh(gl, bevelBox(0.10)), tyre: makeMesh(gl, tyreMesh(0.58, 30)),
+                       rim: makeMesh(gl, rimMesh(6)) },
         parts = buildScene(),
         cam = { yaw: -0.72, pitch: 0.34, dist: 8.2, spin: 0 },
         layers = { shell: 0.24, pack: 1, drive: 1, wheels: 1, thermal: 1, aux: 1 },
@@ -918,7 +1061,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       order.forEach(function (p) {
         var alpha = p.alpha !== undefined ? p.alpha * layers[p.layer] : layers[p.layer];
         if (alpha <= 0.01) return;
-        var mesh = meshes[p.mesh === "cyl" ? "cyl" : "box"];
+        var mesh = meshes[p.mesh] || meshes.box;
         gl.bindBuffer(gl.ARRAY_BUFFER, mesh.position);
         gl.enableVertexAttribArray(loc.pos);
         gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 0, 0);
@@ -928,7 +1071,13 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.index);
 
         var model = m4trs(p.t[0], p.t[1], p.t[2], p.s[0], p.s[1], p.s[2]);
-        if (p.rot === "z") {
+        if (p.rot === "x") {
+          /* Cylinders are built on Z; a pipe running fore-and-aft needs its
+             axis on X, so it is turned about Y. */
+          var ry = m4();
+          ry[0] = 0; ry[2] = -1; ry[8] = 1; ry[10] = 0;
+          model = m4mul(model, ry);
+        } else if (p.rot === "z") {
           /* Cylinders are built on Z; a wheel needs its axis across the
              vehicle, which is already Z, so only the spin is applied. */
           var a = p.spin ? live.speed * now * 0.00004 : 0,

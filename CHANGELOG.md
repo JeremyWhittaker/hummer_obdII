@@ -277,6 +277,30 @@ discount.
   Translucent parts are sorted back-to-front and drawn after opaque ones,
   because a shell that writes depth first hides everything it exists to reveal.
 
+### Changed
+
+- **Real geometry instead of plain boxes.** Bevelled panels, tyres with a hole
+  and sidewalls rather than solid drums, spoked rims, squared fender flares, a
+  separate glass greenhouse, roof rails, skid plate, light bar and bed walls.
+
+  The chamfer is what does the work: a solid object reads as solid because its
+  edges catch light differently from its faces, and a plain cube has no edges
+  to catch anything — which is exactly why the first version looked like
+  stacked cardboard.
+
+  Downloadable models were looked for first and rejected on the merits. A
+  generic low-poly pickup asserts the wrong shape with more confidence than
+  boxes do, and this vehicle — slab-sided, squared-off, pronounced flares — is
+  one of the few that procedural geometry genuinely suits.
+
+### Fixed
+
+- **Coolant pipes were stretched along the wrong axis.** The model matrix is
+  `TRS × rotation`, so the rotation is applied *first* and the scale axes are
+  the post-rotation world ones. A pipe turned onto X was still being scaled
+  along the cylinder's original Z, which made it short and fat and left a stray
+  bar projecting past the body.
+
 ### Fixed
 
 - **Three faults found by rendering the page and looking at it**, none of which
