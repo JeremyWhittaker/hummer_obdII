@@ -207,11 +207,51 @@ hummer-obd-dashboard --dir evidence/sessions
 PYTHONPATH=src python3 -m hummer_obd.dashboard --dir evidence/sessions
 ```
 
-Open `http://127.0.0.1:8765`. The dashboard reads the recorder's existing CSVs:
-pack power, state of charge, cell spread, signal ages and sources, recent
-charts, and selectable past sessions. It never opens the OBD adapter. GPS
-coordinates, vehicle identity and raw transcripts are excluded from its API.
-No external scripts, fonts, map service or cloud connection are needed.
+Open `http://127.0.0.1:8765`. It never opens the OBD adapter — it reads the
+CSVs the recorder already wrote.
+
+**The page is the vehicle.** A plan view, nose left and driver's side at the
+bottom, with the readings drawn on the parts they come from: the 24 battery
+modules in the floor in their real arrangement (two layers of twelve, two
+across and six front-to-back, between the axles), the three motors on the axles
+they drive, the charge port on the driver's-side rear quarter, the 12 V battery
+in the frunk pod, wheel speeds at their four corners. Placement follows GM's
+published pack architecture.
+
+Modules are shaded by **distance from the median of the 24**, not by absolute
+value. `0x2AF1` returns 24 bytes and the pack has 24 modules; that
+correspondence is the whole of the evidence, and which index is which physical
+module is **not** established. Read a hot cell as "one of these differs", never
+as "that one, third from the front". Shading by deviation is also the more
+useful question — a module unlike its neighbours is what a failing one looks
+like — and it avoids inventing units for an unproven scaling.
+
+A **track** is drawn from the recorder's own fixes, as SVG. There is no tile
+server: the page's CSP forbids one, and requesting tiles would send the
+vehicle's position to a third party. When the spread across a whole session is
+under 120 m the page says the vehicle is stationary rather than auto-scaling
+receiver jitter into a convincing route.
+
+No external script, stylesheet, font, image, map service or cloud connection —
+the CSP permits none of them, and inline SVG is DOM rather than a fetch.
+
+**Location is withheld by default.** Fix quality (`gps_mode`, `gps_sats`) says
+whether the receiver works without saying where the vehicle is; coordinates,
+altitude and heading say exactly that, and are served only with
+`--expose-location`. Vehicle identity and raw transcripts are never served at
+all. The flag exists rather than a filter so the decision to publish position
+is visible in the command line — or, better, in `hummer-dashboard.service`,
+which is where it belongs:
+
+```bash
+sudo cp hummer-dashboard.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now hummer-dashboard.service
+```
+
+Check `--host` before enabling location. The shipped unit binds a Tailscale
+address, so the listener is reachable across that tailnet and nowhere else —
+not `0.0.0.0`, and not the LAN address either.
 
 The energy budget separates energy drawn while moving, returned while moving,
 stationary electrical draw, and stationary energy flowing into the pack. It
