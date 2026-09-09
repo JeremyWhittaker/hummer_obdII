@@ -103,3 +103,27 @@ desktop and mobile rendering, session selection, signal filtering, chart
 selection, empty/stale states and network failure. Live verification reads
 private recorder files; those files and screenshots of their contents remain
 ignored and must not be committed to this public repository.
+
+### Completed acceptance — 2026-09-08
+
+- Implementation checkpoint `0634a64`: 1,010 tests and 2,697 subtests passed;
+  changed Python files passed Ruff and the diff passed whitespace checks.
+- The wheel contains both the dashboard HTML resource and command entry point.
+- All 61 locally available private sessions, totaling 9,761 rows at the time
+  of the check, produced strict JSON snapshots without exceptions.
+- Chromium passed at 1,440, 390 and 320 px widths. Session switching, search,
+  both chart tabs, expanded observations, stale/empty states, connection
+  failure/recovery, charge wording and withheld-value behavior were exercised.
+  No horizontal overflow, page errors or external resource requests occurred.
+- Changed files were deployed to the existing Pi runtime directory. Four
+  source/resource SHA-256 fingerprints matched the committed files. A bounded
+  HTTP smoke served an updating live session to a mobile-sized browser through
+  an SSH tunnel. The drive recorder remained active with the same process ID;
+  no second diagnostic connection was opened.
+- GitHub's tests and quality workflows passed for the implementation commit.
+
+The dashboard is a manual-start reader. The HTTP process used for acceptance
+was temporary; no new boot service, public listener or privileged configuration
+was installed. On the Pi, from the existing deployment directory, start it with
+`PYTHONPATH=src python3 -m hummer_obd.dashboard`. The SSH forwarding command in
+the README makes that loopback listener available to a browser on another host.
