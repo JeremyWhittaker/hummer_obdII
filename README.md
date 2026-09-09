@@ -279,6 +279,25 @@ the tyres are: a plate that hides the pack defeats the point of looking up at
 it. The rear tie rods are drawn and never animated — four-wheel steer is on
 the spec sheet, and nothing in this project measures a rear angle.
 
+**Coolant goes through the modules, because GM says it does.** Its service
+publication for this vehicle: *"Each CMA and the A28 EV Battery Disconnect
+Relay assembly contain internal coolant passages."* A CMA is one of the 24
+modules — so the fluid does not merely pass the pack, it runs inside every
+module in it. The model draws a manifold down each side and a crossing over
+every module. What is *not* established is whether the modules are plumbed in
+series, parallel or banks, so the crossings are parallel branches: a serpentine
+would assert an order nobody has published.
+
+**The module layout was an assumption, and GM's own cutaway disagreed with
+it.** That there are two blocks of twelve is measured here, from this vehicle:
+twelve modules in series at eight cells each is 96 cells, and 96.0 is exactly
+what the voltage ratio comes out at. How those twelve sit *inside* a layer was
+never sourced — "two across, six front to back" appears in no document. GM's
+cutaway shows long slabs spanning the pack's narrow dimension laid side by side
+down its length, which also matches the shape of an Ultium CMA. Corrected to
+one across, twelve along: each module 1.42 × 0.178 m, where the assumption made
+them 0.71 × 0.36 — a shape Ultium does not build.
+
 **The bed is a bed.** It was two thin rails with nothing between them, on a
 cab 0.8 m too short — proportions being most of what identifies this truck.
 GMC publishes the whole box: 60.10 in of inner length, 61.02 in across the

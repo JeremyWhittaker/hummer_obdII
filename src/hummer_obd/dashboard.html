@@ -598,11 +598,13 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
      is what the usage policy calls normal interactive viewing. */
   var TILE_OVERSAMPLE = 2;
 
-  /* The pack, as it is actually built: 24 modules in two layers of twelve,
-     each layer two across the width and six front to back. In a plan view the
-     layers are stacked out of the page, so each of the twelve footprint
-     positions is drawn split -- upper half is layer A, lower half layer B. */
-  var PACK = { x: 294, y: 96, w: 372, h: 208, cols: 6, rows: 2 };
+  /* The pack: 24 modules in two layers of twelve. The two blocks of twelve
+     are measured here; the arrangement within a layer is GM's own cutaway,
+     which shows long slabs spanning the pack's narrow dimension laid side by
+     side down its length. In a plan view the layers stack out of the page, so
+     each of the twelve footprint positions is drawn split -- upper half is
+     layer A, lower half layer B. */
+  var PACK = { x: 294, y: 96, w: 372, h: 208, cols: 12, rows: 1 };
 
   var el = {}, state = {
     snapshot: null, sessions: [], selected: "latest", network: "loading",
@@ -1173,9 +1175,24 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       });
     });
 
-    /* --- battery: 24 modules, two layers of twelve, two across, six along,
-       between the axles --- */
-    var cols = 6, rows = 2, mL = VEH.packLength / cols, mW = VEH.packWidth / rows,
+    /* --- battery: 24 modules, two layers of twelve ---------------------
+       Two things here, and only one of them was ever established.
+
+       That there are two blocks of twelve is MEASURED, in this project, from
+       this vehicle: twelve modules in series at eight cells each is 96 cells,
+       and 96.0 is exactly what the voltage ratio comes out at, with the two
+       blocks statistically distinct across the corpus.
+
+       How those twelve sit inside a layer was ASSUMED -- "two across, six
+       front to back" appears in no source. GM's own cutaway of this pack
+       shows roughly a dozen long module slabs each spanning the pack's narrow
+       dimension, laid side by side down its length: one across, twelve along.
+       That also matches the shape of an Ultium CMA, which is a long slab
+       rather than a cube. So the assumption is replaced by what GM draws.
+
+       Each module is then 1.42 m long and 0.178 m wide, which is a module,
+       where 2 x 6 made them 0.71 x 0.36 -- a shape Ultium does not build. */
+    var cols = 12, rows = 1, mL = VEH.packLength / cols, mW = VEH.packWidth / rows,
         layerH = (VEH.packTop - VEH.packBottom) / 2;
     add({ id: "pack-case", mesh: "bev", layer: "pack", colour: [0.09, 0.11, 0.12],
           t: [0, (VEH.packTop + VEH.packBottom) / 2, 0],
@@ -1190,7 +1207,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                 t: [VEH.packLength / 2 - mL * (c + 0.5),
                     VEH.packBottom + layerH * (layer + 0.5),
                     VEH.packWidth / 2 - mW * (r + 0.5)],
-                s: [mL - 0.04, layerH - 0.03, mW - 0.06] });
+                s: [mL - 0.022, layerH - 0.03, mW - 0.05] });
         }
       }
     }
@@ -1295,6 +1312,33 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        that keeps running while the hardware is idle is the lie this whole
        page is built to avoid. Their colour is the pack temperature, on the
        same ramp as the pipe they are inside. */
+    /* Coolant does not merely pass the pack, it goes through every module.
+       GM's service publication for this exact vehicle: "Each CMA and the A28
+       EV Battery Disconnect Relay assembly contain internal coolant
+       passages." A CMA is one of the 24 modules. So there is a manifold along
+       each side of the pack and a run across every module between them.
+
+       What is NOT established, and so is not drawn as though it were: whether
+       the modules are plumbed in series, in parallel or in banks, and whether
+       the two layers form one circuit or two. The crossings are drawn as
+       parallel branches because that is the arrangement that asserts least --
+       a serpentine would be claiming an order nobody has published. */
+    var manifoldZ = VEH.packWidth / 2 + 0.02,
+        manifoldY = VEH.packBottom + (VEH.packTop - VEH.packBottom) / 2;
+    [-1, 1].forEach(function (side) {
+      add({ id: "coolant-manifold-" + (side < 0 ? "l" : "r"), mesh: "cyl",
+            layer: "thermal", colour: [0.16, 0.52, 0.60], flow: true,
+            t: [0, manifoldY, side * manifoldZ],
+            s: [VEH.packLength, 0.055, 0.055], rot: "x" });
+    });
+    for (var mx = 0; mx < 12; mx++) {
+      add({ id: "coolant-cross-" + mx, mesh: "cyl", layer: "thermal",
+            colour: [0.16, 0.52, 0.60], flow: true,
+            t: [VEH.packLength / 2 - (VEH.packLength / 12) * (mx + 0.5),
+                manifoldY, 0],
+            s: [0.035, 0.035, VEH.packWidth], rot: "z" });
+    }
+
     var pipeBackX = 0.70 - 1.65, pipeFrontX = 0.70 + 1.65;
     [[-(VEH.packWidth / 2 + 0.14), pipeBackX, pipeFrontX],
      [VEH.packWidth / 2 + 0.14, pipeFrontX, pipeBackX]].forEach(function (run, side) {
@@ -1473,6 +1517,23 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        position that was 270 mm too far forward and 170 mm too high. */
     add({ id: "charge", mesh: "bev", layer: "aux", colour: [0.20, 0.24, 0.26],
           t: [-2.53, 0.95, -(W + 0.02)], s: [0.24, 0.24, 0.08] });
+
+    /* --- the HV run from the charge port ------------------------------
+       GM's rescue sheet for this vehicle shows a pair of orange cables
+       leaving the rear driver's-side corner, following the frame line
+       forward, and meeting the pack near its rear driver's-side region. That
+       drawing exists to tell first responders where not to cut, which is why
+       it shows HV routing at all.
+
+       Drawn only as far as the pack. Where the cables penetrate the enclosure
+       is not published, and neither is anything between the inlet and the
+       pack -- no junction box, no fuse, no "charge port module". GM names a
+       diagnostic data list called "Charge Port Data" on the BECM, which is a
+       data display and not a component, and modelling one would be inventing
+       hardware from a menu entry. */
+    add({ id: "hv-charge-run", mesh: "cyl", layer: "aux", colour: [0.55, 0.28, 0.10],
+          hvflow: true, t: [-1.75, 0.56, -(W - 0.10)],
+          s: [1.30, 0.045, 0.045], rot: "x" });
 
     /* --- the wall end -------------------------------------------------
        Only drawn while the vehicle is actually charging. A cord hanging off
@@ -1826,6 +1887,17 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         }
         if (p.brake) {
           emissive = [live.brake * 0.9, live.brake * 0.08, live.brake * 0.08];
+        }
+        if (p.hvflow) {
+          /* Lit when energy is actually crossing it, in the direction it is
+             going: green arriving, orange leaving. Dark when nothing is
+             moving, because a cable is not a light. */
+          var kw = live.chargeKw || 0;
+          if (live.charging && kw > 0.2) {
+            emissive = [0.06, 0.45 * Math.min(1, kw / 19.2) + 0.12, 0.20];
+          } else if (live.port) {
+            emissive = [0.10, 0.14, 0.22];
+          }
         }
         if (p.coolant) {
           /* Invisible when nothing is moving, rather than parked mid-pipe
@@ -3422,7 +3494,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     });
     el["module-caveat"].textContent =
       "Placement is from GM's published pack architecture: 24 modules in two layers of twelve, " +
-      "two across and six front to back, between the axles. Which array index is which physical " +
+      "as long slabs spanning its width, laid side by side down its length \u2014 GM's own " +
+      "cutaway, where \"two across and six front to back\" was this project's assumption and " +
+      "appears in no source. Which array index is which physical " +
       "module is NOT established — 0x2AF1 returns 24 bytes and the pack has 24 modules, and that " +
       "correspondence is the whole of the evidence. Read a hot cell as “one of these differs”, " +
       "never as “that one, third from the front”.";
