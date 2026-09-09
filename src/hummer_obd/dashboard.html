@@ -866,6 +866,19 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     slab("rail-l", bulkX + 0.10, cowlX - 0.10, roof, roof + 0.06, -W + 0.16, -W + 0.28, TRIM);
     slab("rail-r", bulkX + 0.10, cowlX - 0.10, roof, roof + 0.06, W - 0.28, W - 0.16, TRIM);
 
+    /* --- pillars. A greenhouse without them is a glass box; with them it is
+       a cab. Positions follow the cab's own front and rear edges rather than
+       being spaced by eye. --- */
+    [[-1, "l"], [1, "r"]].forEach(function (side) {
+      var z0 = side[0] < 0 ? -W : W - 0.07, z1 = side[0] < 0 ? -W + 0.07 : W;
+      slab("pillar-a-" + side[1], cowlX - 0.10, cowlX, beltline + 0.14, roof - 0.06, z0, z1, BODY);
+      slab("pillar-b-" + side[1], 0.30, 0.40, beltline + 0.14, roof - 0.06, z0, z1, BODY);
+      slab("pillar-c-" + side[1], bulkX, bulkX + 0.10, beltline + 0.14, roof - 0.06, z0, z1, BODY);
+      /* mirrors */
+      slab("mirror-" + side[1], cowlX - 0.16, cowlX - 0.02, beltline + 0.34, beltline + 0.52,
+           side[0] < 0 ? -W - 0.16 : W + 0.02, side[0] < 0 ? -W - 0.02 : W + 0.16, TRIM);
+    });
+
     /* --- bed --- */
     slab("bed-l", tailX + 0.10, bulkX, beltline, beltline + 0.34, -W + 0.02, -W + 0.16, BODY);
     slab("bed-r", tailX + 0.10, bulkX, beltline, beltline + 0.34, W - 0.16, W - 0.02, BODY);
@@ -1006,7 +1019,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                        rim: makeMesh(gl, rimMesh(6)) },
         parts = buildScene(),
         cam = { yaw: -0.72, pitch: 0.34, dist: 8.2, spin: 0 },
-        layers = { shell: 0.24, pack: 1, drive: 1, wheels: 1, thermal: 1, aux: 1, ground: 1 },
+        layers = { shell: 0.40, pack: 1, drive: 1, wheels: 1, thermal: 1, aux: 1, ground: 1 },
         live = { modules: [], kw: 0, brake: 0, flow: 0, speed: 0, steer: 0, charging: false };
 
     gl.enable(gl.DEPTH_TEST);
@@ -1159,7 +1172,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            a vehicle around the hardware, which is the whole reason to draw
            a shell over a cutaway at all. */
         var current = viewer.layers[name],
-            next = current > 0.5 ? (name === "shell" ? 0.24 : 0) : 1;
+            next = current > 0.5 ? (name === "shell" ? 0.40 : 0) : 1;
         viewer.setLayer(name, next);
         b.setAttribute("aria-pressed", String(next > 0.5));
       });

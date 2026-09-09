@@ -305,6 +305,14 @@ discount.
   turning the rims by a ratio this project has not measured would be inventing
   a number to make an animation look right.
 
+### Changed
+
+- **Cabin structure and a substantial shell.** A- B- and C-pillars positioned
+  from the cab's own edges, door mirrors, and the body raised from 0.24 to 0.40
+  opacity. A greenhouse without pillars is a glass box; with them it is a cab —
+  and at 0.24 the body read as a ghost rather than as bodywork you can see
+  through, which is a different thing and the point of a cutaway.
+
 ### Fixed
 
 - **Coolant pipes were stretched along the wrong axis.** The model matrix is
