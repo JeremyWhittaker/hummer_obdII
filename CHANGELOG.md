@@ -293,6 +293,18 @@ discount.
   boxes do, and this vehicle — slab-sided, squared-off, pronounced flares — is
   one of the few that procedural geometry genuinely suits.
 
+### Added
+
+- **Ground plane and contact shadow.** An object with nothing beneath it reads
+  as floating whatever else is right about it, and a shadow does more for
+  whether this looks like a real vehicle than any amount of extra body detail.
+  Toggleable like every other layer.
+
+- **The front wheels steer**, from live `steering_deg`. The angle is divided
+  down rather than applied raw: the signal is measured at the wheel, and
+  turning the rims by a ratio this project has not measured would be inventing
+  a number to make an animation look right.
+
 ### Fixed
 
 - **Coolant pipes were stretched along the wrong axis.** The model matrix is

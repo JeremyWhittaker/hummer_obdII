@@ -922,11 +922,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     [["fl", AXLE, -1], ["fr", AXLE, 1], ["rl", -AXLE, -1], ["rr", -AXLE, 1]]
       .forEach(function (w) {
         var z = w[2] * (W - 0.02), d = VEH.wheelRadius * 2;
+        var front = w[1] > 0;
         add({ id: "tyre-" + w[0], mesh: "tyre", layer: "wheels", colour: TYRE,
-              spin: true, t: [w[1], VEH.wheelRadius, z],
+              spin: true, steer: front, t: [w[1], VEH.wheelRadius, z],
               s: [d, d, VEH.wheelWidth], rot: "z", flip: w[2] < 0 });
         add({ id: "rim-" + w[0], mesh: "rim", layer: "wheels", colour: RIM,
-              spin: true, t: [w[1], VEH.wheelRadius, z],
+              spin: true, steer: front, t: [w[1], VEH.wheelRadius, z],
               s: [d * 0.98, d * 0.98, VEH.wheelWidth * (w[2] < 0 ? -1.02 : 1.02)],
               rot: "z" });
         add({ id: "brake-" + w[0], mesh: "cyl", layer: "wheels", colour: [0.24, 0.27, 0.30],
@@ -949,6 +950,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     add({ id: "pipe-r", mesh: "cyl", layer: "thermal", colour: [0.16, 0.52, 0.60],
           flow: true, t: [0.70, 0.32, VEH.packWidth / 2 + 0.14],
           s: [3.3, 0.08, 0.08], rot: "x" });
+
+    /* --- ground. An object with nothing under it floats, whatever else is
+       right about it; a plane and a contact shadow do more for whether this
+       reads as a real vehicle than any amount of extra body detail. --- */
+    add({ id: "ground", mesh: "bev", layer: "ground", colour: [0.055, 0.065, 0.070],
+          t: [0, -0.03, 0], s: [15, 0.05, 15], noRim: true });
+    add({ id: "shadow", mesh: "bev", layer: "ground", colour: [0.0, 0.0, 0.0],
+          t: [0, 0.005, 0], s: [VEH.length * 0.96, 0.01, VEH.width * 0.94],
+          alpha: 0.55, noRim: true });
 
     /* --- 12 V and charge port --- */
     add({ id: "lv", mesh: "bev", layer: "aux", colour: [0.40, 0.33, 0.16],
@@ -996,8 +1006,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                        rim: makeMesh(gl, rimMesh(6)) },
         parts = buildScene(),
         cam = { yaw: -0.72, pitch: 0.34, dist: 8.2, spin: 0 },
-        layers = { shell: 0.24, pack: 1, drive: 1, wheels: 1, thermal: 1, aux: 1 },
-        live = { modules: [], kw: 0, brake: 0, flow: 0, speed: 0, charging: false };
+        layers = { shell: 0.24, pack: 1, drive: 1, wheels: 1, thermal: 1, aux: 1, ground: 1 },
+        live = { modules: [], kw: 0, brake: 0, flow: 0, speed: 0, steer: 0, charging: false };
 
     gl.enable(gl.DEPTH_TEST);
     gl.enable(gl.BLEND);
@@ -1071,6 +1081,16 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.index);
 
         var model = m4trs(p.t[0], p.t[1], p.t[2], p.s[0], p.s[1], p.s[2]);
+        if (p.steer && Math.abs(live.steer) > 0.2) {
+          /* Front wheels only. steering_deg is at the wheel rather than the
+             rim, so it is divided down to something that looks like lock
+             rather than pretending to a ratio nothing here measured. */
+          var sa = live.steer * Math.PI / 180 / 16,
+              cs = Math.cos(sa), ss = Math.sin(sa), yaw = m4();
+          yaw[0] = cs; yaw[2] = -ss; yaw[8] = ss; yaw[10] = cs;
+          model = m4mul(m4trs(p.t[0], p.t[1], p.t[2], 1, 1, 1),
+                        m4mul(yaw, m4trs(0, 0, 0, p.s[0], p.s[1], p.s[2])));
+        }
         if (p.rot === "x") {
           /* Cylinders are built on Z; a pipe running fore-and-aft needs its
              axis on X, so it is turned about Y. */
@@ -1124,7 +1144,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
   var LAYER_LABELS = [
     ["shell", "Body"], ["pack", "Battery"], ["drive", "Drive units"],
-    ["wheels", "Wheels & brakes"], ["thermal", "Thermal"], ["aux", "12 V & charge"]
+    ["wheels", "Wheels & brakes"], ["thermal", "Thermal"], ["aux", "12 V & charge"],
+    ["ground", "Ground"]
   ];
   function buildLayerControls() {
     clear(el.layers);
@@ -1201,6 +1222,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       brake: kpa === null ? 0 : Math.min(1, kpa / 4000),
       flow: (state.thermal.rate > 0.5 || hvacActive) ? 1 : 0,
       speed: speed === null ? 0 : speed,
+      steer: sigValue("steering_deg") || 0,
       charging: derived("charging") === true
     });
 
