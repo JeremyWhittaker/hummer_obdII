@@ -490,6 +490,21 @@ A session that cannot be read is reported as *unknown*, not as parked. Failing
 to read a file says nothing about whether the vehicle moved, and filing it
 under "parked" would hide a real trip.
 
+Sessions are listed by when they happened, in the viewer's own timezone —
+"Tue, Sep 8, 6:10 PM · 8.1 km" rather than `20260908T231018Z`. The id stays the
+id, because that is what the API is asked for; only the menu is readable.
+Choosing a past trip starts it playing, because choosing a past trip is asking
+to watch it.
+
+**The model follows the replay.** The marker used to walk the route while the
+vehicle sat frozen on the session's final sample — the map describing one
+moment and the truck beside it describing another, which is worse than showing
+nothing. Every field the history carries now comes from the frame the scrub is
+sitting on: speed, pack power, state of charge, brake pressure, steering
+angle, body roll and pitch, and the coolant tint. Everything it does not carry
+keeps the session's own value, which is the honest split — the alternative is
+inventing per-frame values for signals that were never sampled per frame.
+
 **Past trips play back.** Pick a session and the marker walks the route with a
 trip clock and a scrub bar. A five-second poll used to rebuild the map and
 reset the marker with it; the track is compared before it is touched, so a

@@ -161,11 +161,26 @@ def _history(rows: list[dict], *, location: bool = False) -> list[dict]:
             return value if valid_row and _finite(value) and _valid(name, value) else None
         v, a = reading("pack_v"), reading("pack_a")
         point = {
+            "utc": row.get("utc"),
             "elapsed_s": reading("elapsed_s"),
             "speed_kph": reading("speed_kph"),
             "pack_kw": v * a / 1000 if v is not None and a is not None else None,
             "soc_pct": reading("soc_pct"),
             "cell_spread_mv": reading("cell_spread_mv"),
+            # These five exist so the 3D view can follow a replay rather than
+            # freezing on the session's last sample. Playing back a drive while
+            # the model showed the state it ended in was the vehicle describing
+            # the wrong moment -- the marker moved and nothing else did.
+            #
+            # They are the fields the render actually consumes: brakes, front
+            # wheel angle, body roll and pitch, and the coolant tint. Adding
+            # anything else would grow the payload for no visible effect, and
+            # this list is bounded at MAX_HISTORY rows either way.
+            "brake_kpa": reading("brake_kpa"),
+            "steering_deg": reading("steering_deg"),
+            "lateral_g": reading("lateral_g"),
+            "longitudinal_g": reading("longitudinal_g"),
+            "temp_f": reading("temp_f"),
         }
         if location:
             # Only when the operator asked for it. The trail is what a map is

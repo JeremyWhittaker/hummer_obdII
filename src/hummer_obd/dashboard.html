@@ -569,6 +569,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     snapshot: null, sessions: [], selected: "latest", network: "loading",
     error: "", timer: null, busy: false, queued: false, generation: 0,
     series: "power", filter: "", retried: false, sessionKey: "", view: "exterior",
+    /* The history row the replay is sitting on, or null when it is not. */
+    frame: null, autoplay: false,
     map: null, play: { timer: null },
     /* Coolant flow is animated from whether the thermal accumulator is
        actually advancing, which needs the previous poll to compare against.
@@ -2219,19 +2221,32 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       state.thermal.value = thermalVal; state.thermal.at = stamp;
     }
     var hvac = sigValue("group_v1_raw"),
-        hvacActive = hvac !== null && Math.abs(hvac - 999) > 150,
-        kpa = sigValue("brake_kpa"),
-        speed = num(derived("speed_now_kph"));
+        hvacActive = hvac !== null && Math.abs(hvac - 999) > 150;
+
+    /* While a past trip is playing, every field the history carries comes
+       from the frame the scrub is sitting on, and everything it does not
+       carry keeps the session's own value. That split is deliberate: the
+       alternative is either a model frozen at the end of the drive, or one
+       inventing per-frame values for signals that were never sampled per
+       frame. */
+    var f = state.frame;
+    function atFrame(name, fallback) {
+      if (!f) return fallback;
+      var value = num(f[name]);
+      return value === null ? null : value;
+    }
+    var kpa = atFrame("brake_kpa", sigValue("brake_kpa")),
+        speed = atFrame("speed_kph", num(derived("speed_now_kph")));
 
     viewer.update({
       modules: colours,
-      kw: num(derived("pack_kw")) || 0,
+      kw: atFrame("pack_kw", num(derived("pack_kw"))) || 0,
       brake: kpa === null ? 0 : Math.min(1, kpa / 4000),
       flow: (state.thermal.rate > 0.5 || hvacActive) ? 1 : 0,
       speed: speed === null ? 0 : speed,
-      steer: sigValue("steering_deg") || 0,
-      roll: sigValue("lateral_g") || 0,
-      pitch: sigValue("longitudinal_g") || 0,
+      steer: atFrame("steering_deg", sigValue("steering_deg")) || 0,
+      roll: atFrame("lateral_g", sigValue("lateral_g")) || 0,
+      pitch: atFrame("longitudinal_g", sigValue("longitudinal_g")) || 0,
       fill: (function () {
         /* energy_kwh, not soc_pct: SoC steps and freezes -- 2.5 kWh drained
            across 45 minutes parked while it did not move at all. */
@@ -2239,7 +2254,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         if (e === null) return null;
         return Math.max(0, Math.min(1, e / (cap && cap > 20 ? cap : 205)));
       })(),
-      packTemp: sigValue("temp_f"),
+      packTemp: atFrame("temp_f", sigValue("temp_f")),
       lv: sigValue("module_voltage") !== null ? sigValue("module_voltage")
           : sigValue("volts"),
       /* Plugged and charging are separate facts now. The node works out the
@@ -2293,15 +2308,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         /* Rounded before it becomes the texture's cache key, so the display
            does not re-upload every poll because a reading moved a
            thousandth of a unit. */
-        mph: (function () { var k = num(derived("speed_now_kph"));
+        mph: (function () { var k = atFrame("speed_kph", num(derived("speed_now_kph")));
               return k === null ? null : Math.round(k * 0.621371); })(),
-        soc: (function () { var v = sigValue("soc_pct");
+        soc: (function () { var v = atFrame("soc_pct", sigValue("soc_pct"));
               return v === null ? null : Math.round(v * 10) / 10; })(),
         range: sigValue("range_mi"),
-        kw: (function () { var v = num(derived("pack_kw"));
+        kw: (function () { var v = atFrame("pack_kw", num(derived("pack_kw")));
              return v === null ? null : Math.round(v * 10) / 10; })(),
-        tempF: sigValue("temp_f"),
-        spread: sigValue("cell_spread_mv"),
+        tempF: atFrame("temp_f", sigValue("temp_f")),
+        spread: atFrame("cell_spread_mv", sigValue("cell_spread_mv")),
         kwh: (function () { var v = sigValue("energy_kwh");
               return v === null ? null : Math.round(v * 10) / 10; })(),
         lv: sigValue("module_voltage") !== null ? sigValue("module_voltage")
@@ -2406,6 +2421,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     car.appendChild(truckMarker(1));
     el["trail-head"].appendChild(car);
 
+    /* The vehicle follows the replay. Without this the marker walked the
+       route while the model sat frozen on the session's final sample -- the
+       map describing one moment and the truck beside it describing another,
+       which is worse than showing nothing. `state.frame` is what
+       `renderVehicle` reads instead of the latest signals while a replay is
+       in progress, and it is cleared when the replay stops. */
+    state.frame = row;
+    renderVehicle(viewState());
+
     var speed = num(row.speed_kph), elapsed = num(row.elapsed_s), parts = [];
     if (elapsed !== null) parts.push(duration(elapsed));
     if (speed !== null) parts.push(speed.toFixed(0) + " km/h");
@@ -2416,6 +2440,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   function stopPlayback() {
     if (state.play.timer !== null) { window.clearInterval(state.play.timer); }
     state.play.timer = null;
+    /* Pausing leaves the model where the scrub left it, which is what anyone
+       pausing a replay wants to look at. It is released when a different
+       session is chosen, not here. */
     el.play.textContent = "\u25B6";
     el.play.setAttribute("aria-label", "Play the trip back");
   }
@@ -2714,6 +2741,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
     /* --- playback --- */
     el.playback.classList.add("on");
+    /* The map is only now real, so this is the first moment a replay could
+       start. Fired once and disarmed: the poll rebuilds this every few
+       seconds, and re-starting the replay on each of those would drag the
+       scrub back to zero for as long as the session stayed selected. */
+    if (state.autoplay) {
+      state.autoplay = false;
+      if (state.play.timer === null) togglePlayback();
+    }
     el.scrub.max = String(pts.length - 1);
     if (Number(el.scrub.value) > pts.length - 1) el.scrub.value = String(pts.length - 1);
     showFrame(Number(el.scrub.value) || pts.length - 1);
@@ -3352,11 +3387,31 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     var latest = h("option", null, "Latest session");
     latest.value = "latest"; el["session-select"].appendChild(latest);
 
+    /* "20260909T215047Z" is a filename, not a time anyone reads. The id stays
+       the id -- it is what the API is asked for -- but the menu shows the
+       moment in the viewer's own timezone, because a session is remembered as
+       "yesterday evening", never as a Zulu stamp. */
+    function when(id) {
+      var m = /^drive-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/.exec(id);
+      if (!m) return id.replace(/^drive-|\.csv$/g, "");
+      var at = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
+      if (isNaN(at.getTime())) return id.replace(/^drive-|\.csv$/g, "");
+      var today = new Date(), sameYear = at.getFullYear() === today.getFullYear();
+      try {
+        return at.toLocaleString(undefined, {
+          weekday: "short", month: "short", day: "numeric",
+          year: sameYear ? undefined : "numeric",
+          hour: "numeric", minute: "2-digit"
+        });
+      } catch (e) {
+        return at.toISOString().slice(0, 16).replace("T", " ");
+      }
+    }
     function label(e) {
-      var when = e.id.replace(/^drive-|\.csv$/g, "");
-      if (e.moved === false) return when + "  \u00B7  parked";
-      if (typeof e.km === "number" && e.km > 0) return when + "  \u00B7  " + e.km.toFixed(1) + " km";
-      return when;
+      var text = when(e.id);
+      if (e.moved === false) return text + "  \u00B7  parked";
+      if (typeof e.km === "number" && e.km > 0) return text + "  \u00B7  " + e.km.toFixed(1) + " km";
+      return text;
     }
     function group(name, of) {
       if (!of.length) return;
@@ -3491,7 +3546,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   /* ---------- wiring ---------- */
   el["session-select"].addEventListener("change", function (ev) {
     stopPlayback(); el.scrub.value = "0";
+    state.frame = null;
     state.selected = ev.target.value; state.snapshot = null;
+    /* Choosing a past trip is asking to watch it, so it plays. Not "latest":
+       that is the live view, and starting a replay of the present would be
+       fighting the poll that keeps it current. */
+    state.autoplay = ev.target.value !== "latest";
     state.generation++; state.network = "loading"; render(); refresh();
   });
   el.play.addEventListener("click", togglePlayback);
