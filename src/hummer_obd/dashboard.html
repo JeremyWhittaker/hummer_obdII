@@ -995,7 +995,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
     var noseX = AXLE + VEH.frontOverhang, tailX = -(AXLE + VEH.rearOverhang),
         W = HALF_W, rocker = 0.46, beltline = 1.30, roof = VEH.height,
-        cowlX = 1.22, bulkX = -0.58;
+        cowlX = 1.22,
+        /* The cab's rear wall is the bed's front bulkhead, and GMC publishes
+           where that is: the bed's inner length is 60.10 in from a tailgate
+           at the tail plane, which puts the bulkhead at x = -1.3767. It was
+           at -0.58, making the cab 0.8 m too short and the bed that much too
+           long -- on a truck whose proportions are most of what identifies
+           it. */
+        bulkX = -1.3767;
 
     /* --- lower body -------------------------------------------------
        This was one slab from nose to tail at a constant 0.46 m, and GMC's own
@@ -1083,8 +1090,33 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     });
 
     /* --- bed --- */
-    slab("bed-l", tailX + 0.10, bulkX, beltline, beltline + 0.34, -W + 0.02, -W + 0.16, BODY);
-    slab("bed-r", tailX + 0.10, bulkX, beltline, beltline + 0.34, W - 0.16, W - 0.02, BODY);
+    /* --- the bed, to its published dimensions ------------------------
+       It was two thin rails with nothing between them. GMC publishes the
+       whole box: 60.10 in of inner length, 61.02 in across the floor, 50.08
+       in between the wheelhousings, and 21.7 in deep from floor to rail top.
+       The last of those is what sets the rail height -- 0.5512 m above the
+       floor, which sits at the beltline.
+
+       The wheelhousings are the detail worth having: they intrude 0.139 m
+       per side, which is the difference between the floor width and the
+       between-the-housings width, and they are why a 1.53 x 1.55 x 0.55 box
+       holds 36.7 cu ft rather than the 46.1 the outer dimensions imply. */
+    var bedFloor = beltline, bedRail = beltline + VEH.bedDepth,
+        bedInner = VEH.bedWidth / 2, housing = VEH.bedInnerWidth / 2;
+    slab("bed-floor", tailX + 0.03, bulkX, bedFloor, bedFloor + 0.04,
+         -bedInner, bedInner, [0.16, 0.17, 0.18]);
+    slab("bed-wall-l", tailX + 0.03, bulkX, bedFloor, bedRail, -W + 0.02, -bedInner, BODY);
+    slab("bed-wall-r", tailX + 0.03, bulkX, bedFloor, bedRail, bedInner, W - 0.02, BODY);
+    slab("bed-bulkhead", bulkX - 0.06, bulkX, bedFloor, bedRail, -W + 0.02, W - 0.02, BODY);
+    /* MultiPro tailgate, standard on the Pickup. Drawn shut. */
+    slab("bed-tailgate", tailX + 0.03, tailX + 0.09, bedFloor, bedRail,
+         -W + 0.02, W - 0.02, TRIM);
+    /* The housings, over the rear wheels, intruding the published 0.139 m. */
+    [-1, 1].forEach(function (side) {
+      slab("bed-housing-" + (side < 0 ? "l" : "r"),
+           -AXLE - 0.42, -AXLE + 0.42, bedFloor, bedFloor + 0.30,
+           side * housing, side * bedInner, [0.20, 0.22, 0.23]);
+    });
     slab("bed-tail", tailX + 0.10, tailX + 0.24, beltline, beltline + 0.34, -W + 0.02, W - 0.02, BODY);
     slab("bed-bulk", bulkX - 0.12, bulkX, beltline, beltline + 0.40, -W + 0.02, W - 0.02, BODY);
     slab("bed-floor", tailX + 0.16, bulkX - 0.06, beltline - 0.04, beltline + 0.02,

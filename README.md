@@ -279,6 +279,15 @@ the tyres are: a plate that hides the pack defeats the point of looking up at
 it. The rear tie rods are drawn and never animated — four-wheel steer is on
 the spec sheet, and nothing in this project measures a rear angle.
 
+**The bed is a bed.** It was two thin rails with nothing between them, on a
+cab 0.8 m too short — proportions being most of what identifies this truck.
+GMC publishes the whole box: 60.10 in of inner length, 61.02 in across the
+floor, 50.08 in between the wheelhousings and 21.7 in from floor to rail top,
+which is what sets the rail height. The wheelhousings are the detail worth
+having — they intrude 0.139 m per side, and they are why a box of those outer
+dimensions holds the published 36.7 cu ft rather than the 46.1 the arithmetic
+implies.
+
 Where a part's position is published, it is used. The charge port sits on the
 rear driver's side because GM's manual says so outright and the Emergency
 Response Guide fixes it independently by putting the manual release loop in
