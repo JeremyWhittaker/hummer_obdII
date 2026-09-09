@@ -336,7 +336,7 @@ class SessionStore:
                   "stale" if clock_bad or age > self.stale_after else "live")
         sources = live.column_sources()
         signals = {}
-        for column in PUBLIC_COLUMNS:
+        for column in self.columns:
             item = snap.get("columns", {}).get(column, {})
             value = item.get("value")
             missing = value is None or value == ""

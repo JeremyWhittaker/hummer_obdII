@@ -1,2035 +1,1046 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-view-state="loading">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0a0d0e">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src data:; font-src 'none'; base-uri 'none'; form-action 'none'">
-  <title>Hummer EV Telemetry</title>
-  <style>
-    :root {
-      color-scheme: dark;
-      --bg: #090c0d;
-      --surface: #101516;
-      --surface-raised: #151b1d;
-      --surface-soft: #0d1213;
-      --border: #273034;
-      --border-bright: #38454a;
-      --text: #f4f7f7;
-      --muted: #93a1a5;
-      --subtle: #69777b;
-      --lime: #b9f227;
-      --lime-soft: rgba(185, 242, 39, .11);
-      --cyan: #55d9ed;
-      --cyan-soft: rgba(85, 217, 237, .11);
-      --amber: #ffcb66;
-      --amber-soft: rgba(255, 203, 102, .11);
-      --red: #ff8c83;
-      --red-soft: rgba(255, 140, 131, .11);
-      --radius: 14px;
-      --shadow: 0 22px 60px rgba(0, 0, 0, .26);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-synthesis: none;
-    }
-
-    * { box-sizing: border-box; }
-
-    html { background: var(--bg); }
-
-    body {
-      margin: 0;
-      min-width: 320px;
-      min-height: 100vh;
-      color: var(--text);
-      background:
-        radial-gradient(circle at 86% -10%, rgba(85, 217, 237, .07), transparent 31rem),
-        radial-gradient(circle at -8% 18%, rgba(185, 242, 39, .055), transparent 28rem),
-        var(--bg);
-    }
-
-    button, input, select { font: inherit; }
-
-    button, select { color: inherit; }
-
-    button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible {
-      outline: 2px solid var(--cyan);
-      outline-offset: 3px;
-    }
-
-    [hidden] { display: none !important; }
-
-    .skip-link {
-      position: fixed;
-      z-index: 100;
-      top: 10px;
-      left: 10px;
-      padding: 10px 14px;
-      color: #071012;
-      background: var(--cyan);
-      border-radius: 8px;
-      font-weight: 800;
-      transform: translateY(-150%);
-    }
-
-    .skip-link:focus { transform: translateY(0); }
-
-    .shell {
-      width: min(1480px, 100%);
-      margin: 0 auto;
-      padding: 24px clamp(16px, 3vw, 42px) 48px;
-    }
-
-    .topbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 22px;
-      padding: 5px 0 24px;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 13px;
-      min-width: 0;
-    }
-
-    .brand-mark {
-      display: grid;
-      place-items: center;
-      width: 42px;
-      height: 42px;
-      flex: 0 0 auto;
-      border: 1px solid rgba(185, 242, 39, .48);
-      border-radius: 11px;
-      color: var(--lime);
-      background: linear-gradient(145deg, rgba(185, 242, 39, .14), rgba(185, 242, 39, .025));
-      box-shadow: inset 0 0 20px rgba(185, 242, 39, .035);
-      font-weight: 900;
-      font-size: 20px;
-      letter-spacing: -.08em;
-    }
-
-    .eyebrow {
-      margin: 0 0 3px;
-      color: var(--lime);
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: .18em;
-      line-height: 1.2;
-      text-transform: uppercase;
-    }
-
-    h1 {
-      margin: 0;
-      font-size: clamp(20px, 2.4vw, 30px);
-      letter-spacing: -.035em;
-      line-height: 1.1;
-    }
-
-    .top-status {
-      display: flex;
-      align-items: center;
-      gap: 11px;
-      min-width: max-content;
-    }
-
-    .status-copy { text-align: right; }
-
-    .status-primary {
-      display: block;
-      font-size: 13px;
-      font-weight: 780;
-      letter-spacing: .01em;
-    }
-
-    .status-secondary {
-      display: block;
-      max-width: 300px;
-      margin-top: 2px;
-      overflow: hidden;
-      color: var(--muted);
-      font-size: 11px;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .status-beacon {
-      position: relative;
-      width: 11px;
-      height: 11px;
-      flex: 0 0 auto;
-      border: 2px solid currentColor;
-      border-radius: 50%;
-      color: var(--subtle);
-      background: currentColor;
-    }
-
-    body[data-view-state="live"] .status-beacon {
-      color: var(--lime);
-      box-shadow: 0 0 0 5px rgba(185, 242, 39, .08), 0 0 18px rgba(185, 242, 39, .35);
-    }
-
-    body[data-view-state="stale"] .status-beacon,
-    body[data-view-state="historical"] .status-beacon { color: var(--amber); }
-
-    body[data-view-state="error"] .status-beacon { color: var(--red); }
-
-    .session-bar {
-      display: grid;
-      grid-template-columns: minmax(220px, 420px) minmax(0, 1fr);
-      gap: 16px;
-      align-items: end;
-      margin-bottom: 16px;
-      padding: 14px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: rgba(16, 21, 22, .88);
-      box-shadow: var(--shadow);
-    }
-
-    .field-label {
-      display: block;
-      margin-bottom: 7px;
-      color: var(--muted);
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: .13em;
-      text-transform: uppercase;
-    }
-
-    .select-wrap { position: relative; }
-
-    .select-wrap::after {
-      position: absolute;
-      right: 13px;
-      bottom: 14px;
-      width: 7px;
-      height: 7px;
-      border-right: 1.5px solid var(--muted);
-      border-bottom: 1.5px solid var(--muted);
-      content: "";
-      pointer-events: none;
-      transform: rotate(45deg);
-    }
-
-    select, .search-input {
-      width: 100%;
-      min-height: 43px;
-      border: 1px solid var(--border-bright);
-      border-radius: 9px;
-      color: var(--text);
-      background: #0b0f10;
-      transition: border-color .15s ease, background .15s ease;
-    }
-
-    select {
-      padding: 0 38px 0 12px;
-      appearance: none;
-      cursor: pointer;
-    }
-
-    select:hover, .search-input:hover { border-color: #526167; }
-
-    .session-facts {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 20px;
-      min-width: 0;
-      min-height: 43px;
-    }
-
-    .fact {
-      position: relative;
-      min-width: 0;
-    }
-
-    .fact + .fact::before {
-      position: absolute;
-      top: 4px;
-      bottom: 4px;
-      left: -11px;
-      width: 1px;
-      background: var(--border);
-      content: "";
-    }
-
-    .fact-value {
-      display: block;
-      overflow: hidden;
-      font-size: 13px;
-      font-weight: 730;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .fact-label {
-      display: block;
-      margin-top: 3px;
-      color: var(--subtle);
-      font-size: 10px;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-    }
-
-    .state-banner {
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      margin-bottom: 16px;
-      padding: 11px 13px;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      color: var(--muted);
-      background: var(--surface);
-      font-size: 12px;
-      line-height: 1.45;
-    }
-
-    .state-banner::before {
-      flex: 0 0 auto;
-      color: var(--amber);
-      content: "●";
-      font-size: 8px;
-      line-height: 1.9;
-    }
-
-    body[data-view-state="error"] .state-banner {
-      border-color: rgba(255, 140, 131, .25);
-      background: var(--red-soft);
-    }
-
-    body[data-view-state="error"] .state-banner::before { color: var(--red); }
-
-    .metrics-grid {
-      display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-
-    .metric-card {
-      position: relative;
-      min-height: 138px;
-      overflow: hidden;
-      padding: 17px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: linear-gradient(160deg, rgba(21, 27, 29, .98), rgba(13, 18, 19, .98));
-      box-shadow: 0 12px 35px rgba(0, 0, 0, .16);
-    }
-
-    .metric-card::after {
-      position: absolute;
-      right: -26px;
-      bottom: -42px;
-      width: 104px;
-      height: 104px;
-      border: 1px solid rgba(85, 217, 237, .08);
-      border-radius: 50%;
-      content: "";
-    }
-
-    .metric-card.accent-lime::after { border-color: rgba(185, 242, 39, .1); }
-
-    .metric-label {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      color: var(--muted);
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: .105em;
-      text-transform: uppercase;
-    }
-
-    .metric-glyph {
-      width: 7px;
-      height: 7px;
-      border: 1px solid var(--cyan);
-      border-radius: 2px;
-      transform: rotate(45deg);
-    }
-
-    .accent-lime .metric-glyph { border-color: var(--lime); }
-
-    .metric-reading {
-      display: flex;
-      align-items: baseline;
-      gap: 6px;
-      margin-top: 18px;
-      min-width: 0;
-    }
-
-    .metric-value {
-      min-width: 0;
-      font-size: clamp(27px, 2.55vw, 40px);
-      font-weight: 760;
-      letter-spacing: -.055em;
-      line-height: .95;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .metric-unit {
-      color: var(--muted);
-      font-size: 11px;
-      font-weight: 700;
-    }
-
-    .metric-detail {
-      position: absolute;
-      right: 17px;
-      bottom: 15px;
-      left: 17px;
-      overflow: hidden;
-      color: var(--subtle);
-      font-size: 10px;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .metric-card[data-signal-state="missing"] .metric-value,
-    .metric-card[data-signal-state="offline"] .metric-value { color: var(--muted); }
-
-    .metric-card[data-signal-state="stale"] { border-color: rgba(255, 203, 102, .28); }
-
-    .metric-card[data-signal-state="invalid"] { border-style: dashed; }
-
-    .middle-grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1.7fr) minmax(290px, .78fr);
-      gap: 16px;
-      margin-bottom: 16px;
-    }
-
-    .panel {
-      min-width: 0;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: rgba(16, 21, 22, .94);
-      box-shadow: var(--shadow);
-    }
-
-    .panel-header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 18px;
-      padding: 17px 18px 0;
-    }
-
-    .panel-title {
-      margin: 0;
-      font-size: 14px;
-      letter-spacing: -.01em;
-    }
-
-    .panel-subtitle {
-      margin: 4px 0 0;
-      color: var(--muted);
-      font-size: 11px;
-      line-height: 1.4;
-    }
-
-    .chart-tabs {
-      display: inline-flex;
-      flex: 0 0 auto;
-      gap: 3px;
-      padding: 3px;
-      border: 1px solid var(--border);
-      border-radius: 9px;
-      background: var(--surface-soft);
-    }
-
-    .chart-tab {
-      min-height: 31px;
-      padding: 0 11px;
-      border: 0;
-      border-radius: 6px;
-      color: var(--muted);
-      background: transparent;
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: .04em;
-      cursor: pointer;
-    }
-
-    .chart-tab[aria-selected="true"] {
-      color: var(--text);
-      background: #222a2d;
-      box-shadow: 0 2px 7px rgba(0, 0, 0, .25);
-    }
-
-    .chart-panel { display: flex; flex-direction: column; }
-
-    .chart-wrap {
-      position: relative;
-      height: 300px;
-      min-height: 230px;
-      flex: 1;
-      margin: 9px 8px 8px;
-    }
-
-    #history-chart {
-      display: block;
-      width: 100%;
-      height: 100%;
-    }
-
-    .chart-empty {
-      position: absolute;
-      inset: 0;
-      display: grid;
-      place-items: center;
-      padding: 30px;
-      color: var(--muted);
-      font-size: 12px;
-      text-align: center;
-      pointer-events: none;
-    }
-
-    .trip-panel { padding-bottom: 6px; }
-
-    .trip-list {
-      margin: 14px 18px 9px;
-      padding: 0;
-      list-style: none;
-    }
-
-    .trip-item {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 18px;
-      padding: 13px 0;
-      border-top: 1px solid var(--border);
-    }
-
-    .trip-name {
-      color: var(--muted);
-      font-size: 11px;
-    }
-
-    .trip-number {
-      text-align: right;
-      font-size: 14px;
-      font-weight: 760;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .trip-number small {
-      display: block;
-      margin-top: 2px;
-      color: var(--subtle);
-      font-size: 9px;
-      font-weight: 600;
-    }
-
-    .energy-budget {
-      margin: 5px 18px 12px;
-      padding-top: 13px;
-      border-top: 1px solid var(--border);
-    }
-
-    .budget-title {
-      margin: 0 0 10px;
-      color: var(--muted);
-      font-size: 9px;
-      font-weight: 800;
-      letter-spacing: .1em;
-      text-transform: uppercase;
-    }
-
-    .budget-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
-    }
-
-    .budget-item {
-      min-width: 0;
-      padding: 9px 10px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--surface-soft);
-    }
-
-    .budget-value {
-      display: block;
-      overflow: hidden;
-      color: var(--text);
-      font-size: 14px;
-      font-weight: 750;
-      font-variant-numeric: tabular-nums;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .budget-label {
-      display: block;
-      margin-top: 3px;
-      color: var(--subtle);
-      font-size: 10px;
-      line-height: 1.25;
-    }
-
-    #budget-observed-item { grid-column: 1 / -1; }
-
-    .notes-panel { margin-bottom: 16px; }
-
-    .notes-head { padding-bottom: 14px; }
-
-    .notes-count {
-      flex: 0 0 auto;
-      padding: 4px 7px;
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      color: var(--muted);
-      font-size: 9px;
-      font-weight: 800;
-      letter-spacing: .07em;
-      text-transform: uppercase;
-    }
-
-    .notes-list {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
-      margin: 0;
-      padding: 0 18px 18px;
-      list-style: none;
-    }
-
-    .note {
-      min-width: 0;
-      padding: 12px 13px;
-      border: 1px solid var(--border);
-      border-radius: 9px;
-      background: var(--surface-soft);
-    }
-
-    .note[data-level="notice"] { border-color: rgba(255, 203, 102, .25); }
-
-    .note-title {
-      display: block;
-      margin-bottom: 4px;
-      font-size: 11px;
-      font-weight: 760;
-    }
-
-    .note-detail {
-      margin: 0;
-      color: var(--muted);
-      font-size: 10px;
-      line-height: 1.5;
-    }
-
-    .notes-more {
-      margin: -7px 18px 18px;
-      border: 1px solid var(--border);
-      border-radius: 9px;
-      background: var(--surface-soft);
-    }
-
-    .notes-more summary {
-      padding: 11px 13px;
-      color: var(--muted);
-      font-size: 10px;
-      font-weight: 760;
-      cursor: pointer;
-    }
-
-    .notes-more[open] summary { border-bottom: 1px solid var(--border); }
-
-    .notes-more-list {
-      grid-template-columns: 1fr;
-      max-height: 390px;
-      margin-top: 12px;
-      padding-bottom: 12px;
-      overflow-y: auto;
-    }
-
-    .signals-panel { overflow: hidden; }
-
-    .signals-header {
-      align-items: end;
-      padding-bottom: 15px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .search-block { width: min(360px, 46%); }
-
-    .search-input {
-      min-height: 39px;
-      padding: 0 12px 0 36px;
-      background-image:
-        linear-gradient(45deg, transparent 46%, var(--subtle) 47%, var(--subtle) 53%, transparent 54%),
-        linear-gradient(135deg, transparent 46%, var(--subtle) 47%, var(--subtle) 53%, transparent 54%);
-      background-position: 16px 21px, 20px 21px;
-      background-repeat: no-repeat;
-      background-size: 7px 7px, 7px 7px;
-    }
-
-    .table-scroll { overflow-x: auto; }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      table-layout: fixed;
-    }
-
-    th {
-      padding: 10px 12px;
-      color: var(--subtle);
-      background: #0d1112;
-      font-size: 9px;
-      font-weight: 800;
-      letter-spacing: .09em;
-      text-align: left;
-      text-transform: uppercase;
-    }
-
-    td {
-      padding: 12px;
-      border-top: 1px solid rgba(39, 48, 52, .72);
-      color: var(--muted);
-      font-size: 11px;
-      line-height: 1.4;
-      vertical-align: middle;
-    }
-
-    tbody tr:hover { background: rgba(255, 255, 255, .018); }
-
-    .col-signal { width: 21%; }
-    .col-value { width: 14%; }
-    .col-status { width: 14%; }
-    .col-source { width: 23%; }
-    .col-id { width: 10%; }
-    .col-confidence { width: 18%; }
-
-    .signal-name {
-      display: block;
-      color: var(--text);
-      font-weight: 720;
-    }
-
-    .signal-key {
-      display: block;
-      margin-top: 2px;
-      color: var(--subtle);
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 9px;
-    }
-
-    .signal-reading {
-      color: var(--text);
-      font-weight: 720;
-      font-variant-numeric: tabular-nums;
-      overflow-wrap: anywhere;
-    }
-
-    .signal-unit { color: var(--subtle); }
-
-    .state-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      max-width: 100%;
-      font-size: 10px;
-      font-weight: 760;
-    }
-
-    .state-chip::before {
-      width: 6px;
-      height: 6px;
-      flex: 0 0 auto;
-      border: 1px solid currentColor;
-      border-radius: 50%;
-      content: "";
-    }
-
-    .state-chip[data-state="fresh"] { color: var(--lime); }
-    .state-chip[data-state="recorded"] { color: var(--cyan); }
-    .state-chip[data-state="stale"] { color: var(--amber); }
-    .state-chip[data-state="invalid"],
-    .state-chip[data-state="offline"] { color: var(--red); }
-    .state-chip[data-state="missing"] { color: var(--subtle); }
-    .state-chip[data-state="missing"]::before { border-radius: 1px; }
-
-    .age-copy {
-      display: block;
-      margin-top: 3px;
-      color: var(--subtle);
-      font-size: 9px;
-    }
-
-    .identifier {
-      display: inline-block;
-      padding: 3px 6px;
-      border: 1px solid var(--border);
-      border-radius: 5px;
-      color: #b9c4c7;
-      background: var(--surface-soft);
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 9px;
-      overflow-wrap: anywhere;
-    }
-
-    .confidence {
-      display: flex;
-      align-items: center;
-      gap: 9px;
-    }
-
-    .confidence-meter {
-      display: grid;
-      grid-template-columns: repeat(4, 6px);
-      gap: 3px;
-      flex: 0 0 auto;
-    }
-
-    .confidence-meter i {
-      height: 10px;
-      border: 1px solid #3c474a;
-      border-radius: 2px;
-      background: transparent;
-    }
-
-    .confidence-meter i[data-filled="true"] {
-      border-color: rgba(85, 217, 237, .5);
-      background: rgba(85, 217, 237, .56);
-    }
-
-    .confidence-copy { min-width: 0; }
-
-    .confidence-label {
-      display: block;
-      overflow: hidden;
-      color: #c5cfd1;
-      font-size: 10px;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .confidence-score {
-      display: block;
-      margin-top: 2px;
-      color: var(--subtle);
-      font-size: 9px;
-    }
-
-    .table-empty {
-      padding: 34px 20px;
-      color: var(--muted);
-      font-size: 12px;
-      text-align: center;
-    }
-
-    .signals-footer {
-      display: flex;
-      justify-content: space-between;
-      gap: 16px;
-      padding: 11px 13px;
-      border-top: 1px solid var(--border);
-      color: var(--subtle);
-      background: #0d1112;
-      font-size: 9px;
-      line-height: 1.45;
-    }
-
-    .noscript {
-      margin: 24px;
-      padding: 14px;
-      border: 1px solid var(--red);
-      border-radius: 10px;
-      color: var(--text);
-      background: var(--red-soft);
-    }
-
-    .sr-only {
-      position: absolute !important;
-      width: 1px !important;
-      height: 1px !important;
-      padding: 0 !important;
-      margin: -1px !important;
-      overflow: hidden !important;
-      clip: rect(0, 0, 0, 0) !important;
-      white-space: nowrap !important;
-      border: 0 !important;
-    }
-
-    body[data-view-state="loading"] .metric-value { color: var(--muted); }
-
-    body[data-view-state="error"] .metric-card,
-    body[data-view-state="error"] .chart-panel,
-    body[data-view-state="error"] .trip-panel { opacity: .78; }
-
-    @media (max-width: 1120px) {
-      .metrics-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      .metric-card { min-height: 128px; }
-    }
-
-    @media (max-width: 780px) {
-      .shell { padding-top: 15px; }
-      .topbar { align-items: flex-start; padding-bottom: 18px; }
-      .status-secondary { max-width: 160px; }
-      .session-bar { grid-template-columns: 1fr; }
-      .session-facts { justify-content: flex-start; overflow: hidden; }
-      .middle-grid { grid-template-columns: 1fr; }
-      .chart-wrap { height: 260px; }
-      .notes-list { grid-template-columns: 1fr; }
-      .signals-header { align-items: stretch; flex-direction: column; }
-      .search-block { width: 100%; }
-      .table-scroll { overflow: visible; }
-      table, tbody, tr, td { display: block; width: 100%; }
-      thead { display: none; }
-      tbody { padding: 0 13px 6px; }
-      tbody tr {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 0 16px;
-        margin: 10px 0;
-        padding: 4px 0;
-        border: 1px solid var(--border);
-        border-radius: 9px;
-        background: var(--surface-soft);
-      }
-      td {
-        min-width: 0;
-        padding: 10px 11px;
-        border-top: 1px solid rgba(39, 48, 52, .58);
-      }
-      td::before {
-        display: block;
-        margin-bottom: 5px;
-        color: var(--subtle);
-        content: attr(data-label);
-        font-size: 8px;
-        font-weight: 800;
-        letter-spacing: .09em;
-        text-transform: uppercase;
-      }
-      td:first-child, td:nth-child(2) { border-top: 0; }
-      .confidence-label { white-space: normal; }
-    }
-
-    @media (max-width: 560px) {
-      .shell { padding-inline: 12px; }
-      .brand-mark { width: 38px; height: 38px; }
-      .top-status { gap: 8px; }
-      .status-secondary { max-width: 118px; }
-      .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
-      .metric-card { min-height: 122px; padding: 14px; }
-      .metric-value { font-size: 29px; }
-      .metric-detail { right: 14px; bottom: 13px; left: 14px; }
-      .session-facts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 20px; }
-      .fact + .fact::before { display: none; }
-      .panel-header { padding-inline: 14px; }
-      .chart-wrap { height: 230px; }
-      .signals-footer { flex-direction: column; }
-    }
-
-    @media (max-width: 380px) {
-      .topbar { flex-wrap: wrap; }
-      .top-status { width: 100%; justify-content: flex-start; }
-      .status-copy { text-align: left; }
-      .status-secondary { max-width: none; }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
-    }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+<title>Hummer EV telemetry</title>
+<style>
+/* ------------------------------------------------------------------ *
+ * The vehicle is the dashboard.
+ *
+ * Every reading this truck gives up belongs to a physical part of it, and
+ * a table of names throws that away. So the layout is the vehicle: the 24
+ * battery modules sit where the 24 battery modules sit, the three motors
+ * sit on the axles they drive, and the charge port is on the rear quarter
+ * where you actually plug the thing in.
+ *
+ * Constraints that shaped this, all real:
+ *  - font-src 'none'. No web fonts, at all. System stack only.
+ *  - img-src data:. No external images, no map tiles. The map is drawn.
+ *  - script-src 'unsafe-inline' with no 'self'. One file, inline script.
+ *  - Inline SVG is DOM, not a fetch, so it is not subject to any of that.
+ * ------------------------------------------------------------------ */
+:root{
+  /* Sampled from the vehicle's own interior displays. */
+  --ev-orange:#ee521a;        /* signature accent, the WTF gauge, alerts   */
+  --ev-panel:#232121;         /* instrument panel ground                    */
+  --ev-charge:#beeaf7;        /* the exterior charge-status light bar       */
+
+  --bg:#0d0e0f;
+  --bg-raised:#16181a;
+  --panel:#1b1e20;
+  --panel-2:#232121;
+  --line:#2c3134;
+  --line-soft:#23282b;
+
+  --ink:#f2f5f6;
+  --ink-2:#c3cccf;
+  /* Deliberately lighter than the file this replaces, whose --subtle sat at
+     roughly 4.1:1 and carried all the provenance text. This is ~7.4:1. */
+  --ink-3:#93a1a5;
+
+  --good:#7ddc6a;             /* regen, healthy                             */
+  --warn:#ffb454;             /* amber: the vehicle's own low-charge colour */
+  --bad:#ff5c5c;
+  --cool:#55d9ed;
+  --live:#b9f227;
+
+  --r:14px;
+  --r-sm:8px;
+  --gap:18px;
+  --font:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:
+    radial-gradient(1200px 620px at 12% -10%,rgba(238,82,26,.10),transparent 60%),
+    radial-gradient(900px 500px at 92% 0%,rgba(85,217,237,.07),transparent 55%),
+    var(--bg);
+  color:var(--ink);
+  font-family:var(--font);
+  font-size:15px;
+  line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+  min-height:100vh;
+}
+.shell{max-width:1500px;margin:0 auto;padding:20px 20px 64px}
+
+/* --- L-brackets: the vehicle's own instrument motif ----------------- */
+.bracket{position:relative}
+.bracket::before,.bracket::after{
+  content:"";position:absolute;width:13px;height:13px;pointer-events:none;
+  border-color:var(--ev-orange);opacity:.75;
+}
+.bracket::before{top:9px;left:9px;border-top:2px solid;border-left:2px solid}
+.bracket::after{bottom:9px;right:9px;border-bottom:2px solid;border-right:2px solid}
+
+.card{
+  background:linear-gradient(180deg,var(--panel) 0%,var(--bg-raised) 100%);
+  border:1px solid var(--line);
+  border-radius:var(--r);
+  padding:16px 18px;
+}
+.card h2{
+  margin:0 0 2px;font-size:12px;font-weight:700;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-3);
+}
+.card .sub{margin:0 0 14px;font-size:12px;color:var(--ink-3)}
+
+/* --- header --------------------------------------------------------- */
+header.top{
+  display:flex;flex-wrap:wrap;gap:14px;align-items:center;
+  justify-content:space-between;padding:6px 4px 18px;
+}
+.brand{display:flex;align-items:center;gap:13px;min-width:0}
+.brand-mark{
+  width:42px;height:42px;border-radius:11px;flex:none;
+  background:linear-gradient(145deg,var(--ev-orange),#8f2d0c);
+  display:grid;place-items:center;font-weight:800;font-size:15px;color:#fff;
+  box-shadow:0 0 0 1px rgba(255,255,255,.10),0 8px 22px rgba(238,82,26,.28);
+}
+.brand h1{margin:0;font-size:19px;font-weight:700;letter-spacing:.01em}
+.brand p{margin:1px 0 0;font-size:12px;color:var(--ink-3)}
+.top-status{display:flex;align-items:center;gap:11px;text-align:right}
+.dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--ink-3);
+     box-shadow:0 0 0 4px rgba(255,255,255,.05)}
+[data-view-state="live"] .dot{background:var(--live);box-shadow:0 0 0 4px rgba(185,242,39,.16);
+  animation:pulse 2.4s ease-in-out infinite}
+[data-view-state="stale"] .dot{background:var(--warn);box-shadow:0 0 0 4px rgba(255,180,84,.15)}
+[data-view-state="error"] .dot{background:var(--bad);box-shadow:0 0 0 4px rgba(255,92,92,.15)}
+[data-view-state="historical"] .dot{background:var(--cool);box-shadow:0 0 0 4px rgba(85,217,237,.15)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+@media (prefers-reduced-motion:reduce){
+  [data-view-state="live"] .dot{animation:none}
+  .sweep,.trail-head{animation:none !important}
+}
+.status-copy strong{display:block;font-size:13px}
+.status-copy span{font-size:12px;color:var(--ink-3)}
+
+/* --- degraded states ------------------------------------------------ */
+[data-view-state="error"] .fadeable,[data-view-state="stale"] .fadeable{opacity:.78}
+.banner{
+  display:none;margin:0 0 var(--gap);padding:11px 14px;border-radius:var(--r-sm);
+  font-size:13px;border:1px solid transparent;
+}
+[data-view-state="error"] .banner,[data-view-state="stale"] .banner,
+[data-view-state="historical"] .banner,[data-view-state="empty"] .banner{display:block}
+[data-view-state="error"] .banner{background:rgba(255,92,92,.10);border-color:rgba(255,92,92,.34);color:#ffd9d9}
+[data-view-state="stale"] .banner{background:rgba(255,180,84,.09);border-color:rgba(255,180,84,.30);color:#ffe6c2}
+[data-view-state="historical"] .banner{background:rgba(85,217,237,.08);border-color:rgba(85,217,237,.28);color:#cdf2fa}
+[data-view-state="empty"] .banner{background:rgba(255,255,255,.05);border-color:var(--line);color:var(--ink-2)}
+
+/* --- session bar ---------------------------------------------------- */
+.session-bar{
+  display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;
+  margin-bottom:var(--gap);padding:13px 16px;border:1px solid var(--line);
+  border-radius:var(--r);background:var(--panel-2);
+}
+.session-bar label{font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);display:block;margin-bottom:5px}
+select{
+  background:var(--bg);color:var(--ink);border:1px solid var(--line);
+  border-radius:var(--r-sm);padding:8px 11px;font:inherit;font-size:13px;min-width:250px;
+}
+select:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid var(--ev-orange);outline-offset:2px}
+.facts{display:flex;flex-wrap:wrap;gap:22px}
+.fact span{display:block;font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3)}
+.fact strong{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+
+/* --- the vehicle ---------------------------------------------------- */
+.hero{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:var(--gap);margin-bottom:var(--gap)}
+@media (max-width:1120px){.hero{grid-template-columns:1fr}}
+.vehicle-wrap{position:relative;padding:8px 4px 4px}
+#vehicle{width:100%;height:auto;display:block}
+.legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;font-size:11.5px;color:var(--ink-3)}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.caveat{
+  margin-top:12px;padding:9px 12px;border-left:2px solid var(--ev-orange);
+  background:rgba(238,82,26,.06);border-radius:0 var(--r-sm) var(--r-sm) 0;
+  font-size:11.5px;color:var(--ink-2);
+}
+
+/* Module cells. No fill here on purpose: in SVG a CSS declaration overrides
+   a presentation attribute, so a .mod{fill:...} rule would silently beat the
+   colour the script sets and every module would render the same shade
+   whatever the telemetry said. The script owns fill; CSS owns the animation. */
+.mod{transition:fill .45s ease}
+
+/* --- the map -------------------------------------------------------- */
+.map-wrap{position:relative}
+#map{width:100%;height:auto;display:block;border-radius:var(--r-sm);background:#0a0c0d}
+.map-empty{
+  position:absolute;inset:0;display:grid;place-items:center;text-align:center;
+  padding:20px;font-size:12.5px;color:var(--ink-3);
+}
+.map-stats{display:flex;flex-wrap:wrap;gap:16px;margin-top:11px;font-size:11.5px;color:var(--ink-3)}
+.map-stats b{color:var(--ink);font-variant-numeric:tabular-nums;font-weight:600}
+.trail-head{animation:blip 1.8s ease-in-out infinite}
+@keyframes blip{0%,100%{opacity:1}50%{opacity:.35}}
+
+/* --- metric tiles --------------------------------------------------- */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:12px;margin-bottom:var(--gap)}
+.tile{
+  position:relative;background:linear-gradient(180deg,var(--panel-2),var(--bg-raised));
+  border:1px solid var(--line);border-radius:var(--r);padding:15px 16px 13px;overflow:hidden;
+}
+.tile::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--accent,var(--line))}
+.tile .k{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.tile .v{margin-top:7px;font-size:29px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1.05}
+.tile .v small{font-size:14px;font-weight:600;color:var(--ink-2);margin-left:3px}
+.tile .d{margin-top:5px;font-size:11.5px;color:var(--ink-3);min-height:1.2em}
+
+/* --- charts --------------------------------------------------------- */
+.chart-head{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:12px}
+.tabs{display:flex;gap:6px;background:var(--bg);padding:4px;border-radius:10px;border:1px solid var(--line)}
+.tabs button{
+  background:none;border:0;color:var(--ink-3);font:inherit;font-size:12.5px;font-weight:600;
+  padding:6px 13px;border-radius:7px;cursor:pointer;
+}
+.tabs button[aria-selected="true"]{background:var(--ev-orange);color:#fff}
+#chart{width:100%;height:230px;display:block}
+.chart-empty{display:none;padding:34px 0;text-align:center;color:var(--ink-3);font-size:13px}
+
+/* --- signals -------------------------------------------------------- */
+.signal-head{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:12px}
+input[type="search"]{
+  background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:8px 11px;font:inherit;font-size:13px;min-width:230px;
+}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{
+  text-align:left;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:700;padding:8px 10px;border-bottom:1px solid var(--line);
+}
+td{padding:9px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+tbody tr:hover{background:rgba(255,255,255,.022)}
+.num{font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:12.5px}
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+.s-fresh{background:rgba(185,242,39,.14);color:#d6f77a}
+.s-recorded{background:rgba(85,217,237,.13);color:#a5e8f4}
+.s-stale{background:rgba(255,180,84,.13);color:#ffd39a}
+.s-missing,.s-offline{background:rgba(255,255,255,.06);color:var(--ink-3)}
+.s-invalid{background:rgba(255,92,92,.13);color:#ffb3b3}
+.prov{font-size:11px;color:var(--ink-3)}
+.conf{font-size:10.5px;color:var(--ink-3);white-space:nowrap}
+.empty-row{padding:26px 10px;text-align:center;color:var(--ink-3)}
+.notes li{margin-bottom:7px;font-size:12.5px;color:var(--ink-2)}
+.grid-2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:var(--gap)}
+@media (max-width:980px){.grid-2{grid-template-columns:1fr}}
+@media (max-width:780px){
+  thead{display:none}
+  table,tbody,tr,td{display:block;width:100%}
+  tr{border-bottom:1px solid var(--line);padding:10px 0}
+  td{border:0;padding:3px 2px;display:flex;justify-content:space-between;gap:14px}
+  td::before{content:attr(data-label);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+}
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+</style>
 </head>
-<body data-view-state="loading">
-  <a class="skip-link" href="#main-content">Skip to telemetry</a>
-  <noscript><p class="noscript">JavaScript is required to read the local telemetry API.</p></noscript>
+<body>
+<div class="shell">
 
-  <div class="shell">
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand-mark" aria-hidden="true">H</div>
-        <div>
-          <p class="eyebrow">EV data console</p>
-          <h1>Hummer EV Telemetry</h1>
-        </div>
-      </div>
-      <div class="top-status" role="status" aria-live="polite" aria-atomic="true">
-        <div class="status-copy">
-          <span class="status-primary" id="status-primary">Loading telemetry</span>
-          <span class="status-secondary" id="status-secondary">Connecting to the local reader</span>
-        </div>
-        <span class="status-beacon" aria-hidden="true"></span>
-      </div>
-    </header>
+<header class="top">
+  <div class="brand">
+    <div class="brand-mark" aria-hidden="true">EV</div>
+    <div>
+      <h1>Hummer EV &middot; live telemetry</h1>
+      <p>Read-only. Nothing here is ever sent to the vehicle.</p>
+    </div>
+  </div>
+  <div class="top-status">
+    <div class="status-copy">
+      <strong id="status-primary">Connecting</strong>
+      <span id="status-secondary">Reading the local session</span>
+    </div>
+    <div class="dot" aria-hidden="true"></div>
+  </div>
+</header>
 
-    <main id="main-content">
-      <section class="session-bar" aria-labelledby="session-label">
-        <div class="select-wrap">
-          <label class="field-label" id="session-label" for="session-select">Telemetry session</label>
-          <select id="session-select" aria-describedby="session-help">
-            <option value="latest">Latest session</option>
-          </select>
-          <span class="sr-only" id="session-help">Choose the latest data or a recorded session.</span>
-        </div>
-        <div class="session-facts" aria-label="Session details">
-          <div class="fact">
-            <span class="fact-value" id="session-name">—</span>
-            <span class="fact-label">Session</span>
-          </div>
-          <div class="fact">
-            <span class="fact-value" id="session-duration">—</span>
-            <span class="fact-label">Duration</span>
-          </div>
-          <div class="fact">
-            <span class="fact-value" id="session-samples">—</span>
-            <span class="fact-label">Samples</span>
-          </div>
-          <div class="fact">
-            <span class="fact-value" id="session-period">—</span>
-            <span class="fact-label">Avg interval</span>
-          </div>
-        </div>
-      </section>
+<div class="banner" id="banner" role="status"></div>
 
-      <div class="state-banner" id="state-banner" role="status" aria-live="polite">Loading the latest local session…</div>
+<section class="session-bar">
+  <div>
+    <label for="session-select">Session</label>
+    <select id="session-select"><option value="latest">Latest session</option></select>
+  </div>
+  <div class="facts">
+    <div class="fact"><span>Samples</span><strong id="f-samples">&ndash;</strong></div>
+    <div class="fact"><span>Duration</span><strong id="f-duration">&ndash;</strong></div>
+    <div class="fact"><span>Interval</span><strong id="f-period">&ndash;</strong></div>
+    <div class="fact"><span>Newest</span><strong id="f-age">&ndash;</strong></div>
+  </div>
+</section>
 
-      <section class="metrics-grid" aria-label="Current telemetry">
-        <article class="metric-card" id="metric-pack-v" data-signal-state="missing">
-          <div class="metric-label"><span>Pack voltage</span><span class="metric-glyph" aria-hidden="true"></span></div>
-          <div class="metric-reading"><span class="metric-value">—</span><span class="metric-unit">V</span></div>
-          <div class="metric-detail">Waiting for a reading</div>
-        </article>
-        <article class="metric-card accent-lime" id="metric-soc" data-signal-state="missing">
-          <div class="metric-label"><span>State of charge</span><span class="metric-glyph" aria-hidden="true"></span></div>
-          <div class="metric-reading"><span class="metric-value">—</span><span class="metric-unit">%</span></div>
-          <div class="metric-detail">Waiting for a reading</div>
-        </article>
-        <article class="metric-card" id="metric-energy" data-signal-state="missing">
-          <div class="metric-label"><span>Energy remaining</span><span class="metric-glyph" aria-hidden="true"></span></div>
-          <div class="metric-reading"><span class="metric-value">—</span><span class="metric-unit">kWh</span></div>
-          <div class="metric-detail">Waiting for a reading</div>
-        </article>
-        <article class="metric-card accent-lime" id="metric-cell-spread" data-signal-state="missing">
-          <div class="metric-label"><span>Cell spread</span><span class="metric-glyph" aria-hidden="true"></span></div>
-          <div class="metric-reading"><span class="metric-value">—</span><span class="metric-unit">mV</span></div>
-          <div class="metric-detail">Waiting for a reading</div>
-        </article>
-        <article class="metric-card" id="metric-speed" data-signal-state="missing">
-          <div class="metric-label"><span>Road speed</span><span class="metric-glyph" aria-hidden="true"></span></div>
-          <div class="metric-reading"><span class="metric-value">—</span><span class="metric-unit">mph</span></div>
-          <div class="metric-detail">Waiting for a reading</div>
-        </article>
-        <article class="metric-card accent-lime" id="metric-12v" data-signal-state="missing">
-          <div class="metric-label"><span>12 V rail</span><span class="metric-glyph" aria-hidden="true"></span></div>
-          <div class="metric-reading"><span class="metric-value">—</span><span class="metric-unit">V</span></div>
-          <div class="metric-detail">Waiting for a reading</div>
-        </article>
-      </section>
+<div class="hero">
 
-      <div class="middle-grid">
-        <section class="panel chart-panel" aria-labelledby="chart-title">
-          <div class="panel-header">
-            <div>
-              <h2 class="panel-title" id="chart-title">Session history</h2>
-              <p class="panel-subtitle" id="chart-subtitle">Pack power over elapsed time</p>
-            </div>
-            <div class="chart-tabs" role="tablist" aria-label="Chart metric">
-              <button class="chart-tab" id="tab-power" type="button" role="tab" aria-selected="true" aria-controls="history-chart">Power</button>
-              <button class="chart-tab" id="tab-soc" type="button" role="tab" aria-selected="false" aria-controls="history-chart">Charge</button>
-            </div>
-          </div>
-          <div class="chart-wrap">
-            <canvas id="history-chart" role="img" aria-label="No history data available"></canvas>
-            <div class="chart-empty" id="chart-empty">Waiting for enough samples to draw a history.</div>
-            <p class="sr-only" id="chart-description" aria-live="polite">No history data available.</p>
-          </div>
-        </section>
+  <!-- ================= THE VEHICLE ================= -->
+  <div class="card bracket fadeable">
+    <h2>The vehicle</h2>
+    <p class="sub" id="vehicle-sub">Plan view, nose left. Driver's side at the bottom.</p>
+    <div class="vehicle-wrap">
+      <svg id="vehicle" viewBox="0 0 1000 400" role="img"
+           aria-labelledby="veh-title veh-desc">
+        <title id="veh-title">Top-down diagram of the vehicle</title>
+        <desc id="veh-desc">Battery modules, drive units, wheels and charge port
+          shown in their physical locations, coloured by live telemetry.</desc>
 
-        <section class="panel trip-panel" aria-labelledby="trip-title">
-          <div class="panel-header">
-            <div>
-              <h2 class="panel-title" id="trip-title">Trip energy</h2>
-              <p class="panel-subtitle" id="trip-subtitle">Measured over this recorded session</p>
-            </div>
-          </div>
-          <ul class="trip-list">
-            <li class="trip-item"><span class="trip-name" id="trip-distance-label">Session distance</span><span class="trip-number" id="trip-distance">—</span></li>
-            <li class="trip-item"><span class="trip-name" id="trip-efficiency-label">Efficiency while moving</span><span class="trip-number" id="trip-efficiency">—</span></li>
-            <li class="trip-item"><span class="trip-name" id="trip-drawn-label">Energy drawn</span><span class="trip-number" id="trip-drawn">—</span></li>
-            <li class="trip-item"><span class="trip-name" id="trip-regen-label">Energy recovered</span><span class="trip-number" id="trip-regen">—</span></li>
-            <li class="trip-item"><span class="trip-name" id="trip-regen-pct-label">Regen share</span><span class="trip-number" id="trip-regen-pct">—</span></li>
-          </ul>
-          <div class="energy-budget" id="energy-budget" hidden>
-            <h3 class="budget-title">Where energy went</h3>
-            <div class="budget-grid">
-              <div class="budget-item" id="budget-moving-item">
-                <span class="budget-value" id="budget-moving">—</span>
-                <span class="budget-label">Draw while moving</span>
-              </div>
-              <div class="budget-item" id="budget-moving-regen-item">
-                <span class="budget-value" id="budget-moving-regen">—</span>
-                <span class="budget-label">Regen while moving</span>
-              </div>
-              <div class="budget-item" id="budget-stationary-item">
-                <span class="budget-value" id="budget-stationary">—</span>
-                <span class="budget-label" id="budget-stationary-label">Draw while stationary</span>
-              </div>
-              <div class="budget-item">
-                <span class="budget-value" id="budget-stationary-in">—</span>
-                <span class="budget-label">Energy in while stationary</span>
-              </div>
-              <div class="budget-item" id="budget-observed-item">
-                <span class="budget-value" id="budget-observed">—</span>
-                <span class="budget-label" id="budget-observed-label">Observed intervals</span>
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
+        <defs>
+          <linearGradient id="bodyGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#2a2f33"/><stop offset="1" stop-color="#1a1e21"/>
+          </linearGradient>
+          <linearGradient id="packGrad" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#141719"/><stop offset="1" stop-color="#101315"/>
+          </linearGradient>
+        </defs>
 
-      <section class="panel notes-panel" id="notes-panel" aria-labelledby="notes-title" hidden>
-        <div class="panel-header notes-head">
-          <div>
-            <h2 class="panel-title" id="notes-title">Session observations</h2>
-            <p class="panel-subtitle">Capture and measurement context—not vehicle fault diagnoses</p>
-          </div>
-          <span class="notes-count" id="notes-count">0 notes</span>
-        </div>
-        <ul class="notes-list" id="notes-list"></ul>
-        <details class="notes-more" id="notes-more" hidden>
-          <summary id="notes-more-summary">Show more notes</summary>
-          <ul class="notes-list notes-more-list" id="notes-more-list"></ul>
-        </details>
-      </section>
+        <!-- body shell: 216.8 in long x 86.7 in wide = 2.50:1 -->
+        <path d="M28,150 Q28,40 120,40 L900,40 Q972,40 972,120 L972,280
+                 Q972,360 900,360 L120,360 Q28,360 28,250 Z"
+              fill="url(#bodyGrad)" stroke="#3a4145" stroke-width="2"/>
+        <!-- windscreen / cab, purely to make the orientation obvious -->
+        <path d="M330,62 L560,62 L575,338 L330,338 Z" fill="#1e2225" stroke="#333a3e"/>
+        <path d="M348,78 L548,78 L558,322 L348,322 Z" fill="#191d20" opacity=".85"/>
+        <text x="452" y="208" text-anchor="middle" fill="#4a5357" font-size="15"
+              font-family="ui-sans-serif,system-ui" letter-spacing="3">CAB</text>
+        <!-- bed -->
+        <rect x="600" y="70" width="330" height="260" rx="10" fill="#191d20" stroke="#2f363a"/>
+        <text x="765" y="205" text-anchor="middle" fill="#454e52" font-size="13"
+              font-family="ui-sans-serif,system-ui" letter-spacing="3">BED</text>
 
-      <section class="panel signals-panel" aria-labelledby="signals-title">
-        <div class="panel-header signals-header">
-          <div>
-            <h2 class="panel-title" id="signals-title">Signal inventory</h2>
-            <p class="panel-subtitle" id="signal-summary">No signals loaded</p>
-          </div>
-          <div class="search-block">
-            <label class="field-label" for="signal-search">Search signals</label>
-            <input class="search-input" id="signal-search" type="search" placeholder="Label, source, identifier…" autocomplete="off">
-          </div>
-        </div>
-        <div class="table-scroll">
-          <table>
-            <caption class="sr-only">Telemetry readings with freshness, provenance, identifier, and confidence</caption>
-            <thead>
-              <tr>
-                <th class="col-signal" scope="col">Signal</th>
-                <th class="col-value" scope="col">Reading</th>
-                <th class="col-status" scope="col">Age status</th>
-                <th class="col-source" scope="col">Source</th>
-                <th class="col-id" scope="col">Identifier</th>
-                <th class="col-confidence" scope="col">Confidence</th>
-              </tr>
-            </thead>
-            <tbody id="signals-body"></tbody>
-          </table>
-          <div class="table-empty" id="signals-empty">Waiting for signal data.</div>
-        </div>
-        <footer class="signals-footer">
-          <span id="signals-result-count" aria-live="polite">0 signals</span>
-          <span>Read-only display · Confidence describes signal evidence, not vehicle condition</span>
-        </footer>
-      </section>
-    </main>
+        <!-- axle centrelines -->
+        <line x1="174" y1="34" x2="174" y2="366" stroke="#2f363a" stroke-width="1.5" stroke-dasharray="5 5"/>
+        <line x1="774" y1="34" x2="774" y2="366" stroke="#2f363a" stroke-width="1.5" stroke-dasharray="5 5"/>
+
+        <!-- battery pack footprint: 84 x 56 in, between the axles -->
+        <rect x="294" y="96" width="372" height="208" rx="9"
+              fill="url(#packGrad)" stroke="#3a4145" stroke-width="1.5"/>
+        <g id="modules"></g>
+        <text x="480" y="88" text-anchor="middle" fill="#6f7b80" font-size="11.5"
+              font-family="ui-sans-serif,system-ui" letter-spacing="2.2">24 MODULES &middot; 2 LAYERS OF 12</text>
+
+        <!-- drive units -->
+        <g id="motor-front">
+          <rect x="146" y="158" width="58" height="84" rx="9" fill="#232a2e" stroke="#4a5357" stroke-width="1.5"/>
+          <text x="175" y="205" text-anchor="middle" fill="#93a1a5" font-size="11" font-family="ui-sans-serif,system-ui">1&times;</text>
+        </g>
+        <g id="motor-rear">
+          <rect x="742" y="140" width="64" height="120" rx="9" fill="#232a2e" stroke="#4a5357" stroke-width="1.5"/>
+          <line x1="774" y1="146" x2="774" y2="254" stroke="#3a4145" stroke-width="1.2"/>
+          <text x="774" y="205" text-anchor="middle" fill="#93a1a5" font-size="11" font-family="ui-sans-serif,system-ui">2&times;</text>
+        </g>
+
+        <!-- wheels. Nose left + driver's side bottom => FL bottom-left. -->
+        <g id="wheels">
+          <rect id="w-fr" x="150" y="18"  width="48" height="30" rx="7" fill="#20262a" stroke="#4a5357"/>
+          <rect id="w-fl" x="150" y="352" width="48" height="30" rx="7" fill="#20262a" stroke="#4a5357"/>
+          <rect id="w-rr" x="750" y="18"  width="48" height="30" rx="7" fill="#20262a" stroke="#4a5357"/>
+          <rect id="w-rl" x="750" y="352" width="48" height="30" rx="7" fill="#20262a" stroke="#4a5357"/>
+        </g>
+        <text id="t-fr" x="174" y="12"  text-anchor="middle" fill="#93a1a5" font-size="11" class="num">&ndash;</text>
+        <text id="t-fl" x="174" y="396" text-anchor="middle" fill="#93a1a5" font-size="11" class="num">&ndash;</text>
+        <text id="t-rr" x="774" y="12"  text-anchor="middle" fill="#93a1a5" font-size="11" class="num">&ndash;</text>
+        <text id="t-rl" x="774" y="396" text-anchor="middle" fill="#93a1a5" font-size="11" class="num">&ndash;</text>
+
+        <!-- charge port: driver's side, rear quarter, aft of the rear wheel -->
+        <g id="charge-port">
+          <rect x="862" y="330" width="42" height="26" rx="6" fill="#20262a" stroke="#4a5357" stroke-width="1.5"/>
+          <circle id="charge-led" cx="883" cy="343" r="5.5" fill="#394145"/>
+        </g>
+        <text x="883" y="376" text-anchor="middle" fill="#6f7b80" font-size="10"
+              font-family="ui-sans-serif,system-ui">CHARGE</text>
+
+        <!-- 12 V battery: frunk, passenger-side pod (passenger = top here) -->
+        <g id="lv-batt">
+          <rect x="62" y="76" width="52" height="34" rx="6" fill="#20262a" stroke="#4a5357" stroke-width="1.5"/>
+          <text x="88" y="98" text-anchor="middle" fill="#93a1a5" font-size="10.5" font-family="ui-sans-serif,system-ui">12V</text>
+        </g>
+
+        <!-- thermal: compressor and coolant hardware live in the front zone -->
+        <g id="thermal">
+          <rect x="62" y="266" width="52" height="34" rx="6" fill="#20262a" stroke="#4a5357" stroke-width="1.5"/>
+          <text x="88" y="288" text-anchor="middle" fill="#93a1a5" font-size="10.5" font-family="ui-sans-serif,system-ui">HVAC</text>
+        </g>
+
+        <!-- direction of travel -->
+        <path d="M8,200 L26,190 L26,210 Z" fill="#4a5357"/>
+      </svg>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div class="caveat" id="module-caveat"></div>
   </div>
 
-  <script>
-    (() => {
-      "use strict";
-
-      const POLL_MS = 5000;
-      const REQUEST_TIMEOUT_MS = 4500;
-      const MAX_HISTORY_POINTS = 600;
-      const KM_PER_MILE = 1.609344;
-
-      const byId = (id) => document.getElementById(id);
-      const elements = {
-        sessionSelect: byId("session-select"),
-        sessionName: byId("session-name"),
-        sessionDuration: byId("session-duration"),
-        sessionSamples: byId("session-samples"),
-        sessionPeriod: byId("session-period"),
-        statusPrimary: byId("status-primary"),
-        statusSecondary: byId("status-secondary"),
-        stateBanner: byId("state-banner"),
-        chart: byId("history-chart"),
-        chartEmpty: byId("chart-empty"),
-        chartSubtitle: byId("chart-subtitle"),
-        chartDescription: byId("chart-description"),
-        tabPower: byId("tab-power"),
-        tabSoc: byId("tab-soc"),
-        tripTitle: byId("trip-title"),
-        tripSubtitle: byId("trip-subtitle"),
-        energyBudget: byId("energy-budget"),
-        notesPanel: byId("notes-panel"),
-        notesCount: byId("notes-count"),
-        notesList: byId("notes-list"),
-        notesMore: byId("notes-more"),
-        notesMoreSummary: byId("notes-more-summary"),
-        notesMoreList: byId("notes-more-list"),
-        search: byId("signal-search"),
-        signalSummary: byId("signal-summary"),
-        signalsBody: byId("signals-body"),
-        signalsEmpty: byId("signals-empty"),
-        signalsResultCount: byId("signals-result-count")
-      };
-
-      const state = {
-        selected: "latest",
-        sessions: [],
-        latest: null,
-        snapshot: null,
-        network: "loading",
-        errorMessage: "",
-        lastSuccessAt: null,
-        chartMetric: "power",
-        search: "",
-        refreshing: false,
-        refreshQueued: false,
-        generation: 0,
-        timer: null
-      };
-
-      function isNumber(value) {
-        return typeof value === "number" && Number.isFinite(value);
-      }
-
-      function numeric(value) {
-        if (isNumber(value)) return value;
-        if (typeof value !== "string") return null;
-        const clean = value.trim().replace(/[^0-9eE+.-]+$/, "");
-        if (!clean) return null;
-        const parsed = Number(clean);
-        return Number.isFinite(parsed) ? parsed : null;
-      }
-
-      function valueOr(...values) {
-        for (const value of values) {
-          if (value !== null && value !== undefined && value !== "") return value;
-        }
-        return null;
-      }
-
-      function formatNumber(value, digits = 1) {
-        const number = numeric(value);
-        if (number === null) return "—";
-        return number.toLocaleString(undefined, {
-          minimumFractionDigits: digits,
-          maximumFractionDigits: digits
-        });
-      }
-
-      function formatCompactNumber(value) {
-        const number = numeric(value);
-        if (number === null) return "—";
-        return number.toLocaleString(undefined, { maximumFractionDigits: 0 });
-      }
-
-      function formatDuration(seconds) {
-        const value = numeric(seconds);
-        if (value === null || value < 0) return "—";
-        const total = Math.round(value);
-        const hours = Math.floor(total / 3600);
-        const minutes = Math.floor((total % 3600) / 60);
-        const secs = total % 60;
-        if (hours) return `${hours}h ${String(minutes).padStart(2, "0")}m`;
-        if (minutes) return `${minutes}m ${String(secs).padStart(2, "0")}s`;
-        return `${secs}s`;
-      }
-
-      function formatAge(seconds, short = false) {
-        const value = numeric(seconds);
-        if (value === null || value < 0) return "age unavailable";
-        if (value < 1) return short ? "now" : "updated now";
-        if (value < 60) return `${Math.round(value)}s${short ? "" : " ago"}`;
-        if (value < 3600) {
-          const minutes = Math.floor(value / 60);
-          const secs = Math.round(value % 60);
-          return short ? `${minutes}m ${secs}s` : `${minutes}m ${secs}s ago`;
-        }
-        const hours = Math.floor(value / 3600);
-        const minutes = Math.floor((value % 3600) / 60);
-        return short ? `${hours}h ${minutes}m` : `${hours}h ${minutes}m ago`;
-      }
-
-      function parseDate(value) {
-        if (!value) return null;
-        const date = new Date(value);
-        return Number.isNaN(date.getTime()) ? null : date;
-      }
-
-      function formatDate(value, includeDate = false) {
-        const date = parseDate(value);
-        if (!date) return "time unavailable";
-        const options = includeDate
-          ? { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }
-          : { hour: "numeric", minute: "2-digit", second: "2-digit" };
-        return date.toLocaleString(undefined, options);
-      }
-
-      function friendlySessionName(id) {
-        if (!id) return "No session";
-        return String(id).replace(/\.csv$/i, "");
-      }
-
-      function sessionOptionLabel(session) {
-        const stamp = session.start_utc || session.modified_utc;
-        const date = parseDate(stamp);
-        const dateText = date
-          ? date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
-          : friendlySessionName(session.id);
-        const rows = numeric(session.rows);
-        return rows === null ? dateText : `${dateText} · ${formatCompactNumber(rows)} samples`;
-      }
-
-      function effectiveViewState() {
-        if (state.network === "error") return "error";
-        if (state.network === "loading" && !state.snapshot) return "loading";
-        const session = state.snapshot && state.snapshot.session;
-        if (!session || !session.id || session.status === "empty") return "empty";
-        if (state.selected !== "latest" || session.status === "historical") return "historical";
-        if (session.status === "live") return "live";
-        return "stale";
-      }
-
-      function signalStatus(signal, viewState) {
-        const raw = signal && signal.status ? String(signal.status) : "missing";
-        if (raw === "missing" || raw === "invalid") return raw;
-        if (viewState === "error") return "offline";
-        if (viewState === "historical") return raw === "fresh" ? "recorded" : raw;
-        if (viewState === "stale") return "stale";
-        return raw === "fresh" || raw === "stale" ? raw : "missing";
-      }
-
-      function signalStateLabel(status) {
-        return {
-          fresh: "Fresh",
-          recorded: "Recorded",
-          stale: "Stale",
-          missing: "Missing",
-          invalid: "Invalid reading",
-          offline: "Refresh unavailable"
-        }[status] || "Unavailable";
-      }
-
-      function signalAgeLabel(signal, viewState) {
-        const age = signal ? signal.age_s : null;
-        if (viewState === "historical") {
-          const number = numeric(age);
-          return number === null || number < 1 ? "At session end" : `${formatAge(number, true)} before end`;
-        }
-        if (viewState === "error") {
-          return numeric(age) === null ? "Last known reading" : `Last known · ${formatAge(age)}`;
-        }
-        return formatAge(age);
-      }
-
-      function updateSessionOptions(payload) {
-        const sessions = Array.isArray(payload && payload.sessions) ? payload.sessions : [];
-        state.sessions = sessions.filter((item) => item && typeof item.id === "string");
-        state.latest = payload && typeof payload.latest === "string" ? payload.latest : null;
-
-        const options = [];
-        const latestOption = document.createElement("option");
-        latestOption.value = "latest";
-        latestOption.textContent = state.latest ? `Latest session · ${friendlySessionName(state.latest)}` : "Latest session";
-        options.push(latestOption);
-
-        const sorted = [...state.sessions].sort((a, b) => {
-          const aTime = parseDate(a.modified_utc || a.start_utc);
-          const bTime = parseDate(b.modified_utc || b.start_utc);
-          return (bTime ? bTime.getTime() : 0) - (aTime ? aTime.getTime() : 0);
-        });
-        for (const session of sorted) {
-          const option = document.createElement("option");
-          option.value = session.id;
-          option.textContent = sessionOptionLabel(session);
-          options.push(option);
-        }
-        elements.sessionSelect.replaceChildren(...options);
-
-        const selectionExists = state.selected === "latest" || state.sessions.some((item) => item.id === state.selected);
-        if (!selectionExists) state.selected = "latest";
-        elements.sessionSelect.value = state.selected;
-      }
-
-      function statusCopy(viewState, session) {
-        const sampleTime = session && session.newest_utc;
-        const age = session && session.age_s;
-        if (viewState === "live") {
-          return ["Live telemetry", `${formatAge(age)} · ${formatDate(sampleTime)}`];
-        }
-        if (viewState === "historical") {
-          return ["Recorded session", `Ended ${formatDate(sampleTime, true)}`];
-        }
-        if (viewState === "stale") {
-          return ["Telemetry stale", `Last vehicle sample ${formatAge(age)}`];
-        }
-        if (viewState === "error") {
-          const lastRefresh = state.lastSuccessAt ? formatDate(state.lastSuccessAt.toISOString()) : "not yet available";
-          return ["Refresh unavailable", `Last successful refresh ${lastRefresh}`];
-        }
-        if (viewState === "empty") return ["No session data", "Waiting for a recorded sample"];
-        return ["Loading telemetry", "Connecting to the local reader"];
-      }
-
-      function bannerCopy(viewState, session) {
-        if (viewState === "historical") {
-          return "Recorded session selected. Values are the last available readings in that session and are not live vehicle data.";
-        }
-        if (viewState === "stale") {
-          return `The latest session is not updating. Its newest vehicle sample is ${formatAge(session && session.age_s)}.`;
-        }
-        if (viewState === "error") {
-          const suffix = state.snapshot
-            ? " Last-known values remain visible below and are marked unavailable."
-            : " No last-known snapshot is available.";
-          return `The local telemetry reader could not be refreshed.${suffix}`;
-        }
-        if (viewState === "empty") {
-          return "No telemetry rows are available yet. Start a recording session, then this page will populate automatically.";
-        }
-        if (viewState === "loading") return "Loading the latest local session…";
-        return "";
-      }
-
-      function renderHeader(viewState, session) {
-        document.body.dataset.viewState = viewState;
-        const copy = statusCopy(viewState, session);
-        elements.statusPrimary.textContent = copy[0];
-        elements.statusSecondary.textContent = copy[1];
-        const banner = bannerCopy(viewState, session);
-        elements.stateBanner.hidden = !banner;
-        elements.stateBanner.textContent = banner;
-
-        elements.sessionName.textContent = friendlySessionName(session && session.id);
-        elements.sessionName.title = session && session.id ? String(session.id) : "";
-        elements.sessionDuration.textContent = formatDuration(session && session.elapsed_s);
-        elements.sessionSamples.textContent = formatCompactNumber(session && session.rows);
-        elements.sessionPeriod.textContent = numeric(session && session.period_s) === null
-          ? "—"
-          : `${formatNumber(session.period_s, 1)}s`;
-      }
-
-      function getSignal(...names) {
-        const signals = state.snapshot && state.snapshot.signals;
-        if (!signals) return null;
-        for (const name of names) {
-          if (signals[name]) return signals[name];
-        }
-        return null;
-      }
-
-      function derivedValue(...names) {
-        const derived = state.snapshot && state.snapshot.derived;
-        if (!derived) return null;
-        for (const name of names) {
-          if (derived[name] !== null && derived[name] !== undefined) return derived[name];
-        }
-        return null;
-      }
-
-      function derivedTileValue(names, signal) {
-        const derived = state.snapshot && state.snapshot.derived;
-        if (derived && typeof derived === "object") {
-          let contracted = false;
-          for (const name of names) {
-            if (!Object.hasOwn(derived, name)) continue;
-            contracted = true;
-            if (derived[name] !== null && derived[name] !== undefined) return derived[name];
-          }
-          if (contracted) return null;
-        }
-        return signal ? signal.value : null;
-      }
-
-      function setMetric(id, value, unit, digits, signal, viewState, transform = null) {
-        const card = byId(id);
-        let number = numeric(value);
-        if (number !== null && transform) number = transform(number);
-        const status = signalStatus(signal, viewState);
-        card.dataset.signalState = number === null ? "missing" : status;
-        card.querySelector(".metric-value").textContent = number === null ? "—" : formatNumber(number, digits);
-        card.querySelector(".metric-unit").textContent = unit;
-        card.querySelector(".metric-detail").textContent = number === null
-          ? "No reading in this session"
-          : `${signalStateLabel(status)} · ${signalAgeLabel(signal, viewState)}`;
-      }
-
-      function renderMetrics(viewState) {
-        const packSignal = getSignal("pack_v");
-        const socSignal = getSignal("soc_pct");
-        const energySignal = getSignal("energy_kwh");
-        const spreadSignal = getSignal("cell_spread_mv");
-        const speedSignal = getSignal("speed_kph", "wheel_fl_kph");
-        const railSignal = getSignal("volts", "module_voltage", "dmc2_v");
-
-        setMetric("metric-pack-v", derivedTileValue(["pack_v"], packSignal), "V", 1, packSignal, viewState);
-        setMetric("metric-soc", derivedTileValue(["soc_pct"], socSignal), "%", 1, socSignal, viewState);
-        setMetric("metric-energy", derivedTileValue(["energy_kwh"], energySignal), "kWh", 1, energySignal, viewState);
-        setMetric("metric-cell-spread", derivedTileValue(["cell_spread_mv"], spreadSignal), "mV", 1, spreadSignal, viewState);
-        setMetric("metric-speed", derivedTileValue(["speed_now_kph"], speedSignal), "mph", 0, speedSignal, viewState, (kph) => kph / KM_PER_MILE);
-        setMetric(
-          "metric-12v",
-          derivedTileValue(["volts_adapter", "volts_module", "volts_dmc2"], railSignal),
-          "V",
-          1,
-          railSignal,
-          viewState
-        );
-      }
-
-      function appendSmall(parent, text) {
-        if (!text) return;
-        const small = document.createElement("small");
-        small.textContent = text;
-        parent.appendChild(small);
-      }
-
-      function setTripValue(id, primary, secondary = "") {
-        const element = byId(id);
-        element.textContent = primary;
-        appendSmall(element, secondary);
-      }
-
-      function reportValue(section, key) {
-        const report = state.snapshot && state.snapshot.report;
-        return report && report[section] ? report[section][key] : null;
-      }
-
-      function renderTrip() {
-        const report = state.snapshot && state.snapshot.report;
-        const budget = state.snapshot && state.snapshot.energy_budget && typeof state.snapshot.energy_budget === "object"
-          ? state.snapshot.energy_budget
-          : null;
-        const charge = report && report.charge ? report.charge : null;
-        const charging = Boolean(charge);
-        elements.tripTitle.textContent = charging ? "Charge energy" : "Trip energy";
-        elements.tripSubtitle.textContent = charging
-          ? "Measured over this recorded charge session"
-          : "Measured over this recorded session";
-
-        const distanceKm = valueOr(
-          derivedValue("drive_km"),
-          reportValue("motion", "distance_used_mi") !== null ? numeric(reportValue("motion", "distance_used_mi")) * KM_PER_MILE : null,
-          derivedValue("distance_km")
-        );
-        const efficiency = derivedValue("mi_per_kwh");
-        const consumption = derivedValue("kwh_per_100km");
-        const drawn = budget ? numeric(budget.moving_drawn_kwh) : derivedValue("kwh_drawn");
-        const regen = budget ? numeric(budget.moving_regen_kwh) : derivedValue("kwh_regen");
-        const regenPct = budget
-          ? (drawn !== null && drawn > 0 && regen !== null ? regen / drawn * 100 : null)
-          : derivedValue("regen_pct");
-
-        setTripValue(
-          "trip-distance",
-          numeric(distanceKm) === null ? "—" : `${formatNumber(numeric(distanceKm) / KM_PER_MILE, 2)} mi`,
-          numeric(distanceKm) === null ? "" : `${formatNumber(distanceKm, 2)} km`
-        );
-        setTripValue(
-          "trip-efficiency",
-          numeric(efficiency) === null ? "—" : `${formatNumber(efficiency, 2)} mi/kWh`,
-          numeric(consumption) === null ? "moving samples only" : `${formatNumber(consumption, 1)} kWh/100 km`
-        );
-        if (charging) {
-          const energyAdded = valueOr(charge.energy_added_kwh, budget && budget.stationary_energy_in_kwh);
-          const meanCharge = charge.mean_charge_kw_from_current;
-          const peakCharge = charge.peak_charge_kw_from_current;
-          const socGained = charge.soc_gained_pct;
-          const chargeDuration = valueOr(report.session && report.session.duration_hms, numeric(charge.duration_h) !== null ? formatDuration(numeric(charge.duration_h) * 3600) : null);
-          byId("trip-distance-label").textContent = "Charge duration";
-          byId("trip-efficiency-label").textContent = "Peak charge power";
-          byId("trip-drawn-label").textContent = "Energy into pack";
-          byId("trip-regen-label").textContent = "Mean charge power";
-          byId("trip-regen-pct-label").textContent = "Charge added";
-          setTripValue("trip-distance", chargeDuration || "—", "Recorded session span");
-          setTripValue("trip-efficiency", numeric(peakCharge) === null ? "—" : `${formatNumber(peakCharge, 1)} kW`, "From measured pack current");
-          setTripValue("trip-drawn", numeric(energyAdded) === null ? "—" : `${formatNumber(energyAdded, 2)} kWh`, "Change in recorded pack energy");
-          setTripValue("trip-regen", numeric(meanCharge) === null ? "—" : `${formatNumber(meanCharge, 1)} kW`, "From measured pack current");
-          setTripValue("trip-regen-pct", numeric(socGained) === null ? "—" : `${formatNumber(socGained, 1)}%`, "State-of-charge increase");
-        } else {
-          byId("trip-distance-label").textContent = "Session distance";
-          byId("trip-efficiency-label").textContent = "Efficiency while moving";
-          byId("trip-drawn-label").textContent = "Energy drawn";
-          byId("trip-regen-label").textContent = "Energy recovered";
-          byId("trip-regen-pct-label").textContent = "Regen share";
-          setTripValue("trip-drawn", numeric(drawn) === null ? "—" : `${formatNumber(drawn, 2)} kWh`, "Observed moving intervals");
-          setTripValue("trip-regen", numeric(regen) === null ? "—" : `${formatNumber(regen, 2)} kWh`, "Returned while moving");
-          setTripValue("trip-regen-pct", numeric(regenPct) === null ? "—" : `${formatNumber(regenPct, 1)}%`, "Recovered ÷ drawn");
-        }
-
-        renderEnergyBudget(budget, charging);
-      }
-
-      function renderEnergyBudget(budget, charging) {
-        if (!budget) {
-          elements.energyBudget.hidden = true;
-          return;
-        }
-        const movingDrawn = numeric(budget.moving_drawn_kwh);
-        const movingRegen = numeric(budget.moving_regen_kwh);
-        const stationaryDrawn = numeric(budget.stationary_drawn_kwh);
-        const stationaryIn = numeric(budget.stationary_energy_in_kwh);
-        const observed = numeric(budget.observed_s);
-        const moving = numeric(budget.moving_s);
-        const stationary = numeric(budget.stationary_s);
-        const skipped = numeric(budget.skipped_intervals);
-        const hasAny = [movingDrawn, movingRegen, stationaryDrawn, stationaryIn, observed].some((value) => value !== null);
-        elements.energyBudget.hidden = !hasAny;
-        if (!hasAny) return;
-
-        byId("budget-moving").textContent = movingDrawn === null ? "—" : `${formatNumber(movingDrawn, 2)} kWh`;
-        byId("budget-moving-regen").textContent = movingRegen === null ? "—" : `${formatNumber(movingRegen, 2)} kWh`;
-        byId("budget-stationary").textContent = stationaryDrawn === null ? "—" : `${formatNumber(stationaryDrawn, 2)} kWh`;
-        byId("budget-stationary-in").textContent = stationaryIn === null ? "—" : `${formatNumber(stationaryIn, 2)} kWh`;
-        byId("budget-stationary-label").textContent = "Draw while stationary";
-        byId("budget-observed").textContent = observed === null ? "—" : formatDuration(observed);
-        const shares = [];
-        if (moving !== null) shares.push(`${formatDuration(moving)} moving`);
-        if (stationary !== null) shares.push(`${formatDuration(stationary)} stationary`);
-        if (skipped !== null && skipped > 0) shares.push(`${formatCompactNumber(skipped)} skipped`);
-        byId("budget-observed-label").textContent = shares.length ? shares.join(" · ") : "Observed intervals";
-      }
-
-      function makeNote(title, detail, level) {
-        const item = document.createElement("li");
-        item.className = "note";
-        item.dataset.level = level === "notice" ? "notice" : "info";
-        const heading = document.createElement("span");
-        heading.className = "note-title";
-        heading.textContent = title;
-        const body = document.createElement("p");
-        body.className = "note-detail";
-        body.textContent = detail;
-        item.append(heading, body);
-        return item;
-      }
-
-      function renderNotes() {
-        const notes = [];
-        const insights = state.snapshot && Array.isArray(state.snapshot.insights) ? state.snapshot.insights : [];
-        const directWarnings = state.snapshot && Array.isArray(state.snapshot.warnings) ? state.snapshot.warnings : [];
-        const reportWarnings = state.snapshot && state.snapshot.report && Array.isArray(state.snapshot.report.warnings)
-          ? state.snapshot.report.warnings
-          : [];
-
-        for (const insight of insights) {
-          if (!insight || !insight.detail) continue;
-          notes.push({ title: insight.title || "Measured observation", detail: insight.detail, level: insight.level });
-        }
-        for (const warning of [...directWarnings, ...reportWarnings]) {
-          if (!warning || notes.some((note) => note.detail === String(warning))) continue;
-          notes.push({ title: "Data quality note", detail: String(warning), level: "notice" });
-        }
-
-        const previewCount = 3;
-        const preview = notes.slice(0, previewCount);
-        const remainder = notes.slice(previewCount);
-        elements.notesList.replaceChildren(...preview.map((note) => makeNote(note.title, note.detail, note.level)));
-        elements.notesMoreList.replaceChildren(...remainder.map((note) => makeNote(note.title, note.detail, note.level)));
-        elements.notesMore.hidden = remainder.length === 0;
-        elements.notesMoreSummary.textContent = `Show ${remainder.length} more ${remainder.length === 1 ? "note" : "notes"}`;
-        elements.notesCount.textContent = `${notes.length} ${notes.length === 1 ? "note" : "notes"}`;
-        elements.notesPanel.hidden = notes.length === 0;
-      }
-
-      function confidenceLevel(signal) {
-        const value = numeric(signal && signal.confidence);
-        if (value === null) return null;
-        return Math.max(0, Math.min(4, Math.round(value)));
-      }
-
-      function createTextCell(label, className = "") {
-        const cell = document.createElement("td");
-        cell.dataset.label = label;
-        if (className) cell.className = className;
-        return cell;
-      }
-
-      function makeSignalRow(key, signal, viewState) {
-        const row = document.createElement("tr");
-
-        const nameCell = createTextCell("Signal");
-        const label = document.createElement("span");
-        label.className = "signal-name";
-        label.textContent = signal.label || key;
-        const keyLabel = document.createElement("span");
-        keyLabel.className = "signal-key";
-        keyLabel.textContent = key;
-        nameCell.append(label, keyLabel);
-
-        const valueCell = createTextCell("Reading", "signal-reading");
-        const value = signal.value;
-        valueCell.textContent = value === null || value === undefined || value === "" ? "—" : String(value);
-        if (signal.unit) {
-          const unit = document.createElement("span");
-          unit.className = "signal-unit";
-          unit.textContent = ` ${signal.unit}`;
-          valueCell.appendChild(unit);
-        }
-
-        const statusCell = createTextCell("Age status");
-        const status = signalStatus(signal, viewState);
-        const chip = document.createElement("span");
-        chip.className = "state-chip";
-        chip.dataset.state = status;
-        chip.textContent = signalStateLabel(status);
-        const age = document.createElement("span");
-        age.className = "age-copy";
-        age.textContent = signalAgeLabel(signal, viewState);
-        statusCell.append(chip, age);
-
-        const sourceCell = createTextCell("Source");
-        sourceCell.textContent = signal.source || "Source not recorded";
-
-        const identifierCell = createTextCell("Identifier");
-        const identifier = document.createElement("span");
-        identifier.className = "identifier";
-        identifier.textContent = signal.identifier || "—";
-        identifierCell.appendChild(identifier);
-
-        const confidenceCell = createTextCell("Confidence");
-        const confidence = document.createElement("div");
-        confidence.className = "confidence";
-        const meter = document.createElement("span");
-        meter.className = "confidence-meter";
-        meter.setAttribute("aria-hidden", "true");
-        const level = confidenceLevel(signal);
-        for (let index = 1; index <= 4; index += 1) {
-          const segment = document.createElement("i");
-          segment.dataset.filled = String(level !== null && index <= level);
-          meter.appendChild(segment);
-        }
-        const confidenceCopy = document.createElement("span");
-        confidenceCopy.className = "confidence-copy";
-        const confidenceLabel = document.createElement("span");
-        confidenceLabel.className = "confidence-label";
-        confidenceLabel.textContent = signal.confidence_label || "Not graded";
-        const score = document.createElement("span");
-        score.className = "confidence-score";
-        score.textContent = level === null ? "No evidence level" : `Evidence level ${level} of 4`;
-        confidenceCopy.append(confidenceLabel, score);
-        confidence.append(meter, confidenceCopy);
-        confidenceCell.appendChild(confidence);
-
-        row.append(nameCell, valueCell, statusCell, sourceCell, identifierCell, confidenceCell);
-        return row;
-      }
-
-      function renderSignals(viewState) {
-        const signals = state.snapshot && state.snapshot.signals && typeof state.snapshot.signals === "object"
-          ? state.snapshot.signals
-          : {};
-        const query = state.search.trim().toLocaleLowerCase();
-        const allowedGpsSignals = new Set(["gps_mode", "gps_sats"]);
-        const entries = Object.entries(signals)
-          .filter(([key]) => !key.startsWith("gps_") || allowedGpsSignals.has(key))
-          .sort((a, b) => {
-          const sourceCompare = String(a[1].source || "").localeCompare(String(b[1].source || ""));
-          if (sourceCompare) return sourceCompare;
-          return String(a[1].label || a[0]).localeCompare(String(b[1].label || b[0]));
-          });
-        const filtered = entries.filter(([key, signal]) => {
-          if (!query) return true;
-          const haystack = [key, signal.label, signal.unit, signal.source, signal.identifier, signal.confidence_label]
-            .filter(Boolean)
-            .join(" ")
-            .toLocaleLowerCase();
-          return haystack.includes(query);
-        });
-
-        const available = entries.filter(([, signal]) => signal.value !== null && signal.value !== undefined && signal.value !== "").length;
-        elements.signalSummary.textContent = entries.length
-          ? `${available} of ${entries.length} signals have a recorded value`
-          : "No signals loaded";
-        elements.signalsBody.replaceChildren(...filtered.map(([key, signal]) => makeSignalRow(key, signal, viewState)));
-        elements.signalsEmpty.hidden = filtered.length > 0;
-        elements.signalsEmpty.textContent = entries.length
-          ? "No signals match this search."
-          : (state.network === "error" ? "Signal inventory is unavailable." : "Waiting for signal data.");
-        const suffix = query ? ` matching “${state.search.trim()}”` : "";
-        elements.signalsResultCount.textContent = `${filtered.length} ${filtered.length === 1 ? "signal" : "signals"}${suffix}`;
-      }
-
-      function historyData() {
-        const history = state.snapshot && Array.isArray(state.snapshot.history) ? state.snapshot.history : [];
-        return history.slice(-MAX_HISTORY_POINTS);
-      }
-
-      function median(values) {
-        if (!values.length) return null;
-        const sorted = [...values].sort((a, b) => a - b);
-        const middle = Math.floor(sorted.length / 2);
-        return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
-      }
-
-      function niceRange(minimum, maximum, metric) {
-        if (metric === "soc") return { min: 0, max: 100, decimals: 0 };
-        const extent = Math.max(Math.abs(minimum), Math.abs(maximum), 10);
-        const rough = extent / 3;
-        const magnitude = 10 ** Math.floor(Math.log10(rough));
-        const normalized = rough / magnitude;
-        const nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
-        const cap = Math.ceil(extent / (nice * magnitude)) * nice * magnitude;
-        return { min: -cap, max: cap, decimals: cap < 10 ? 1 : 0 };
-      }
-
-      function drawChart() {
-        const canvas = elements.chart;
-        const bounds = canvas.getBoundingClientRect();
-        if (!bounds.width || !bounds.height) return;
-        const ratio = Math.min(window.devicePixelRatio || 1, 2);
-        const width = Math.round(bounds.width);
-        const height = Math.round(bounds.height);
-        const pixelWidth = Math.round(width * ratio);
-        const pixelHeight = Math.round(height * ratio);
-        if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
-          canvas.width = pixelWidth;
-          canvas.height = pixelHeight;
-        }
-        const context = canvas.getContext("2d");
-        context.setTransform(ratio, 0, 0, ratio, 0, 0);
-        context.clearRect(0, 0, width, height);
-
-        const metric = state.chartMetric;
-        const key = metric === "soc" ? "soc_pct" : "pack_kw";
-        const unit = metric === "soc" ? "%" : "kW";
-        const label = metric === "soc" ? "State of charge" : "Pack power";
-        const rows = historyData();
-        const points = rows.map((row) => ({ x: numeric(row && row.elapsed_s), y: numeric(row && row[key]) }));
-        const valid = points.filter((point) => point.x !== null && point.y !== null);
-        const times = points.map((point) => point.x).filter((value) => value !== null);
-
-        elements.chartSubtitle.textContent = metric === "soc"
-          ? "State of charge over elapsed time"
-          : "Pack power over elapsed time · positive is pack draw, negative is energy into the pack";
-        elements.tabPower.setAttribute("aria-selected", String(metric === "power"));
-        elements.tabSoc.setAttribute("aria-selected", String(metric === "soc"));
-
-        if (valid.length < 2 || times.length < 2) {
-          elements.chartEmpty.hidden = false;
-          elements.chartEmpty.textContent = `Not enough ${label.toLocaleLowerCase()} samples to draw this chart.`;
-          const description = `No ${label.toLocaleLowerCase()} history available.`;
-          canvas.setAttribute("aria-label", description);
-          elements.chartDescription.textContent = description;
-          return;
-        }
-
-        elements.chartEmpty.hidden = true;
-        const padding = { top: 18, right: 18, bottom: 34, left: 53 };
-        const plotWidth = Math.max(1, width - padding.left - padding.right);
-        const plotHeight = Math.max(1, height - padding.top - padding.bottom);
-        const xMin = Math.min(...times);
-        const xMax = Math.max(...times);
-        const yValues = valid.map((point) => point.y);
-        const range = niceRange(Math.min(...yValues), Math.max(...yValues), metric);
-        const xSpan = Math.max(1, xMax - xMin);
-        const ySpan = Math.max(.001, range.max - range.min);
-        const toX = (value) => padding.left + ((value - xMin) / xSpan) * plotWidth;
-        const toY = (value) => padding.top + (1 - (value - range.min) / ySpan) * plotHeight;
-
-        context.lineWidth = 1;
-        context.font = "10px ui-sans-serif, system-ui, sans-serif";
-        context.textBaseline = "middle";
-        for (let index = 0; index <= 4; index += 1) {
-          const value = range.max - (ySpan * index) / 4;
-          const y = padding.top + (plotHeight * index) / 4;
-          context.strokeStyle = index === 2 && metric === "power" ? "rgba(147,161,165,.28)" : "rgba(56,69,74,.52)";
-          context.beginPath();
-          context.moveTo(padding.left, Math.round(y) + .5);
-          context.lineTo(width - padding.right, Math.round(y) + .5);
-          context.stroke();
-          context.fillStyle = "#69777b";
-          context.textAlign = "right";
-          context.fillText(`${value.toFixed(range.decimals)} ${unit}`, padding.left - 8, y);
-        }
-
-        context.textBaseline = "top";
-        for (let index = 0; index <= 4; index += 1) {
-          const value = xMin + (xSpan * index) / 4;
-          const x = padding.left + (plotWidth * index) / 4;
-          context.fillStyle = "#69777b";
-          context.textAlign = index === 0 ? "left" : index === 4 ? "right" : "center";
-          context.fillText(formatDuration(value - xMin), x, height - padding.bottom + 10);
-        }
-
-        const adjacentDeltas = [];
-        for (let index = 1; index < times.length; index += 1) {
-          const delta = times[index] - times[index - 1];
-          if (delta > 0) adjacentDeltas.push(delta);
-        }
-        const sessionPeriod = numeric(state.snapshot && state.snapshot.session && state.snapshot.session.period_s);
-        const typical = valueOr(median(adjacentDeltas), sessionPeriod, 1);
-        const gapLimit = Math.max(30, numeric(typical) * 3);
-
-        context.lineWidth = 2;
-        context.lineJoin = "round";
-        context.lineCap = "round";
-        context.strokeStyle = metric === "soc" ? "#b9f227" : "#55d9ed";
-        context.shadowColor = metric === "soc" ? "rgba(185,242,39,.25)" : "rgba(85,217,237,.25)";
-        context.shadowBlur = 9;
-        context.beginPath();
-        let drawing = false;
-        let previousX = null;
-        for (const point of points) {
-          if (point.x === null || point.y === null) {
-            drawing = false;
-            previousX = null;
-            continue;
-          }
-          const x = toX(point.x);
-          const y = toY(point.y);
-          const gap = previousX !== null && point.x - previousX > gapLimit;
-          if (!drawing || gap) context.moveTo(x, y);
-          else context.lineTo(x, y);
-          drawing = true;
-          previousX = point.x;
-        }
-        context.stroke();
-        context.shadowBlur = 0;
-
-        const last = valid[valid.length - 1];
-        context.fillStyle = metric === "soc" ? "#b9f227" : "#55d9ed";
-        context.beginPath();
-        context.arc(toX(last.x), toY(last.y), 3.5, 0, Math.PI * 2);
-        context.fill();
-
-        const minimum = Math.min(...yValues);
-        const maximum = Math.max(...yValues);
-        const description = `${label} history with ${valid.length} recorded points. Range ${formatNumber(minimum, 1)} to ${formatNumber(maximum, 1)} ${unit}. Gaps in recorded samples are not connected.`;
-        canvas.setAttribute("aria-label", description);
-        elements.chartDescription.textContent = description;
-      }
-
-      function render() {
-        const session = state.snapshot && state.snapshot.session ? state.snapshot.session : null;
-        const viewState = effectiveViewState();
-        renderHeader(viewState, session);
-        renderMetrics(viewState);
-        renderTrip();
-        renderNotes();
-        renderSignals(viewState);
-        drawChart();
-      }
-
-      async function getJson(path) {
-        const controller = new AbortController();
-        const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-        try {
-          const response = await fetch(path, {
-            method: "GET",
-            cache: "no-store",
-            credentials: "same-origin",
-            headers: { Accept: "application/json" },
-            signal: controller.signal
-          });
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          return await response.json();
-        } finally {
-          window.clearTimeout(timeout);
+  <!-- ================= THE MAP ================= -->
+  <div class="card bracket fadeable">
+    <h2>Track</h2>
+    <p class="sub" id="map-sub">Drawn from the recorder's own fixes. No tiles, no third party.</p>
+    <div class="map-wrap">
+      <svg id="map" viewBox="0 0 500 340" role="img" aria-labelledby="map-title">
+        <title id="map-title">Path travelled during this session</title>
+        <g id="map-grid"></g>
+        <path id="trail" fill="none" stroke="#55d9ed" stroke-width="2.4"
+              stroke-linejoin="round" stroke-linecap="round" opacity=".85"/>
+        <g id="trail-head"></g>
+      </svg>
+      <div class="map-empty" id="map-empty">No position data in this session.</div>
+    </div>
+    <div class="map-stats" id="map-stats"></div>
+  </div>
+</div>
+
+<section class="tiles fadeable" id="tiles"></section>
+
+<div class="grid-2">
+  <div class="card fadeable">
+    <div class="chart-head">
+      <div>
+        <h2>History</h2>
+        <p class="sub" id="chart-sub">Recent samples, as recorded.</p>
+      </div>
+      <div class="tabs" role="tablist" aria-label="Chart series">
+        <button id="tab-power" role="tab" aria-selected="true" aria-controls="chart">Power</button>
+        <button id="tab-soc" role="tab" aria-selected="false" aria-controls="chart">Charge</button>
+        <button id="tab-speed" role="tab" aria-selected="false" aria-controls="chart">Speed</button>
+      </div>
+    </div>
+    <canvas id="chart" aria-label="History chart"></canvas>
+    <p class="chart-empty" id="chart-empty">Not enough samples to draw yet.</p>
+  </div>
+
+  <div class="card fadeable">
+    <h2>What the data says</h2>
+    <p class="sub">Derived on the node, not in the browser.</p>
+    <ul class="notes" id="notes"></ul>
+  </div>
+</div>
+
+<section class="card fadeable" style="margin-top:var(--gap)">
+  <div class="signal-head">
+    <div>
+      <h2>Every signal</h2>
+      <p class="sub" id="signal-sub">Grouped by the module that answers it.</p>
+    </div>
+    <div>
+      <label class="sr" for="signal-search">Filter signals</label>
+      <input id="signal-search" type="search" placeholder="Filter by name, module or identifier" autocomplete="off">
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">Signal</th><th scope="col">Value</th><th scope="col">State</th>
+        <th scope="col">Age</th><th scope="col">Source</th><th scope="col">Confidence</th>
+      </tr>
+    </thead>
+    <tbody id="signals-body"></tbody>
+  </table>
+</section>
+
+</div>
+<script>
+"use strict";
+(function () {
+  var POLL_MS = 5000, TIMEOUT_MS = 4500;
+
+  /* Below this much spread across the whole session, the "track" is receiver
+     noise rather than travel. A stationary BU-353S4 wanders tens of metres. */
+  var STATIONARY_M = 120;
+
+  /* The pack, as it is actually built: 24 modules in two layers of twelve,
+     each layer two across the width and six front to back. In a plan view the
+     layers are stacked out of the page, so each of the twelve footprint
+     positions is drawn split -- upper half is layer A, lower half layer B. */
+  var PACK = { x: 294, y: 96, w: 372, h: 208, cols: 6, rows: 2 };
+
+  var el = {}, state = {
+    snapshot: null, sessions: [], selected: "latest", network: "loading",
+    error: "", timer: null, busy: false, queued: false, generation: 0,
+    series: "power", filter: ""
+  };
+
+  function byId(id) { return document.getElementById(id); }
+  [ "status-primary","status-secondary","banner","session-select","f-samples",
+    "f-duration","f-period","f-age","vehicle-sub","modules","legend",
+    "module-caveat","map","map-grid","trail","trail-head","map-empty","map-stats",
+    "tiles","chart","chart-empty","chart-sub","tab-power","tab-soc","tab-speed",
+    "notes","signal-search","signals-body","signal-sub","charge-led",
+    "t-fl","t-fr","t-rl","t-rr","w-fl","w-fr","w-rl","w-rr"
+  ].forEach(function (id) { el[id] = byId(id); });
+
+  /* ---------- small helpers ---------- */
+  function num(v) { return typeof v === "number" && isFinite(v) ? v : null; }
+  function fmt(v, digits, dash) {
+    var n = num(v);
+    return n === null ? (dash || "–") : n.toFixed(digits === undefined ? 1 : digits);
+  }
+  function clear(node) { while (node && node.firstChild) node.removeChild(node.firstChild); }
+  function make(tag, cls, text) {
+    var n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    if (cls) n.setAttribute("class", cls);
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+  function h(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;   // never innerHTML
+    return n;
+  }
+  function duration(s) {
+    var n = num(s); if (n === null) return "–";
+    var t = Math.max(0, Math.round(n)), hh = Math.floor(t / 3600),
+        mm = Math.floor((t % 3600) / 60), ss = t % 60;
+    return hh ? hh + "h " + mm + "m" : (mm ? mm + "m " + ss + "s" : ss + "s");
+  }
+  function sig(name) {
+    var s = state.snapshot && state.snapshot.signals;
+    return (s && s[name]) || null;
+  }
+  function sigValue(name) { var s = sig(name); return s ? num(s.value) : null; }
+  /* The server's `derived` object is authoritative: if the key is present its
+     value wins even when null, because a null there means the node decided the
+     reading was not trustworthy. Falling back to a raw signal would put a
+     number on screen that the node deliberately withheld. */
+  function derived(key) {
+    var d = state.snapshot && state.snapshot.derived;
+    if (!d || !(key in d)) return undefined;
+    return d[key];
+  }
+  function hexBytes(text) {
+    if (typeof text !== "string") return [];
+    var clean = text.replace(/\s+/g, ""), out = [];
+    if (clean.length % 2 !== 0 || !/^[0-9A-Fa-f]*$/.test(clean)) return [];
+    for (var i = 0; i < clean.length; i += 2) out.push(parseInt(clean.substr(i, 2), 16));
+    return out;
+  }
+
+  /* ---------- view state ---------- */
+  function viewState() {
+    if (state.network === "error") return "error";
+    if (state.network === "loading" && !state.snapshot) return "loading";
+    var s = state.snapshot && state.snapshot.session;
+    if (!s || !s.id || s.status === "empty") return "empty";
+    if (state.selected !== "latest" || s.status === "historical") return "historical";
+    return s.status === "live" ? "live" : "stale";
+  }
+  function signalStatus(raw, vs) {
+    if (raw === "missing" || raw === "invalid") return raw;
+    if (vs === "error") return "offline";
+    if (vs === "historical") return raw === "fresh" ? "recorded" : raw;
+    if (vs === "stale") return "stale";
+    return raw === "fresh" || raw === "stale" ? raw : "missing";
+  }
+
+  /* ---------- the vehicle ---------- */
+  function buildModules() {
+    clear(el.modules);
+    var cw = PACK.w / PACK.cols, ch = PACK.h / PACK.rows, pad = 3;
+    for (var r = 0; r < PACK.rows; r++) {
+      for (var c = 0; c < PACK.cols; c++) {
+        for (var layer = 0; layer < 2; layer++) {
+          var x = PACK.x + c * cw + pad,
+              y = PACK.y + r * ch + layer * (ch / 2) + pad / 2,
+              rect = make("rect", "mod");
+          rect.setAttribute("x", x.toFixed(1));
+          rect.setAttribute("y", y.toFixed(1));
+          rect.setAttribute("width", (cw - pad * 2).toFixed(1));
+          rect.setAttribute("height", (ch / 2 - pad).toFixed(1));
+          rect.setAttribute("rx", "3");
+          rect.setAttribute("stroke", "#333a3e");
+          rect.setAttribute("stroke-width", "0.8");
+          /* index: layer A is 0-11, layer B is 12-23, both front to back */
+          rect.dataset.index = String(layer * 12 + r * PACK.cols + c);
+          el.modules.appendChild(rect);
         }
       }
+    }
+  }
 
-      function queueRefresh(delay = POLL_MS) {
-        if (state.timer !== null) window.clearTimeout(state.timer);
-        state.timer = window.setTimeout(refresh, delay);
-      }
+  /* Colour by distance from the median of the 24, not by absolute value.
+     The array's scaling is unproven, so an absolute ramp would be inventing
+     units. What is genuinely useful and honest is which module is unlike its
+     neighbours -- that is what a failing module looks like. */
+  function moduleColour(value, median, spread) {
+    if (value === null || spread <= 0) return "#262b2e";
+    var z = (value - median) / spread;
+    if (z > 2.2) return "#ff5c5c";
+    if (z > 1.1) return "#ffb454";
+    if (z < -2.2) return "#55d9ed";
+    if (z < -1.1) return "#7fd3e8";
+    return "#4e9c68";
+  }
 
-      async function refresh() {
-        if (state.refreshing) {
-          state.refreshQueued = true;
-          return;
-        }
-        state.refreshing = true;
-        state.refreshQueued = false;
-        if (state.timer !== null) window.clearTimeout(state.timer);
-        state.timer = null;
-        const generation = state.generation;
-        try {
-          const sessions = await getJson("/api/sessions");
-          if (generation !== state.generation) return;
-          updateSessionOptions(sessions);
-          const requestedSession = state.selected;
-          const snapshot = await getJson(`/api/snapshot?session=${encodeURIComponent(requestedSession)}`);
-          if (generation !== state.generation || requestedSession !== state.selected) return;
-          if (!snapshot || typeof snapshot !== "object" || !snapshot.session || !snapshot.signals) {
-            throw new Error("Invalid snapshot response");
-          }
-          state.snapshot = snapshot;
-          state.network = "ok";
-          state.errorMessage = "";
-          state.lastSuccessAt = new Date();
-          render();
-        } catch (error) {
-          if (generation === state.generation) {
-            state.network = "error";
-            state.errorMessage = error && error.message ? error.message : "Refresh failed";
-            render();
-          }
-        } finally {
-          state.refreshing = false;
-          queueRefresh(state.refreshQueued || generation !== state.generation ? 0 : POLL_MS);
-        }
-      }
+  function renderVehicle(vs) {
+    var bytes = hexBytes(sig("array_2af1") ? sig("array_2af1").value : null),
+        cells = el.modules.childNodes, usable = bytes.length >= 24, median = 0, spread = 0;
+    if (usable) {
+      var sorted = bytes.slice(0, 24).sort(function (a, b) { return a - b; });
+      median = sorted[12];
+      var devs = bytes.slice(0, 24).map(function (v) { return Math.abs(v - median); })
+                      .sort(function (a, b) { return a - b; });
+      spread = devs[12] || 1;
+    }
+    for (var i = 0; i < cells.length; i++) {
+      var idx = Number(cells[i].dataset.index),
+          value = usable && idx < 24 ? bytes[idx] : null;
+      cells[i].setAttribute("fill", moduleColour(value, median, spread));
+      clear(cells[i]);
+      var t = make("title", null, usable && value !== null
+        ? "Module " + (idx < 12 ? "A" : "B") + (idx % 12 + 1) + " — 0x2AF1 byte " + idx + " = " + value
+        : "Module " + (idx < 12 ? "A" : "B") + (idx % 12 + 1) + " — no reading");
+      cells[i].appendChild(t);
+    }
+    el["vehicle-sub"].textContent = usable
+      ? "Plan view, nose left, driver's side at the bottom. Modules shaded by how far each sits from the median of the 24."
+      : "Plan view, nose left, driver's side at the bottom. No per-module array in this sample.";
 
-      function selectChartMetric(metric) {
-        state.chartMetric = metric;
-        drawChart();
-      }
-
-      elements.sessionSelect.addEventListener("change", () => {
-        state.selected = elements.sessionSelect.value;
-        state.snapshot = null;
-        state.network = "loading";
-        state.generation += 1;
-        state.refreshQueued = true;
-        render();
-        if (!state.refreshing) queueRefresh(0);
+    /* wheels */
+    [["fl","wheel_fl_kph"],["fr","wheel_fr_kph"],["rl","wheel_rl_kph"],["rr","wheel_rr_kph"]]
+      .forEach(function (pair) {
+        var v = sigValue(pair[1]);
+        el["t-" + pair[0]].textContent = v === null ? "–" : v.toFixed(0);
+        el["w-" + pair[0]].setAttribute("fill", v === null ? "#20262a" : (v > 1 ? "#2f4a35" : "#20262a"));
       });
 
-      elements.search.addEventListener("input", () => {
-        state.search = elements.search.value;
-        renderSignals(effectiveViewState());
-      });
+    /* charge port */
+    var chg = derived("charging"), raw = derived("charger_raw");
+    el["charge-led"].setAttribute("fill", chg ? "#beeaf7" : "#394145");
+    clear(el["charge-led"]);
+    el["charge-led"].appendChild(make("title", null,
+      chg ? "Charging — 0x5401 = " + (raw || "?") : "Not charging"));
+  }
 
-      elements.tabPower.addEventListener("click", () => selectChartMetric("power"));
-      elements.tabSoc.addEventListener("click", () => selectChartMetric("soc"));
-      elements.tabPower.addEventListener("keydown", (event) => {
-        if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
-          event.preventDefault();
-          elements.tabSoc.focus();
-          selectChartMetric("soc");
-        }
-      });
-      elements.tabSoc.addEventListener("keydown", (event) => {
-        if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
-          event.preventDefault();
-          elements.tabPower.focus();
-          selectChartMetric("power");
-        }
-      });
+  /* ---------- the map ----------
+     Drawn from the recorder's own fixes. No tile server: the CSP forbids it,
+     and asking one for tiles would hand a stranger the coordinates this
+     project spent real effort keeping local. */
+  function renderMap() {
+    var hist = (state.snapshot && state.snapshot.history) || [],
+        pts = [];
+    for (var i = 0; i < hist.length; i++) {
+      var la = num(hist[i].gps_lat), lo = num(hist[i].gps_lon);
+      if (la !== null && lo !== null) pts.push([la, lo]);
+    }
+    clear(el["map-grid"]); clear(el["trail-head"]);
+    el.trail.setAttribute("d", "");
+    clear(el["map-stats"]);
 
-      let resizeFrame = null;
-      window.addEventListener("resize", () => {
-        if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
-        resizeFrame = window.requestAnimationFrame(() => {
-          resizeFrame = null;
-          drawChart();
-        });
-      });
+    if (pts.length < 2) {
+      el["map-empty"].style.display = "grid";
+      el["map-empty"].textContent = pts.length === 1
+        ? "One fix so far. A line needs two."
+        : "No position in this session. The reader serves coordinates only with --expose-location.";
+      return;
+    }
+    el["map-empty"].style.display = "none";
 
+    var lats = pts.map(function (p) { return p[0]; }), lons = pts.map(function (p) { return p[1]; }),
+        minLa = Math.min.apply(null, lats), maxLa = Math.max.apply(null, lats),
+        minLo = Math.min.apply(null, lons), maxLo = Math.max.apply(null, lons),
+        midLa = (minLa + maxLa) / 2,
+        /* metres per degree, good enough at any one drive's scale */
+        mPerLat = 111320, mPerLon = 111320 * Math.cos(midLa * Math.PI / 180),
+        spanX = Math.max(1, (maxLo - minLo) * mPerLon),
+        spanY = Math.max(1, (maxLa - minLa) * mPerLat),
+        pad = 26, W = 500 - pad * 2, H = 340 - pad * 2;
+
+    /* A parked vehicle still produces fixes, and they wander. Auto-scaling
+       that to fill the frame draws tens of metres of receiver scatter as
+       though it were a journey -- which is exactly what it looked like the
+       first time this ran: 35 m by 19 m of jitter rendered as a convincing
+       route. Below a threshold, say so instead of drawing a lie. */
+    var extent = Math.max(spanX, spanY);
+    if (extent < STATIONARY_M) {
+      el["map-empty"].style.display = "grid";
+      el["map-empty"].textContent =
+        "Stationary. " + pts.length + " fixes spread over " + extent.toFixed(0) +
+        " m, which is the receiver wandering, not the vehicle moving.";
+      return;
+    }
+
+    var scale = Math.min(W / spanX, H / spanY),
+        offX = pad + (W - spanX * scale) / 2, offY = pad + (H - spanY * scale) / 2;
+
+    function project(la, lo) {
+      return [offX + (lo - minLo) * mPerLon * scale,
+              offY + (maxLa - la) * mPerLat * scale];   /* north is up */
+    }
+    for (var g = 0; g <= 4; g++) {
+      var ln = make("line");
+      ln.setAttribute("x1", pad); ln.setAttribute("x2", 500 - pad);
+      ln.setAttribute("y1", pad + g * H / 4); ln.setAttribute("y2", pad + g * H / 4);
+      ln.setAttribute("stroke", "#1a1f22"); ln.setAttribute("stroke-width", "1");
+      el["map-grid"].appendChild(ln);
+    }
+    var d = "";
+    for (var k = 0; k < pts.length; k++) {
+      var xy = project(pts[k][0], pts[k][1]);
+      d += (k ? "L" : "M") + xy[0].toFixed(1) + " " + xy[1].toFixed(1) + " ";
+    }
+    el.trail.setAttribute("d", d.trim());
+
+    /* the vehicle, at the newest fix, pointed along the last leg */
+    var last = project(pts[pts.length - 1][0], pts[pts.length - 1][1]),
+        prev = project(pts[Math.max(0, pts.length - 2)][0], pts[Math.max(0, pts.length - 2)][1]),
+        heading = num(sigValue("gps_track_deg"));
+    if (heading === null) {
+      heading = Math.atan2(last[0] - prev[0], prev[1] - last[1]) * 180 / Math.PI;
+    }
+    var car = make("g", "trail-head");
+    car.setAttribute("transform",
+      "translate(" + last[0].toFixed(1) + "," + last[1].toFixed(1) + ") rotate(" + heading.toFixed(1) + ")");
+    var halo = make("circle");
+    halo.setAttribute("r", "13"); halo.setAttribute("fill", "rgba(238,82,26,.16)");
+    car.appendChild(halo);
+    /* a small plan-view truck, nose up, so rotate() reads as a compass bearing */
+    var body = make("path");
+    body.setAttribute("d", "M-6,-10 L6,-10 L7,6 L-7,6 Z");
+    body.setAttribute("fill", "#ee521a");
+    body.setAttribute("stroke", "#ffd4c2"); body.setAttribute("stroke-width", "1");
+    car.appendChild(body);
+    var cab = make("rect");
+    cab.setAttribute("x", "-4.5"); cab.setAttribute("y", "-4");
+    cab.setAttribute("width", "9"); cab.setAttribute("height", "7");
+    cab.setAttribute("rx", "1.5"); cab.setAttribute("fill", "#7a2a0d");
+    car.appendChild(cab);
+    el["trail-head"].appendChild(car);
+
+    /* distance along the trail */
+    var metres = 0;
+    for (var m = 1; m < pts.length; m++) {
+      var dy = (pts[m][0] - pts[m - 1][0]) * mPerLat,
+          dx = (pts[m][1] - pts[m - 1][1]) * mPerLon;
+      metres += Math.sqrt(dx * dx + dy * dy);
+    }
+    function stat(label, value) {
+      var w = h("span"); w.appendChild(document.createTextNode(label + " "));
+      var b = h("b", null, value); w.appendChild(b);
+      el["map-stats"].appendChild(w);
+    }
+    stat("fixes", String(pts.length));
+    stat("track", (metres / 1000).toFixed(2) + " km");
+    var alt = sigValue("gps_alt_m"), sats = sigValue("gps_sats");
+    if (alt !== null) stat("altitude", alt.toFixed(0) + " m");
+    if (sats !== null) stat("satellites", String(sats));
+  }
+
+  /* ---------- tiles ---------- */
+  var TILES = [
+    { key: "soc_pct",    label: "State of charge", unit: "%",  digits: 1, accent: "var(--live)",
+      detail: function () { var k = num(derived("implied_kwh"));
+        return k === null ? "" : "implies " + k.toFixed(1) + " kWh usable"; } },
+    { key: "pack_kw",    label: "Pack power",      unit: "kW", digits: 1, accent: "var(--ev-orange)",
+      detail: function () { var v = num(derived("pack_v")), a = num(derived("pack_a"));
+        return v === null || a === null ? "" : v.toFixed(1) + " V × " + a.toFixed(1) + " A"; } },
+    { key: "speed_now_kph", label: "Speed",        unit: "km/h", digits: 0, accent: "var(--cool)",
+      detail: function () { var m = num(derived("speed_max_kph"));
+        return m === null ? "" : "peak " + m.toFixed(0) + " km/h this session"; } },
+    { key: "cell_spread_mv", label: "Cell spread", unit: "mV", digits: 1, accent: "var(--warn)",
+      detail: function () { var c = num(derived("cell_avg_v"));
+        return c === null ? "" : "average cell " + c.toFixed(4) + " V"; } },
+    { key: "energy_kwh", label: "Energy in pack",  unit: "kWh", digits: 2, accent: "var(--good)",
+      detail: function () { var d = num(derived("distance_km"));
+        return d === null ? "" : d.toFixed(1) + " km this session"; } },
+    { key: "resistance", label: "Pack resistance", unit: "mΩ", digits: 2, accent: "var(--ev-charge)",
+      detail: function () { var r = derived("resistance");
+        return Array.isArray(r) && r.length >= 2 ? "n=" + r[1] + " current steps" : "needs current steps"; } }
+  ];
+  function tileValue(t) {
+    var d = derived(t.key);
+    if (d === undefined) return null;
+    if (Array.isArray(d)) return num(d[0]);        /* resistance is (mΩ, n, r) */
+    return num(d);
+  }
+  function renderTiles() {
+    clear(el.tiles);
+    TILES.forEach(function (t) {
+      var card = h("div", "tile"), v = tileValue(t);
+      card.style.setProperty("--accent", t.accent);
+      card.appendChild(h("div", "k", t.label));
+      var val = h("div", "v");
+      val.appendChild(document.createTextNode(v === null ? "–" : v.toFixed(t.digits)));
+      if (v !== null) val.appendChild(h("small", null, t.unit));
+      card.appendChild(val);
+      card.appendChild(h("div", "d", v === null ? "not available in this sample" : (t.detail() || "")));
+      el.tiles.appendChild(card);
+    });
+  }
+
+  /* ---------- chart ---------- */
+  var SERIES = {
+    power: { key: "pack_kw", label: "Pack power", unit: "kW", colour: "#ee521a", zero: true },
+    soc:   { key: "soc_pct", label: "State of charge", unit: "%", colour: "#b9f227", zero: false },
+    speed: { key: "speed_kph", label: "Speed", unit: "km/h", colour: "#55d9ed", zero: true }
+  };
+  function drawChart() {
+    var canvas = el.chart, spec = SERIES[state.series],
+        hist = (state.snapshot && state.snapshot.history) || [],
+        pts = [];
+    for (var i = 0; i < hist.length; i++) {
+      var t = num(hist[i].elapsed_s), v = num(hist[i][spec.key]);
+      if (t !== null && v !== null) pts.push([t, v]);
+    }
+    el["chart-sub"].textContent = spec.label + ", as recorded. Gaps are gaps, never interpolated.";
+    var ratio = window.devicePixelRatio || 1,
+        w = canvas.clientWidth || 600, ht = 230;
+    canvas.width = Math.round(w * ratio); canvas.height = Math.round(ht * ratio);
+    var ctx = canvas.getContext("2d");
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.clearRect(0, 0, w, ht);
+    if (pts.length < 2) { el["chart-empty"].style.display = "block"; return; }
+    el["chart-empty"].style.display = "none";
+
+    var xs = pts.map(function (p) { return p[0]; }), ys = pts.map(function (p) { return p[1]; }),
+        x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs),
+        y0 = Math.min.apply(null, ys), y1 = Math.max.apply(null, ys);
+    if (spec.zero) { y0 = Math.min(y0, 0); y1 = Math.max(y1, 0); }
+    if (y1 - y0 < 1e-6) { y1 = y0 + 1; }
+    var padL = 46, padR = 12, padT = 14, padB = 24,
+        pw = w - padL - padR, ph = ht - padT - padB;
+    function px(x) { return padL + (x - x0) / Math.max(1e-6, x1 - x0) * pw; }
+    function py(y) { return padT + (y1 - y) / (y1 - y0) * ph; }
+
+    ctx.strokeStyle = "rgba(56,69,74,.55)"; ctx.lineWidth = 1;
+    ctx.fillStyle = "#93a1a5"; ctx.font = "11px ui-sans-serif,system-ui";
+    for (var g = 0; g <= 4; g++) {
+      var yy = padT + g * ph / 4, val = y1 - g * (y1 - y0) / 4;
+      ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(w - padR, yy); ctx.stroke();
+      ctx.fillText(val.toFixed(Math.abs(y1 - y0) < 10 ? 1 : 0), 6, yy + 3.5);
+    }
+    if (spec.zero && y0 < 0 && y1 > 0) {
+      ctx.strokeStyle = "rgba(147,161,165,.45)"; ctx.beginPath();
+      ctx.moveTo(padL, py(0)); ctx.lineTo(w - padR, py(0)); ctx.stroke();
+    }
+    ctx.strokeStyle = spec.colour; ctx.lineWidth = 2;
+    ctx.lineJoin = "round"; ctx.lineCap = "round";
+    ctx.beginPath();
+    for (var k = 0; k < pts.length; k++) {
+      var X = px(pts[k][0]), Y = py(pts[k][1]);
+      if (k === 0) ctx.moveTo(X, Y); else ctx.lineTo(X, Y);
+    }
+    ctx.stroke();
+    ctx.fillStyle = "#93a1a5";
+    ctx.fillText(duration(x0), padL, ht - 7);
+    var endLabel = duration(x1);
+    ctx.fillText(endLabel, w - padR - ctx.measureText(endLabel).width, ht - 7);
+  }
+
+  /* ---------- notes ---------- */
+  function renderNotes() {
+    clear(el.notes);
+    var snap = state.snapshot;
+    if (!snap) return;
+    var items = [], empties = 0;
+    (snap.insights || []).forEach(function (n) {
+      if (n && typeof n.text === "string") items.push(n.text);
+      else if (typeof n === "string") items.push(n);
+    });
+    /* The completeness warnings are one sentence per absent column and there
+       can be twenty of them, which buries every real finding underneath.
+       They say one thing -- some columns did not answer -- so say it once. */
+    (snap.warnings || []).forEach(function (w) {
+      if (typeof w !== "string") return;
+      if (/is empty for the whole session|is present in only/.test(w)) { empties++; return; }
+      items.push(w);
+    });
+    if (empties) {
+      items.push(empties + " column" + (empties === 1 ? "" : "s") +
+        " did not answer, or answered in only part of this session. That is " +
+        "usual while the vehicle is asleep; the signal table below marks each one.");
+    }
+    if (!items.length) items.push("Nothing unusual in this session.");
+    items.slice(0, 12).forEach(function (text) { el.notes.appendChild(h("li", null, text)); });
+  }
+
+  /* ---------- signals ---------- */
+  function renderSignals(vs) {
+    clear(el["signals-body"]);
+    var signals = (state.snapshot && state.snapshot.signals) || {},
+        names = Object.keys(signals).sort(), filter = state.filter.toLowerCase(), shown = 0;
+    names.forEach(function (name) {
+      var s = signals[name] || {},
+          hay = (name + " " + (s.label || "") + " " + (s.source || "") + " " + (s.identifier || "")).toLowerCase();
+      if (filter && hay.indexOf(filter) === -1) return;
+      shown++;
+      var tr = h("tr");
+      function cell(label, node) {
+        var td = h("td"); td.dataset.label = label;
+        td.appendChild(typeof node === "string" ? document.createTextNode(node) : node);
+        tr.appendChild(td);
+      }
+      var nameWrap = h("div");
+      nameWrap.appendChild(h("div", null, s.label || name));
+      nameWrap.appendChild(h("div", "prov", name));
+      cell("Signal", nameWrap);
+      var v = s.value, text;
+      if (v === null || v === undefined) text = "–";
+      else if (typeof v === "number") text = (Math.abs(v) >= 1000 ? v.toFixed(0) : v.toFixed(3).replace(/\.?0+$/, ""));
+      else text = String(v).slice(0, 60);
+      var vNode = h("span", "num", text + (s.unit && v !== null && v !== undefined ? " " + s.unit : ""));
+      cell("Value", vNode);
+      var st = signalStatus(s.status, vs);
+      cell("State", h("span", "pill s-" + st, st));
+      cell("Age", num(s.age_s) === null ? "–" : duration(s.age_s) + " ago");
+      cell("Source", h("span", "prov", (s.source || "–") + (s.identifier ? " · " + s.identifier : "")));
+      cell("Confidence", h("span", "conf",
+        s.confidence === null || s.confidence === undefined ? "–"
+          : ("level " + s.confidence + (s.confidence_label ? " · " + s.confidence_label : ""))));
+      el["signals-body"].appendChild(tr);
+    });
+    el["signal-sub"].textContent = shown + " of " + names.length +
+      " signals" + (filter ? " matching “" + state.filter + "”" : "") + ", grouped by the module that answers them.";
+    if (!shown) {
+      var tr = h("tr"), td = h("td", "empty-row", "No signal matches that filter.");
+      td.colSpan = 6; tr.appendChild(td); el["signals-body"].appendChild(tr);
+    }
+  }
+
+  /* ---------- legend + caveat ---------- */
+  function renderLegend() {
+    clear(el.legend);
+    [["#4e9c68","typical"],["#ffb454","above the pack"],["#ff5c5c","well above"],
+     ["#7fd3e8","below the pack"],["#262b2e","no reading"]].forEach(function (pair) {
+      var span = h("span"), swatch = h("i");
+      swatch.style.background = pair[0];
+      span.appendChild(swatch); span.appendChild(document.createTextNode(pair[1]));
+      el.legend.appendChild(span);
+    });
+    el["module-caveat"].textContent =
+      "Placement is from GM's published pack architecture: 24 modules in two layers of twelve, " +
+      "two across and six front to back, between the axles. Which array index is which physical " +
+      "module is NOT established — 0x2AF1 returns 24 bytes and the pack has 24 modules, and that " +
+      "correspondence is the whole of the evidence. Read a hot cell as “one of these differs”, " +
+      "never as “that one, third from the front”.";
+  }
+
+  /* ---------- header + session bar ---------- */
+  var BANNERS = {
+    error: "The local telemetry reader could not be refreshed. Last-known values remain below, marked unavailable.",
+    stale: "The recorder has not written a sample recently. The vehicle is probably asleep.",
+    historical: "A past session. Nothing here is live.",
+    empty: "No recorded sessions yet."
+  };
+  function renderHeader(vs) {
+    document.documentElement.dataset.viewState = vs;
+    document.body.dataset.viewState = vs;
+    var s = (state.snapshot && state.snapshot.session) || {},
+        primary = { live: "Live", stale: "Vehicle asleep", historical: "Historical",
+                    error: "Refresh unavailable", empty: "No sessions", loading: "Connecting" }[vs];
+    el["status-primary"].textContent = primary;
+    el["status-secondary"].textContent = vs === "error" ? (state.error || "")
+      : (num(s.age_s) !== null ? "newest sample " + duration(s.age_s) + " ago" : "reading the local session");
+    el.banner.textContent = BANNERS[vs] || "";
+    el["f-samples"].textContent = num(s.rows) === null ? "–" : String(s.rows);
+    el["f-duration"].textContent = duration(s.elapsed_s);
+    el["f-period"].textContent = num(s.period_s) === null ? "–" : s.period_s.toFixed(1) + " s";
+    el["f-age"].textContent = num(s.age_s) === null ? "–" : duration(s.age_s) + " ago";
+  }
+  function renderSessions(list) {
+    if (!Array.isArray(list)) return;
+    var ids = list.map(function (x) { return typeof x === "string" ? x : (x && x.id); })
+                  .filter(function (x) { return typeof x === "string"; });
+    if (ids.join("|") === state.sessions.join("|")) return;
+    state.sessions = ids;
+    clear(el["session-select"]);
+    var latest = h("option", null, "Latest session");
+    latest.value = "latest"; el["session-select"].appendChild(latest);
+    ids.forEach(function (id) {
+      var o = h("option", null, id.replace(/^drive-|\.csv$/g, ""));
+      o.value = id; el["session-select"].appendChild(o);
+    });
+    el["session-select"].value = state.selected;
+  }
+
+  function render() {
+    var vs = viewState();
+    renderHeader(vs);
+    renderTiles();
+    renderVehicle(vs);
+    renderMap();
+    renderNotes();
+    renderSignals(vs);
+    drawChart();
+  }
+
+  /* ---------- polling ----------
+     Two sequential requests, rescheduled from finally() so nothing can stop
+     the loop, with a generation counter so a reply that arrives after the
+     user changed session is dropped rather than rendered against the wrong
+     one. Kept from the implementation this replaces; it was already right. */
+  function getJson(path) {
+    var controller = new AbortController(),
+        timer = window.setTimeout(function () { controller.abort(); }, TIMEOUT_MS);
+    return fetch(path, {
+      method: "GET", cache: "no-store", credentials: "same-origin",
+      headers: { Accept: "application/json" }, signal: controller.signal
+    }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }).finally(function () { window.clearTimeout(timer); });
+  }
+  function queue(delay) {
+    if (state.timer !== null) window.clearTimeout(state.timer);
+    state.timer = window.setTimeout(refresh, delay === undefined ? POLL_MS : delay);
+  }
+  function refresh() {
+    if (state.busy) { state.queued = true; return; }
+    state.busy = true; state.queued = false;
+    if (state.timer !== null) { window.clearTimeout(state.timer); state.timer = null; }
+    var generation = state.generation, wanted = state.selected;
+    getJson("/api/sessions").then(function (sessions) {
+      if (generation !== state.generation) return null;
+      renderSessions(sessions);
+      return getJson("/api/snapshot?session=" + encodeURIComponent(wanted));
+    }).then(function (snapshot) {
+      if (snapshot === null) return;
+      if (generation !== state.generation || wanted !== state.selected) return;
+      if (!snapshot || typeof snapshot !== "object" || !snapshot.session || !snapshot.signals) {
+        throw new Error("Invalid snapshot response");
+      }
+      state.snapshot = snapshot; state.network = "ok"; state.error = "";
       render();
-      refresh();
-    })();
-  </script>
+    }).catch(function (err) {
+      if (generation === state.generation) {
+        state.network = "error";
+        state.error = err && err.message ? err.message : "Refresh failed";
+        render();
+      }
+    }).finally(function () {
+      state.busy = false;
+      queue(state.queued || generation !== state.generation ? 0 : POLL_MS);
+    });
+  }
+
+  /* ---------- wiring ---------- */
+  el["session-select"].addEventListener("change", function (ev) {
+    state.selected = ev.target.value; state.snapshot = null;
+    state.generation++; state.network = "loading"; render(); refresh();
+  });
+  el["signal-search"].addEventListener("input", function (ev) {
+    state.filter = ev.target.value || ""; renderSignals(viewState());
+  });
+  [["tab-power","power"],["tab-soc","soc"],["tab-speed","speed"]].forEach(function (pair) {
+    el[pair[0]].addEventListener("click", function () {
+      state.series = pair[1];
+      ["tab-power","tab-soc","tab-speed"].forEach(function (id) {
+        el[id].setAttribute("aria-selected", String(el[id] === el[pair[0]]));
+      });
+      drawChart();
+    });
+  });
+  var raf = null;
+  window.addEventListener("resize", function () {
+    if (raf !== null) window.cancelAnimationFrame(raf);
+    raf = window.requestAnimationFrame(function () { raf = null; drawChart(); });
+  });
+
+  buildModules();
+  renderLegend();
+  render();
+  refresh();
+})();
+</script>
 </body>
 </html>

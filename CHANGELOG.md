@@ -161,6 +161,44 @@ discount.
   exists rather than a deletion so that publishing location is a visible act
   recorded in the command line that started the server.
 
+### Changed
+
+- **The dashboard is now the vehicle.** Every reading this truck gives up
+  belongs to a physical part of it, and a table of names throws that away. The
+  page is a plan view — nose left, driver's side at the bottom — with the 24
+  battery modules drawn where GM builds them (two layers of twelve, two across
+  and six front-to-back, between the axles), the three motors on the axles they
+  drive, the charge port on the driver's-side rear quarter, the 12 V battery in
+  the frunk pod and the thermal hardware in the front zone.
+
+  Modules are shaded by **distance from the median of the 24**, not by absolute
+  value. The array's scaling is unproven, so an absolute ramp would be inventing
+  units; what is both honest and useful is which module is unlike its
+  neighbours, because that is what a failing one looks like. The page says
+  plainly that index-to-position is *not* established: `0x2AF1` returns 24 bytes
+  and the pack has 24 modules, and that correspondence is the whole of the
+  evidence.
+
+  A **live track** is drawn from the recorder's own fixes as SVG — no tile
+  server, because the CSP forbids one and asking for tiles would hand a stranger
+  the coordinates this project spent the day keeping local. 1,013 lines
+  replacing 2,035, one self-contained file, no external anything.
+
+### Fixed
+
+- **Three faults found by rendering the page and looking at it**, none of which
+  a code review would have caught:
+  - Every module drew the same dark shade whatever the telemetry said. In SVG a
+    CSS declaration **overrides a presentation attribute**, so a leftover
+    `.mod-empty{fill:…}` rule silently beat the colour the script set. CSS now
+    owns the animation and the script owns `fill`.
+  - The map auto-scaled a **parked** vehicle's receiver scatter to fill the
+    frame, drawing 35 m by 19 m of jitter as a convincing journey. Below a
+    120 m extent it now says so instead.
+  - The completeness warnings are one sentence per absent column and there were
+    thirty-three of them, burying every real finding. They say one thing, so
+    they are said once.
+
 ### Fixed
 
 - **`gps_time` was permanently null.** It is an ISO-8601 string but was absent

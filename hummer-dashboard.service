@@ -1,0 +1,41 @@
+[Unit]
+Description=Hummer Pi read-only telemetry dashboard
+Documentation=https://github.com/JeremyWhittaker/hummer_obdII
+# Reads the session CSVs the recorder writes. It never opens the serial device
+# and never transmits to the vehicle, so it is safe to run continuously and
+# needs no ordering against hummer-drive -- a missing session is a state it
+# already renders.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jeremy
+Group=jeremy
+WorkingDirectory=/home/jeremy/hummer-obd
+Environment=PYTHONPATH=/home/jeremy/hummer-obd/src
+# --host binds the Tailscale address deliberately: not 0.0.0.0, and not the
+# LAN address either, so the listener is reachable only across the tailnet.
+#
+# --expose-location serves GPS coordinates to the browser. It is OFF in the
+# program's default and ON here, which is the point of it being a flag: the
+# decision to publish position is visible in this file rather than buried in
+# a filter somewhere, and removing it here is all it takes to withdraw.
+ExecStart=/usr/bin/python3 -m hummer_obd.dashboard \
+  --host 100.71.118.116 --port 8765 --expose-location
+Restart=on-failure
+RestartSec=5
+# It only ever reads session files and serves them.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/home/jeremy/hummer-obd
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target
