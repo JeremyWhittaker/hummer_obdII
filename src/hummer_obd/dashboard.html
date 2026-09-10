@@ -1854,7 +1854,22 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            and the cluster about 0.7 m -- the distances a driver actually
            sits at, arrived at by looking rather than by arithmetic. */
         cam = { yaw: -0.72, pitch: 0.34, dist: 8.2, spin: 0,
-                mode: "orbit", dyaw: 0.20, dpitch: 0.035 },
+                /* Aimed at the instruments, computed rather than nudged.
+                   From the eye at [0.15, 1.66, -0.33] the cluster sits 0.836 m
+                   ahead, 0.060 m below and 0.070 m left, which is dyaw -0.084
+                   and dpitch -0.071; the centre screen is at dyaw +0.224. The
+                   default splits them at +0.08 so both are in frame with the
+                   cluster left of centre, which is where a driver's is.
+
+                   It was +0.20 and +0.035 -- aimed between the screens but
+                   pitched UP, so the instruments sat low and half off the
+                   left edge, which is what "the displays don't show that
+                   well" was describing. */
+                mode: "orbit", dyaw: 0.02, dpitch: -0.055,
+                /* Jolt state, kept on the camera so it survives between
+                   frames -- a bump that lasted one sample should ring and
+                   settle, not vanish on the next repaint. */
+                shake: 0, lastLat: 0, lastLon: 0 },
         /* Framed on the instruments rather than parked in the middle of the
            cabin. The point of this view is the cluster, the centre screen and
            the detector on the glass -- the things that carry readings -- not a
@@ -1954,7 +1969,29 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       if (cam.mode === "driver") {
         var cy = Math.cos(cam.dyaw), sy = Math.sin(cam.dyaw),
             cp = Math.cos(cam.dpitch), sp = Math.sin(cam.dpitch);
-        eye = DRIVER_EYE;
+        /* From the seat, the cabin does not tilt -- the driver tilts with it,
+           and what moves is the view. So the measured attitude is applied to
+           the CAMERA here rather than to the model: the dashboard stays put
+           and the head rolls, pitches and jolts, which is what hitting a bump
+           actually looks like from inside.
+
+           The model keeps its own attitude for the exterior views, where the
+           opposite is true and you are watching the body lean.
+
+           `head` is the jolt: not the acceleration itself but how fast it is
+           CHANGING, because a steady 0.3 g through a long bend is a lean and
+           the same 0.3 g arriving in one sample is a pothole. Tracked between
+           frames and decayed, so a single rough sample rings and settles
+           instead of snapping back. Replay drives this from the frame under
+           the scrub, so a past drive shows the bumps as they were felt. */
+        var gLat = num(live.roll) || 0, gLon = num(live.pitch) || 0,
+            jolt = Math.abs(gLat - cam.lastLat) + Math.abs(gLon - cam.lastLon);
+        cam.lastLat = gLat; cam.lastLon = gLon;
+        cam.shake = Math.max(cam.shake * 0.90, Math.min(0.10, jolt * 0.55));
+        var bump = cam.shake * Math.sin(now * 0.028),
+            lean = Math.max(-0.14, Math.min(0.14, gLat * 0.10)),
+            dive = Math.max(-0.10, Math.min(0.10, gLon * 0.08));
+        eye = [DRIVER_EYE[0], DRIVER_EYE[1] + bump, DRIVER_EYE[2]];
         /* Narrower than the orbit camera's, because this view is reading
            instruments rather than surveying a cabin -- a wide angle pushes
            the cluster into the distance and fills the frame with door card.
@@ -1972,9 +2009,18 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            everything: the eye sits roughly 0.8 m from the windshield. The
            comment here used to say the near plane was "about half a metre"
            while the code said 0.04, which is how it survived. */
-        proj = m4persp(0.82, w / h, 0.2, 40);
-        view = m4look(eye, [eye[0] + cp * cy, eye[1] + sp, eye[2] + cp * sy],
-                      [0, 1, 0]);
+        /* 0.66 rather than 0.82. At 0.84 m the cluster subtends 0.166 rad,
+           so a 0.82 field made it a fifth of the frame height -- small
+           characters in a wide shot of door card, when the ask was "the dash
+           in big enough characters to make it look like what the driver would
+           see". Narrowing to 0.66 keeps both screens inside the frame and
+           makes everything a quarter larger. */
+        proj = m4persp(0.66, w / h, 0.2, 40);
+        /* The up-vector carries the roll. Tilting it is how a horizon tips
+           for someone strapped into a seat, and it costs one cosine. */
+        view = m4look(eye,
+                      [eye[0] + cp * cy, eye[1] + sp - dive, eye[2] + cp * sy],
+                      [Math.sin(lean), Math.cos(lean), 0]);
       } else {
         var yaw = cam.yaw + cam.spin;
         eye = [Math.cos(yaw) * Math.cos(cam.pitch) * cam.dist,
@@ -2007,7 +2053,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           rollM = m4(), pitchM = m4();
       rollM[5] = cr; rollM[6] = sr; rollM[9] = -sr; rollM[10] = cr;   /* about X */
       pitchM[0] = cp; pitchM[1] = sp; pitchM[4] = -sp; pitchM[5] = cp; /* about Z */
-      var attitude = m4mul(pitchM, rollM);
+      /* Inside the cabin the camera carries the attitude instead; applying it
+         here as well would tilt the dashboard around a head that is already
+         tilting with it, and double the motion. */
+      var attitude = cam.mode === "driver" ? m4() : m4mul(pitchM, rollM);
 
       /* Breathing. While the pack is taking charge the whole vehicle swells
          and settles, faster and deeper the more power is going in -- an idle
@@ -2075,6 +2124,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
       order.forEach(function (p) {
         var alpha = p.alpha !== undefined ? p.alpha * layers[p.layer] : layers[p.layer];
+        /* From the driver's seat you do not see your own body panels. They
+           were being drawn between the eye and the dashboard and fogging
+           every instrument behind a sheet of translucent bodywork -- which is
+           the "eliminating some of the unnecessary stuff around" part of the
+           ask. Faded rather than removed, so the windscreen aperture and the
+           A-pillars still frame the view the way they do from a seat. */
+        if (cam.mode === "driver" && (p.layer === "shell" || p.layer === "wheels")) {
+          alpha *= 0.16;
+        }
         if (p.chargeOnly && !live.charging) return;
         if (alpha <= 0.01) return;
         if (writingDepth && alpha < 1) { gl.depthMask(false); writingDepth = false; }
@@ -2295,7 +2353,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
              cluster falls left of centre, the centre screen right of it, the
              detector between and above. Looking dead ahead put the centre
              screen past the edge. */
-          cam.mode = "driver"; cam.dyaw = 0.20; cam.dpitch = 0.035;
+          cam.mode = "driver"; cam.dyaw = 0.02; cam.dpitch = -0.055;
           /* Dimmed harder than the cutaway default: at 0.40 the windshield
              and the door card sit between the eye and everything worth
              looking at. */
