@@ -2119,7 +2119,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            looking through five of them at 0.40 compounds into fog rather than
            a vehicle. The layer buttons are how you see inside; the default
            should look like a truck. */
-        layers = { shell: 0.82, pack: 1, drive: 1, wheels: 1, thermal: 1,
+        /* Back down from 0.82 now that back faces are culled. 0.82 was the
+           price of the fog, and the cost of paying it was the body hiding the
+           pack and the cooling -- "did you remove the battery pack and cooling
+           stuff?" is what that looks like from outside. 0.46 shows them
+           through the flank while the panels still read as bodywork. */
+        layers = { shell: 0.46, pack: 1, drive: 1, wheels: 1, thermal: 1,
                    aux: 1, underbody: 1, radar: 1, cabin: 1 },
         /* Every field the draw loop reads has to exist before the first
            snapshot arrives, or a frame renders NaN into the shader and the
@@ -2134,6 +2139,19 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         angle = { fl: 0, fr: 0, rl: 0, rr: 0 }, lastFrame = 0;
 
     gl.enable(gl.DEPTH_TEST);
+    /* NO BACK-FACE CULLING, and it is not an oversight.
+    
+       Culling would halve the translucent layers you look through and let the
+       body be more see-through without turning to soup, which is exactly what
+       is wanted here. It was tried and it deleted the wheels: the meshes in
+       this file are hand-built -- bevelBox, tyreMesh, rimMesh -- and were
+       written with no winding convention, because nothing ever enforced one.
+       Under culling, whichever faces happen to wind the wrong way vanish.
+    
+       Fixing that means auditing the triangle order of every generated mesh,
+       which is worth doing and is not worth doing in the same change as
+       making the pack visible again. Until then the shell alpha carries it
+       alone. */
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.clearColor(0.043, 0.051, 0.055, 1);
