@@ -1445,15 +1445,23 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        exactly, so the box now genuinely clears it. */
     slab("glass-back", bulkX + 0.02, bulkX + 0.08, beltline + 0.16, roof - 0.10,
          -W + 0.10, W - 0.10, GLASS, { alpha: 0.42, layer: "shell" });
+    /* Inboard of the pillars rather than outboard of the roof. Glass sits in
+       an aperture; it does not stand proud of the bodywork around it. */
     slab("glass-side-l", bulkX + 0.06, cowlX - 0.04, beltline + 0.16, roof - 0.10,
-         -W + 0.01, -W + 0.06, GLASS, { alpha: 0.42, layer: "shell" });
+         -(W - 0.035), -(W - 0.085), GLASS, { alpha: 0.42, layer: "shell" });
     slab("glass-side-r", bulkX + 0.06, cowlX - 0.04, beltline + 0.16, roof - 0.10,
-         W - 0.06, W - 0.01, GLASS, { alpha: 0.42, layer: "shell" });
+         W - 0.085, W - 0.035, GLASS, { alpha: 0.42, layer: "shell" });
     slab("glass-wind", cowlX - 0.06, cowlX + 0.02, beltline + 0.16, roof - 0.10,
          -W + 0.06, W - 0.06, GLASS, { alpha: 0.42, layer: "shell" });
     slab("shell-cabbase", bulkX, cowlX, beltline, beltline + 0.20, -W + 0.02, W - 0.02, BODY);
-    slab("shell-roof", bulkX + 0.06, cowlX - 0.06, roof - 0.12, roof,
-         -W + 0.10, W - 0.10, BODY);
+    /* The roof was 2.002 m across while the pillars stand at 1.101 and the
+       side glass at 1.091, so both hung 0.10 m OUTBOARD of the roof edge down
+       the whole length of the cab -- the roofline read as pinched and the
+       glass as bolted to the outside of it. It now caps the greenhouse with a
+       0.010 m overhang per side, and runs the full cab length rather than
+       stopping short of the bulkhead and the cowl. */
+    slab("shell-roof", bulkX, cowlX, roof - 0.12, roof,
+         -W + 0.02, W - 0.02, BODY);
     /* roof rails */
     slab("rail-l", bulkX + 0.10, cowlX - 0.10, roof, roof + 0.06, -W + 0.16, -W + 0.28, TRIM);
     slab("rail-r", bulkX + 0.10, cowlX - 0.10, roof, roof + 0.06, W - 0.28, W - 0.16, TRIM);
@@ -1463,9 +1471,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        being spaced by eye. --- */
     [[-1, "l"], [1, "r"]].forEach(function (side) {
       var z0 = side[0] < 0 ? -W : W - 0.07, z1 = side[0] < 0 ? -W + 0.07 : W;
-      slab("pillar-a-" + side[1], cowlX - 0.10, cowlX, beltline + 0.14, roof - 0.06, z0, z1, BODY);
-      slab("pillar-b-" + side[1], 0.30, 0.40, beltline + 0.14, roof - 0.06, z0, z1, BODY);
-      slab("pillar-c-" + side[1], bulkX, bulkX + 0.10, beltline + 0.14, roof - 0.06, z0, z1, BODY);
+      /* Pulled in 0.030 m so the roof, which now ends at |z| 1.081, actually
+         covers them. A pillar standing outboard of its own roof is the thing
+         that made the greenhouse look wrong from the side. */
+      var pz0 = side[0] < 0 ? -(W - 0.03) : W - 0.10,
+          pz1 = side[0] < 0 ? -(W - 0.10) : W - 0.03;
+      slab("pillar-a-" + side[1], cowlX - 0.10, cowlX, beltline + 0.14, roof - 0.06, pz0, pz1, BODY);
+      slab("pillar-b-" + side[1], 0.30, 0.40, beltline + 0.14, roof - 0.06, pz0, pz1, BODY);
+      slab("pillar-c-" + side[1], bulkX, bulkX + 0.10, beltline + 0.14, roof - 0.06, pz0, pz1, BODY);
       /* mirrors */
       /* The file's own VEH note says width across the mirrors is 2.380 m and
          each mirror therefore stands 0.089 m proud of the 1.101 half-width.
@@ -1882,27 +1895,31 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
     /* The wheel: round, three spokes, chunky hub. */
     add({ id: "wheel-rim", mesh: "ring", layer: "cabin", colour: [0.07, 0.075, 0.08],
-          t: [0.79, 1.40, seatZ], s: [0.040, 0.370, 0.370], rot: "x" });
+          /* The hub was 0.26 m below the driver eye point, where a real one
+             sits 0.40-0.50 m below it, and the rim top stood above the dash
+             pad. Dropped 0.17 m so the wheel is in front of the driver rather
+             than in front of their face. */
+          t: [0.79, 1.23, seatZ], s: [0.040, 0.370, 0.370], rot: "x" });
     add({ id: "wheel-hub", mesh: "bev", layer: "cabin", colour: [0.11, 0.12, 0.13],
-          t: [0.81, 1.40, seatZ], s: [0.055, 0.135, 0.135] });
+          t: [0.81, 1.23, seatZ], s: [0.055, 0.135, 0.135] });
     add({ id: "wheel-spoke-l", mesh: "bev", layer: "cabin", colour: [0.13, 0.14, 0.15],
-          t: [0.81, 1.40, seatZ - 0.115], s: [0.022, 0.048, 0.130] });
+          t: [0.81, 1.23, seatZ - 0.115], s: [0.022, 0.048, 0.130] });
     add({ id: "wheel-spoke-r", mesh: "bev", layer: "cabin", colour: [0.13, 0.14, 0.15],
-          t: [0.81, 1.40, seatZ + 0.115], s: [0.022, 0.048, 0.130] });
+          t: [0.81, 1.23, seatZ + 0.115], s: [0.022, 0.048, 0.130] });
     add({ id: "wheel-spoke-b", mesh: "bev", layer: "cabin", colour: [0.30, 0.28, 0.22],
-          t: [0.81, 1.285, seatZ], s: [0.022, 0.130, 0.080] });
+          t: [0.81, 1.115, seatZ], s: [0.022, 0.130, 0.080] });
     /* One paddle, on the left of the column, and it lights under regen. */
     add({ id: "regen-paddle", mesh: "bev", layer: "cabin", colour: [0.14, 0.15, 0.16],
-          regen: true, t: [0.86, 1.42, seatZ - 0.185], s: [0.020, 0.095, 0.014] });
+          regen: true, t: [0.86, 1.25, seatZ - 0.185], s: [0.020, 0.095, 0.014] });
 
     /* The second row. GMC publishes its dimensions -- 38.4 in of head room,
        39.0 in of leg room, 64.0 in of shoulder room, 60.2 in of hip room --
        which is what puts the bench behind the front seats rather than at a
        spacing chosen to look right. */
     add({ id: "seat-rear-back", mesh: "bev", layer: "cabin", colour: [0.09, 0.10, 0.11],
-          t: [-0.94, 1.34, 0], s: [0.15, 0.62, 1.62] });
+          t: [-0.94, 1.275, 0], s: [0.15, 0.72, 1.62] });
     add({ id: "seat-rear-base", mesh: "bev", layer: "cabin", colour: [0.09, 0.10, 0.11],
-          t: [-0.66, 1.06, 0], s: [0.50, 0.14, 1.62] });
+          t: [-0.66, 0.845, 0], s: [0.50, 0.14, 1.62] });
 
     /* Door handles, two a side at the beltline. Small, and the thing a
        three-quarter view looks for to know it is looking at a door. */
@@ -1919,10 +1936,20 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     [[seatZ, "driver"], [-seatZ, "passenger"]].forEach(function (seat) {
       add({ id: "seat-back-" + seat[1], mesh: "bev", layer: "cabin",
             colour: [0.10, 0.11, 0.12],
-            t: [0.06, 1.35, seat[0]], s: [0.14, 0.66, 0.52] });
+            /* Re-based on the lowered cushion and made taller: a backrest
+               that starts at the seat and ends at a shoulder is 0.78 m, not
+               0.66, and it used to start above the cushion it belongs to. */
+            t: [0.06, 1.305, seat[0]], s: [0.14, 0.78, 0.52] });
       add({ id: "seat-base-" + seat[1], mesh: "bev", layer: "cabin",
             colour: [0.10, 0.11, 0.12],
-            t: [0.34, 1.06, seat[0]], s: [0.56, 0.14, 0.52] });
+            /* Cushion top was y=1.130 with the headliner at 1.889, leaving
+               0.759 m -- under thirty inches of seated head room, so an
+               occupant's head goes through the roof. Dropped 0.215 m: the
+               cushion tops at 0.915 and there is 0.974 m clear above it,
+               which is what GMC's published 41.5 in of front head room asks
+               for and what puts a 1.66 m eye point where the driver camera
+               already assumes it is. */
+            t: [0.34, 0.845, seat[0]], s: [0.56, 0.14, 0.52] });
     });
 
     /* --- the detector, where it actually sits --------------------------
