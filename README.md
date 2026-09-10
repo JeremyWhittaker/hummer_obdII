@@ -456,6 +456,15 @@ moves is the view. The jolt there is the *rate of change* of those readings,
 because a steady 0.3 g through a long bend is a lean and the same 0.3 g in one
 sample is a pothole.
 
+**Cutaway is a section, not a fade.** The truck is cut on its centreline with
+the driver's half removed, and everything inboard is drawn solid at full
+opacity. A translucent body cannot achieve this: it leaves every panel in front
+of every part, so the internals are always seen *through* something, and at any
+opacity low enough to see past, the truck stops reading as a truck. A section
+has no such trade — the far half stays intact as a silhouette and the near half
+is simply gone. The camera stands on the side that was removed; put it on the
+surviving side and the view shows the outside of an ordinary truck.
+
 **The parts are sourced, and the gaps are named.** The drive units open up to
 copper hairpin stator windings, because GM describes this motor family as
 hairpin-wound and oil-cooled "with what's essentially transmission fluid"; the
@@ -517,7 +526,7 @@ inferring it from speed would be inventing the one number on that screen a
 driver would most reasonably trust.
 
 **Views and layers are separate controls.** Views are where the camera
-stands — Exterior, Driver's seat, Underside — and sit above the render because
+stands — Exterior, Driver's seat, Underside, Cutaway — and sit above the render because
 choosing one changes what every layer button means: from outside they strip a
 cutaway, from the seat they are the difference between seeing the dashboard
 and seeing through it. Layers stay below, as the parts you can take away.
