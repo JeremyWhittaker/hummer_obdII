@@ -654,6 +654,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     snapshot: null, sessions: [], selected: "latest", network: "loading",
     error: "", timer: null, busy: false, queued: false, generation: 0,
     series: "power", filter: "", retried: false, sessionKey: "", view: "exterior",
+    /* Radar markers currently on the map, with their timestamps, so the
+       replay can light the one it is passing. Rebuilt whenever the map is. */
+    plotted: [],
     /* The history row the replay is sitting on, or null when it is not. */
     frame: null, autoplay: false, mainView: "live",
     map: null, play: { timer: null },
@@ -705,6 +708,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
      A replay scrubber reading "8m 14s" tells you where you are in the file;
      it does not tell you when you were there, which is the thing a person
      actually wants when they are trying to remember a drive. */
+  /* How close a replay frame has to be to a detection before it counts as
+     "now". The recorder samples every 20-30 s and the detector logs its own
+     clock, so a tighter window would step straight over an alert between two
+     frames and never light it. */
+  var ALERT_WINDOW_MS = 20000;
+
   function clockOf(utc) {
     if (!utc) return null;
     var at = new Date(utc);
@@ -2966,6 +2975,27 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     if (clock) parts.push(clock);
     if (elapsed !== null) parts.push(duration(elapsed));
     if (speed !== null) parts.push(speed.toFixed(0) + " km/h");
+
+    /* A detection is a moment, not a place. Plotting it on the map says where
+       it happened; this says WHEN, by lighting the marker as the replay
+       reaches it and naming the band and strength beside the clock. Without
+       it the alerts sit on the route as decoration that never connects to
+       anything you are watching. */
+    var frameAt = Date.parse(row.utc || ""), lit = 0;
+    (state.plotted || []).forEach(function (mark) {
+      var near = !isNaN(frameAt) && !isNaN(mark.at)
+              && Math.abs(mark.at - frameAt) <= ALERT_WINDOW_MS;
+      mark.node.setAttribute("opacity", near ? "1" : "0.42");
+      if (near) {
+        lit++;
+        parts.push(mark.band
+                   + (mark.ghz ? " " + mark.ghz.toFixed(3) + " GHz" : "")
+                   + (mark.strength === null || mark.strength === undefined
+                      ? "" : " · strength " + mark.strength)
+                   + (mark.direction ? " · " + mark.direction : ""));
+      }
+    });
+    el["alert-marks"].setAttribute("data-live", lit ? "1" : "0");
     el["play-time"].textContent = parts.length ? parts.join(" · ")
                                 : (i + 1) + "/" + m.points.length;
   }
@@ -3053,6 +3083,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
     clear(el["map-tiles"]); clear(el["map-grid"]);
     clear(el["trail-head"]); clear(el["alert-marks"]);
+    state.plotted = [];
     el.trail.setAttribute("d", "");
     clear(el["map-stats"]);
     state.map = null;
@@ -3268,6 +3299,13 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         a.band + (a.frequency_ghz ? " " + a.frequency_ghz.toFixed(3) + " GHz" : "") +
         " · strength " + (a.strength === null ? "?" : a.strength) +
         " · " + a.direction + (a.at ? " · " + a.at.slice(11, 19) : "")));
+      /* Kept so the replay can find them by time. The marker is stashed on
+         the record rather than looked up again, because the scrub moves every
+         frame and a query per frame per alert is work for nothing. */
+      g.setAttribute("data-alert", "1");
+      state.plotted.push({ node: g, at: Date.parse(a.at || ""), band: a.band,
+                           strength: a.strength, direction: a.direction,
+                           ghz: a.frequency_ghz });
       el["alert-marks"].appendChild(g);
       plotted++;
     });
