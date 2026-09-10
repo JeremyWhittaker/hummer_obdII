@@ -841,3 +841,64 @@ class ContactorFilterTests(unittest.TestCase):
                 + [{"pack_v": 0.94, "cell_avg_v": 4.0508} for _ in range(13)])
         checks = analyze._cross_checks(rows)
         self.assertAlmostEqual(checks["series_cells"]["mean"], 96.0, delta=0.5)
+
+
+class ChargeDetectionTests(unittest.TestCase):
+    """Regen is not a charge, and a charge at the end of a drive is still one."""
+
+    @staticmethod
+    def drive_then_charge():
+        # The ordinary shape: drive home with regen, park, plug in.
+        drive = [{"pack_a": 120.0, "charger_5401_raw": "00", "pack_v": 385.0}
+                 for _ in range(60)]
+        regen = [{"pack_a": -314.95, "charger_5401_raw": "00", "pack_v": 390.0}
+                 for _ in range(16)]
+        charge = [{"pack_a": -15.5, "charger_5401_raw": "94", "pack_v": 389.0}
+                  for _ in range(20)]
+        return drive + regen + charge
+
+    def test_heavy_regen_is_not_charging(self):
+        # -314.95 A, larger than any charge this vehicle has recorded, at a
+        # charger state of 00.  A rule keyed on current sign calls this the
+        # strongest charging of the session.
+        self.assertFalse(analyze._row_is_charging(
+            {"pack_a": -314.95, "charger_5401_raw": "00"}))
+
+    def test_plugged_and_taking_current_is_charging(self):
+        for state in ("94", "91"):
+            with self.subTest(state=state):
+                self.assertTrue(analyze._row_is_charging(
+                    {"pack_a": -15.5, "charger_5401_raw": state}))
+
+    def test_plugged_but_not_taking_current_is_not_charging(self):
+        self.assertFalse(analyze._row_is_charging(
+            {"pack_a": 2.0, "charger_5401_raw": "94"}))
+
+    def test_a_drive_that_ends_in_a_charge_reports_the_charge(self):
+        # The regression: a majority test cannot see this, and 76 of 96 rows
+        # here are the drive.
+        rows = self.drive_then_charge()
+        self.assertTrue(analyze.is_charging(rows))
+        self.assertEqual(len(analyze.charging_rows(rows)), 20)
+
+    def test_the_charge_report_sees_only_the_charging_rows(self):
+        # Averaging a 150 kW discharge into a 6 kW charge and calling the
+        # result a charge rate is the failure this prevents.
+        rows = self.drive_then_charge()
+        for row in analyze.charging_rows(rows):
+            self.assertLess(row["pack_a"], 0)
+            self.assertNotEqual(row["charger_5401_raw"], "00")
+
+    def test_a_pure_drive_reports_no_charge(self):
+        rows = [{"pack_a": 120.0, "charger_5401_raw": "00"} for _ in range(50)]
+        self.assertFalse(analyze.is_charging(rows))
+
+    def test_a_session_without_the_charger_column_falls_back_to_sign(self):
+        # Sessions recorded before that column existed must still analyse.
+        rows = [{"pack_a": -15.5} for _ in range(20)]
+        self.assertTrue(analyze.is_charging(rows))
+
+    def test_one_stray_charging_row_is_not_a_charge_session(self):
+        rows = ([{"pack_a": 120.0, "charger_5401_raw": "00"} for _ in range(50)]
+                + [{"pack_a": -15.5, "charger_5401_raw": "94"}])
+        self.assertFalse(analyze.is_charging(rows))

@@ -824,7 +824,10 @@ def analyze(rows: list[dict], *, path: str = "", expected_period_s: Optional[flo
     # A charge is a different event from a drive, and reporting one as the
     # other produces arithmetic that is fine and physics that is nonsense.
     if is_charging(rows):
-        report["charge"] = _charge_report(rows)
+        # The charging rows only.  Running this over a whole drive-then-charge
+        # session would average a 150 kW discharge into a 6 kW charge and call
+        # the result a charge rate.
+        report["charge"] = _charge_report(charging_rows(rows))
         moved = _unproven_ranges(rows)
         if moved:
             report["unproven_field_ranges"] = moved
@@ -868,17 +871,55 @@ _UNPROVEN_ON_CHARGE: tuple[str, ...] = (
 )
 
 
-def is_charging(rows: list[dict]) -> bool:
-    """Whether this session is a charge rather than a drive.
+#: Enough charging rows to say anything about a charge.  A start, an end, and
+#: one in between.
+MIN_CHARGE_ROWS = 3
 
-    Decided from pack current rather than from speed: a vehicle can sit still
-    without charging, and the sign of the current is what actually says which
-    direction energy is moving.
+
+def _row_is_charging(row: dict) -> bool:
+    """Whether energy is entering the pack from outside the vehicle.
+
+    Negative pack current is not enough on its own, and that is the whole
+    point of this function.  Regen is negative current -- measured at
+    **-314.95 A** on 2026-09-10, which is larger than any charge this vehicle
+    has recorded -- and a rule that keys on sign alone reports the hardest
+    braking of a drive as its strongest charging.
+
+    ``0x5401`` separates them.  Measured across that same session it held
+    ``0x00`` through all of that regen and went non-zero only once the truck
+    was plugged in, at -8 to -17 A.  It is a plug state, so plugged *and*
+    taking current is the test.
+
+    Sessions recorded before that column existed fall back to the sign of the
+    current, which is what this project did until tonight -- wrong about
+    regen, but no more wrong than it already was, and better than dropping
+    those sessions entirely.
     """
-    amps = _series(rows, "pack_a")
-    if not amps:
+    amps = row.get("pack_a")
+    if not _is_finite_number(amps) or float(amps) >= _CHARGING_AMPS:
         return False
-    return sum(1 for a in amps if a < _CHARGING_AMPS) > len(amps) / 2
+    state = row.get("charger_5401_raw")
+    if state is None or str(state).strip() == "":
+        return True
+    return str(state).strip() not in ("00", "0")
+
+
+def charging_rows(rows: list[dict]) -> list[dict]:
+    """The part of a session that was charging, which may not be all of it."""
+    return [row for row in rows if _row_is_charging(row)]
+
+
+def is_charging(rows: list[dict]) -> bool:
+    """Whether this session contains a charge worth reporting.
+
+    Contains, not consists of.  This was a majority test, and a majority test
+    cannot see the most ordinary shape this vehicle produces: drive home, park,
+    plug in.  One session on 2026-09-10 held a full drive and then a charge,
+    and was reported as a drive with the charge invisible -- distance,
+    efficiency and miles per kWh, with no mention that the truck had spent the
+    end of it taking energy in.
+    """
+    return len(charging_rows(rows)) >= MIN_CHARGE_ROWS
 
 
 def _charge_report(rows: list[dict]) -> dict:
