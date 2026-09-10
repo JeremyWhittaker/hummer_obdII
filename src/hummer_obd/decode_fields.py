@@ -34,10 +34,26 @@ drifts over the hour. A quantity does not do that. A state or a bitfield does.
 truck still plugged in at essentially zero current, ``0x5401`` produced fifteen
 more values -- ``0x14``, ``0x17``, ``0x1A``, ``0x1E``, ``0x21``, ``0x24``,
 ``0x28``, ``0x2B``, ``0x2E``, ``0x32``, ``0x35``, ``0x3C``, ``0x42``, ``0x49``,
-``0x4C`` -- none of them from the charging family. In time order it climbed
-from 36 to 76 in about fifty seconds and then declined steadily, and against
-elapsed time it correlates at **r = -0.880 over 37 samples**: the strongest
-association this field has shown against anything.
+``0x4C`` -- none of them from the charging family. In time order it did something
+much more specific than "declined": it appeared at 36, climbed to a peak of 76
+in fifty-two seconds, and then descended to **exactly** ``0x00`` over the next
+434 seconds, while pack current sat at zero throughout. Against elapsed time it
+correlates at **r = -0.880 over 37 samples**, the strongest association this
+field has shown against anything.
+
+The descent is not a timer. Its steps are irregular -- 19 s, 31 s, 13 s early;
+19 s, 27 s, 17 s late -- so the even 5.7 seconds per count that the totals
+imply is arithmetic rather than behaviour. What is solid is the shape: it rises
+once, falls to zero, and ends at the same ``0x00`` the field holds while
+driving and unplugged.
+
+One hypothesis, recorded as a hypothesis: a COMMANDED or available current
+rather than a measured one. That would fit every regime at once -- near-constant
+at 145-150 through the charge because a limit does not track draw, uncorrelated
+with measured current for the same reason, and ramped to zero at termination
+because the command is being withdrawn. It is also exactly the kind of tidy
+story this project has twice published and withdrawn tonight, so it stays a
+hypothesis until a second charge shows the same descent.
 
 Two cautions, both load-bearing. Correlating a quantity that happens to be
 declining against elapsed time is close to circular -- *any* monotonic decay
