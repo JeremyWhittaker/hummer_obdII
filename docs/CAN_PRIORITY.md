@@ -239,6 +239,36 @@ across two modules across a rail change eight times wider than anything the
 driving data contained. Whatever the disagreement with PID `0142` turns out to
 be, it is not `0x33E5` being unstable.
 
+### The wide swing arrived, and the answer is that this cannot be answered
+
+Parked at work on 2026-09-10 with the vehicle still awake, both routes answered
+together across a rail that moved **1.167 V** -- 12.364 to 13.531 -- which is
+3.23 times the 0.361 V offset and the wide swing every previous note said was
+needed. Thirty-eight paired samples.
+
+The models are still indistinguishable, and now it is possible to say exactly
+why rather than blaming the span:
+
+| | |
+|---|---|
+| offset model, `y = x - 0.3608` | residual sd 0.0522 V |
+| scale model, `y = 0.97260 x` | residual sd 0.0518 V |
+| largest disagreement between them across the whole range | **0.0220 V** |
+| `0x33E5` quantisation floor, from its 0.1 V step | 0.0289 V |
+
+**The field's own resolution is coarser than the difference between the
+hypotheses.** The two models cross at 13.17 V and separate by 0.0274 V per volt
+either side of it, so to out-run even the quantisation floor the rail would have
+to reach 12.12 V, and to out-run the measured noise it would have to reach
+11.26 V. It got to 12.364. A healthy 12 V system on an awake vehicle does not
+go to 11.3 V.
+
+So this is not "collect more data". A field reading in 0.1 V steps cannot
+distinguish a 0.36 V offset from a 2.7% scale error against a rail that lives
+between 12 and 14 volts, and no amount of driving changes that. Settling it
+needs a different measurement -- a finer field, or a bench reading of the same
+rail -- and the question is closed to this route.
+
 What it is remains open, and is recorded as open. Three readings of one rail
 now sit in a consistent order -- the adapter at the connector highest near
 13.9 V, then PID `0142`, then `0x33E5` at `17`, then `0x33E5` at `1D` lowest --
