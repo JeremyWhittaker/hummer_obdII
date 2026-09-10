@@ -2624,11 +2624,19 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
              the centreline is still the pack and deleting it would leave the
              floor empty. */
           if (p.t[2] < -0.02) return;
-          /* Everything that survives is solid. The whole point of removing the
-             body is that nothing needs to be see-through any more -- the
-             translucency existed only to look past bodywork that is no longer
-             there. */
-          alpha = 1;
+          /* THE BODY BECOMES CONTEXT, THE PARTS BECOME THE SUBJECT.
+          
+             Drawing everything solid was the first attempt and it does not
+             read as a cutaway: the surviving body half is the largest object
+             in frame, so at full opacity it competes with the very parts the
+             section exists to expose, and the whole thing goes grey on grey.
+             A draughtsman ghosts the shell and inks the mechanism.
+          
+             The far half is behind everything now, so dimming it costs
+             nothing in depth terms -- there is no bodywork between the eye and
+             the parts any more, which is the difference between this and every
+             alpha compromise that came before it. */
+          alpha = (p.layer === "shell" || p.layer === "cabin") ? 0.22 : 1;
         }
         if (cam.mode === "driver" && p.layer !== "cabin" && p.layer !== "radar") {
           /* Everything outside the cabin, not just the body. Fading only
@@ -2742,6 +2750,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         if (p.id === "chiller" && live.compressor !== null) {
           emissive = [0.06 + 0.20 * live.compressor, 0.24 * live.compressor + 0.08,
                       0.34 * live.compressor + 0.10];
+        }
+        if (state.view === "cutaway" && p.layer !== "shell" && p.layer !== "cabin"
+            && emissive[0] + emissive[1] + emissive[2] < 0.06) {
+          /* A floor under the internals so a part with nothing to report is
+             still legible against the ghosted body. Only where the part is not
+             already lit by a measurement -- a glowing motor or a warm pipe
+             keeps its own colour, because that is information and this is
+             only contrast. */
+          emissive = [0.10, 0.11, 0.12];
         }
         if (p.hairpin) {
           /* Copper carrying current glows; copper sitting idle is just
