@@ -812,6 +812,27 @@ def analyze(rows: list[dict], *, path: str = "", expected_period_s: Optional[flo
                 f"speed says {_round(distance_from_speed_km, 2)} km; at this "
                 f"sample rate they should agree more closely than that"
             )
+    # This warning was suspected on 2026-09-10 of being the same artifact as
+    # the contactor-open one fixed alongside it -- a statistic that fires on
+    # correct data -- and the suspicion was tested and NOT supported.  Written
+    # down so nobody re-runs the same investigation.
+    #
+    # The suspicion was that it scales against a SIGNED mean, which on a
+    # session that both drives and charges averages to near zero (+3.17 kW
+    # against swings of -124 to +157) and so is trivially exceeded.  That part
+    # is true.  But the mean absolute difference was 13.23 kW against a mean
+    # absolute power of 12.23, so it warns under the honest scaling too.
+    #
+    # Comparing the two routes by integral instead of per sample -- the right
+    # comparison, since one is instantaneous and the other a windowed slope,
+    # and those differ at any single sample even when both are correct --
+    # gave +0.969 kWh against +1.710 kWh.  That does not vindicate them
+    # either, though both figures are small enough that sampling gaps across
+    # the parked stretches may dominate.
+    #
+    # So: the warning is not demonstrably wrong, the routes are not
+    # demonstrably in agreement, and this needs a session without long gaps
+    # rather than another look at the same one.
     cross = report.get("power_cross_check")
     if cross and cross["mean_hv_power_kw"] is not None:
         scale = max(abs(cross["mean_hv_power_kw"]), 1.0)
