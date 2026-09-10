@@ -1398,7 +1398,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     /* The charge port lamp, which GMC lists as reporting charge status. */
     add({ id: "portlamp", mesh: "bev", layer: "shell",
           colour: [0.30, 0.70, 0.80], alpha: 1,
-          t: [-2.24, 1.06, -(W - 0.02)], s: [0.16, 0.03, 0.03], lamp: "port" });
+          /* It was at x -2.32..-2.16, inside flare-rl, reporting on a port
+             0.29 m away from it. Moved aft of the flare's rear edge so the
+             strip is on the bedside where it can be seen. */
+          t: [-2.53, 0.80, -(W - 0.035)], s: [0.16, 0.03, 0.03], lamp: "port" });
 
     /* --- UltraVision cameras --------------------------------------------
        GMC publishes "up to 18 available camera VIEWS", not eighteen cameras,
@@ -1464,8 +1467,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       slab("pillar-b-" + side[1], 0.30, 0.40, beltline + 0.14, roof - 0.06, z0, z1, BODY);
       slab("pillar-c-" + side[1], bulkX, bulkX + 0.10, beltline + 0.14, roof - 0.06, z0, z1, BODY);
       /* mirrors */
+      /* The file's own VEH note says width across the mirrors is 2.380 m and
+         each mirror therefore stands 0.089 m proud of the 1.101 half-width.
+         They were drawn to |z| 1.261 -- 0.071 m too far out on each side --
+         and their inner faces cleared the body entirely, so the heads floated
+         beside the truck attached to nothing. Now the outer face lands on the
+         documented 1.190 and the inner face sinks into the A-pillar. */
       slab("mirror-" + side[1], cowlX - 0.16, cowlX - 0.02, beltline + 0.34, beltline + 0.52,
-           side[0] < 0 ? -W - 0.16 : W + 0.02, side[0] < 0 ? -W - 0.02 : W + 0.16, TRIM);
+           side[0] < 0 ? -(W + 0.089) : W - 0.05,
+           side[0] < 0 ? -(W - 0.05) : W + 0.089, TRIM);
     });
 
     /* --- bed --- */
@@ -1536,8 +1546,13 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        the flare loop still reads as owning them. */
     [[AXLE, "f"], [-AXLE, "r"]].forEach(function (ax) {
       [-1, 1].forEach(function (side) {
-        var z0 = side < 0 ? -W - 0.085 : W - 0.02,
-            z1 = side < 0 ? -W + 0.02 : W + 0.085,
+        /* GMC's 2.202 m is measured ACROSS THE FLARES, so the flare's outer
+           face IS the widest point of the truck and belongs exactly on
+           HALF_W. It was hung outboard of it -- |z| 1.186 against a published
+           1.101 -- making the model 17 cm too wide at its widest and putting
+           the trim outside the dimension it is supposed to define. */
+        var z0 = side < 0 ? -W : W - 0.055,
+            z1 = side < 0 ? -W + 0.055 : W,
             tag = "flare-" + ax[1] + (side < 0 ? "l" : "r");
         for (var i = 0; i < FLARE_STEPS; i++) {
           /* Segment spans the angles [a0, a1]; its x extent is the chord and
@@ -1613,26 +1628,36 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        The rotor is the darker core. The housing goes to 0.45 alpha so the
        whole assembly reads as a cutaway rather than a can. */
     function driveUnit(id, x, z, length) {
+      /* On the wheel centre, not 53 mm above it. Every drive part sat at
+         y=0.50 while the hub faces are at VEH.wheelRadius = 0.4471, so the
+         halfshafts ran past the hubs they drive and the whole driveline
+         floated above its own axle line. The housing also drops 0.46 -> 0.38:
+         at 0.46 it stood 0.23 m above the axis, higher than the 0.4471 wheel
+         centre it sits beside. */
       add({ id: id, mesh: "cyl", layer: "drive", colour: [0.26, 0.30, 0.33],
-            t: [x, 0.50, z], s: [0.46, 0.46, length], rot: "z", alpha: 0.45 });
+            t: [x, VEH.wheelRadius, z], s: [0.38, 0.38, length], rot: "z",
+            alpha: 0.45 });
       var BARS = 16, bore = 0.150;
       for (var b = 0; b < BARS; b++) {
         var ang = b / BARS * Math.PI * 2;
         add({ id: id + "-hairpin-" + b, mesh: "bev", layer: "drive",
               colour: [0.72, 0.42, 0.17],
-              t: [x + Math.cos(ang) * bore, 0.50 + Math.sin(ang) * bore, z],
+              t: [x + Math.cos(ang) * bore,
+                  VEH.wheelRadius + Math.sin(ang) * bore, z],
               s: [0.036, 0.036, length * 0.82], hairpin: true });
       }
       add({ id: id + "-rotor", mesh: "cyl", layer: "drive",
             colour: [0.14, 0.15, 0.17],
-            t: [x, 0.50, z], s: [0.19, 0.19, length * 0.92], rot: "z" });
+            t: [x, VEH.wheelRadius, z], s: [0.19, 0.19, length * 0.92],
+            rot: "z" });
     }
     driveUnit("motor-front", AXLE, 0, 0.70);
     driveUnit("motor-rear-a", -AXLE, -0.27, 0.44);
     driveUnit("motor-rear-b", -AXLE, 0.27, 0.44);
     [["f", AXLE], ["r", -AXLE]].forEach(function (a) {
       add({ id: "shaft-" + a[0], mesh: "cyl", layer: "drive", colour: [0.32, 0.35, 0.37],
-            t: [a[1], 0.50, 0], s: [0.10, 0.10, VEH.width - 0.34], rot: "z" });
+            t: [a[1], VEH.wheelRadius, 0], s: [0.10, 0.10, VEH.width - 0.34],
+            rot: "z" });
     });
 
     /* --- wheels: tyre, rim face, brake disc --- */
@@ -1936,8 +1961,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            recognisable thing under this truck after the pack. */
         add({ id: "airspring-" + w[0], mesh: "cyl", layer: "underbody",
               colour: [0.07, 0.07, 0.08],
-              t: [w[1], 0.62, w[2] * (HALF_TRACK - 0.30)],
-              s: [0.30, 0.54, 0.30], rot: "y" });
+              /* Moved off the halfshaft plane and slimmed. Each bellows was
+                 0.30 m across and 0.54 m tall -- 81% of the brake rotor
+                 beside it -- and sat centred on the axle line, so the 0.10 m
+                 halfshaft ran straight through the middle of all four. A
+                 spring skewered by a driveshaft is not a suspension. Offset
+                 0.24 m inboard along X clears the shaft band by 0.080 m. */
+              t: [w[1] - (w[1] > 0 ? 0.24 : -0.24), 0.66,
+                  w[2] * (HALF_TRACK - 0.30)],
+              s: [0.22, 0.42, 0.22], rot: "y" });
       });
 
     /* Four plates: front underbody, front battery, rear battery, rear
@@ -1954,7 +1986,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     [-1, 1].forEach(function (side) {
       add({ id: "rocker-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "underbody",
             colour: [0.13, 0.14, 0.15],
-            t: [0, 0.47, side * (W + 0.02)], s: [2.34, 0.13, 0.15] });
+            /* The rock rail was the WIDEST object on the model -- outer face
+               at |z| 1.196 against the flares' 1.186 and the published
+               half-width of 1.101 -- so in plan or head-on the truck's
+               silhouette was set by a step, not by its bodywork. GMC measures
+               2.202 m across the flares; nothing but the mirrors may exceed
+               1.101. At 0.975 the rail spans 0.900..1.050, tucked 0.051 m
+               inboard of the widest plane, which is where a rock slider sits. */
+            t: [0, 0.47, side * 0.975], s: [2.34, 0.13, 0.15] });
       /* Rear tie rod: drawn because four-wheel steer is real on this truck,
          static because nothing here measures the angle. */
       add({ id: "tierod-" + (side < 0 ? "l" : "r"), mesh: "cyl", layer: "underbody",
@@ -2006,7 +2045,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        data display and not a component, and modelling one would be inventing
        hardware from a menu entry. */
     add({ id: "hv-charge-run", mesh: "cyl", layer: "aux", colour: [0.55, 0.28, 0.10],
-          hvflow: true, t: [-1.75, 0.56, -(W - 0.10)],
+          /* Was at z -1.001, inside the rear tyre's band of -1.084..-0.779
+             and inside the opaque rim with it -- the orange cable ran through
+             the wheel. Inboard at -0.70 it clears the rim's inner face by
+             0.054 m and lands on the pack's flank, which is where an HV run
+             belongs anyway. */
+          hvflow: true, t: [-1.75, 0.56, -0.70],
           s: [1.30, 0.045, 0.045], rot: "x" });
 
     /* Energy arriving, drawn travelling the run it actually arrives on.
