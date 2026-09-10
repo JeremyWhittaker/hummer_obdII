@@ -396,7 +396,27 @@ level from `energy_kwh` (not `soc_pct`, which advances in jumps of a few tenths 
 tint from `temp_f`; the frunk pod tracks the 12 V rail and reddens as it sags;
 and the body rolls and pitches from the vehicle's own `lateral_g` and
 `longitudinal_g`, so it leans in a corner because the accelerometer says it is
-leaning.
+leaning — except from the driver's seat, where the camera carries that attitude
+instead. A driver does not watch the cabin tilt; they tilt with it, and what
+moves is the view. The jolt there is the *rate of change* of those readings,
+because a steady 0.3 g through a long bend is a lean and the same 0.3 g in one
+sample is a pothole.
+
+**The parts are sourced, and the gaps are named.** The drive units open up to
+copper hairpin stator windings, because GM describes this motor family as
+hairpin-wound and oil-cooled "with what's essentially transmission fluid"; the
+front unit is longer than the rear pair because its reduction is 13.3:1 against
+10.5:1. The front light bar spells HUMMER and fills against state of charge,
+which is not an invention — GMC builds it as a charge-status display. Lamps and
+cameras are where GMC's brochures and support pages put them, at eight camera
+positions rather than the eighteen *views* GMC advertises.
+
+Two absences are deliberate. **Underbody rock lights are not drawn**, because
+every source for them is an aftermarket retailer rather than GMC's catalogue.
+And **the thermal plumbing is not drawn**: what the underbody cylinders are,
+whether there is a front radiator, how many coolant loops there are and how
+they route through the 24 modules could not be sourced from anything reachable.
+A lamp or a pipe the vehicle does not have is worse than one it does.
 
 **Both screens work.** The 13.4-inch centre screen carries the session's own
 track, north up, with the vehicle at the newest fix. The real one runs a
