@@ -1204,21 +1204,98 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        that rises to about 0.34 m at mid-wheelbase, where a flat slab at the
        0.2565 m ground clearance would give only 16.9. That much is left to
        the skid plates, which already sit above the rockers. --- */
-    var frontCutX = AXLE + 0.18, rearCutX = -AXLE - 0.24;
-    slab("shell-rocker", rearCutX, frontCutX, rocker, beltline, -W + 0.03, W - 0.03, BODY);
+    /* WHERE THE COOLANT LINES RUN. They were at |z| = packWidth/2 + 0.14 =
+       0.85, with an 0.08 m bore, which puts them at |z| 0.81..0.89 -- entirely
+       inside the front tyre's band of 0.779..1.084. The pipe axis sits 0.127 m
+       below the wheel centre, so inside a 0.4471 m tyre it cut a chord 0.857 m
+       long straight through both front tyres and both rims, plus 0.269 m
+       through each brake rotor. Jeremy asked for the cooling lines to be more
+       accurate; they were routed through the wheels.
+       
+       0.73 puts them at |z| 0.69..0.77: clear of the tyre's inner sidewall by
+       0.009 m, and just outboard of the battery modules at 0.685 so they still
+       read as running along the pack rather than through it. */
+    var PIPE_Z = 0.73;
+    var FLARE_R = 0.55, FLARE_DEPTH = 0.13, FLARE_STEPS = 9,
+        frontCutX = AXLE + 0.18, rearCutX = -AXLE - 0.24,
+        flankZ = W - 0.055,
+        /* THE BED CAVITY. Every flank slab used to run the full body width
+           from the rocker all the way up to the bed rail, front to back --
+           which meant the volume the bed box occupies was solid bodywork.
+           Measured: 100.0% of it. The bed floor, both walls, both
+           wheelhousings, the tailgate, both bed lamps and the bed camera were
+           all entombed inside a body-coloured block, and the truck read as a
+           closed SUV with a deck welded on at glass height. GMC's published
+           36.7 cubic feet did not exist in the model at all.
+           
+           So the body is cut at the cab's rear wall. Ahead of bulkX it is one
+           slab to the beltline as before. Behind it, the full-width part stops
+           at the bed floor and only the two BEDSIDES carry on up to the rail,
+           which is what a pickup is. */
+        bedFloorY = beltline - VEH.bedDepth,
+        bedsideZ = VEH.bedWidth / 2;
+
+    /* THE WHEEL ARCHES, which the body never had.
+    
+       The flank was one slab with a flat bottom edge, so 0.4342 m of each
+       0.8942 m tyre -- 48.6% of its diameter -- sat inside solid bodywork,
+       and the arch trim rebuilt in eb3061a was a lip glued onto a wall with
+       the wheel behind it. That is the whole of "bulky boxes over the tires":
+       fixing the trim without cutting the body changed nothing.
+    
+       archBottom() cuts the flank on the SAME circle the flare follows, so
+       the body opening and the trim are concentric by construction rather
+       than by two numbers that have to be kept in step. */
+    function archBottom(x, base) {
+      var lowest = base;
+      [AXLE, -AXLE].forEach(function (ax) {
+        var dx = x - ax;
+        if (Math.abs(dx) < FLARE_R) {
+          var y = VEH.wheelRadius + Math.sqrt(FLARE_R * FLARE_R - dx * dx);
+          if (y > lowest) lowest = y;
+        }
+      });
+      return lowest;
+    }
+
+    /* One routine for every lower-body section, because both cuts -- the
+       arches and the bed cavity -- have to apply to all of them, and applying
+       them slab by slab is how the bed came to be solid in the first place. */
+    function flank(id, x0, x1, y0, y1) {
+      var STEP = 0.09, n = Math.max(1, Math.round((x1 - x0) / STEP));
+      for (var i = 0; i < n; i++) {
+        var a = x0 + (x1 - x0) * (i / n),
+            b = x0 + (x1 - x0) * ((i + 1) / n),
+            /* Highest arc point across the segment, so no body pokes into
+               the opening on the rising side. */
+            bottom = Math.max(archBottom(a, y0), archBottom(b, y0));
+        if (bottom >= y1 - 0.001) continue;          /* wholly inside an arch */
+        var isBed = b > bulkX ? false : true,
+            solidTop = isBed ? Math.min(y1, bedFloorY) : y1;
+        if (solidTop > bottom) {
+          slab(id + "-" + i, a, b, bottom, solidTop, -flankZ, flankZ, BODY);
+        }
+        if (isBed && y1 > Math.max(bottom, bedFloorY)) {
+          var sideBottom = Math.max(bottom, bedFloorY);
+          slab(id + "-" + i + "-l", a, b, sideBottom, y1, -flankZ, -bedsideZ, BODY);
+          slab(id + "-" + i + "-r", a, b, sideBottom, y1, bedsideZ, flankZ, BODY);
+        }
+      }
+    }
+
+    flank("shell-rocker", bulkX, frontCutX, rocker, beltline);
+    flank("shell-bedbase", rearCutX, bulkX, rocker, beltline);
     /* Front overhang, stepping up to the approach angle. */
     [[frontCutX, noseX - 0.58, rocker + 0.10],
      [noseX - 0.58, noseX - 0.28, rocker + 0.21],
      [noseX - 0.28, noseX, rocker + 0.32]].forEach(function (step, i) {
-      slab("shell-front-" + i, step[0], step[1], step[2], beltline,
-           -W + 0.03, W - 0.03, BODY);
+      flank("shell-front-" + i, step[0], step[1], step[2], beltline);
     });
     /* Rear overhang, stepping up to the departure angle. */
     [[rearCutX, tailX + 0.72, rocker + 0.09],
      [tailX + 0.72, tailX + 0.36, rocker + 0.18],
      [tailX + 0.36, tailX, rocker + 0.27]].forEach(function (step, i) {
-      slab("shell-rear-" + i, step[1], step[0], step[2], beltline,
-           -W + 0.03, W - 0.03, BODY);
+      flank("shell-rear-" + i, step[1], step[0], step[2], beltline);
     });
     /* skid plate and rear bumper, darker, proud of the body */
     slab("shell-skid", noseX - 0.30, noseX + 0.02, rocker - 0.10, rocker + 0.34,
@@ -1455,7 +1532,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        The steps are what make it an arch rather than a staircase: each
        segment's TOP follows the circle and its bottom is a fixed depth below,
        so the silhouette is the arc and the inner edge is the arc too. */
-    var FLARE_R = 0.55, FLARE_DEPTH = 0.13, FLARE_STEPS = 9;
+    /* Declared with the other body datums above; kept here as a comment so
+       the flare loop still reads as owning them. */
     [[AXLE, "f"], [-AXLE, "r"]].forEach(function (ax) {
       [-1, 1].forEach(function (side) {
         var z0 = side < 0 ? -W - 0.085 : W - 0.02,
@@ -1573,7 +1651,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         add({ id: "rim-" + w[0], mesh: "rim", layer: "wheels", colour: RIM,
               spin: true, corner: w[0], steer: front,
               t: [w[1], VEH.wheelRadius, z],
-              s: [d * 0.98, d * 0.98, VEH.wheelWidth * (w[2] < 0 ? -1.02 : 1.02)],
+              /* 0.98 drew a wheel face 86.2% of the tyre's outside diameter,
+                 leaving 0.06 m of visible sidewall -- a 35-inch mud-terrain
+                 rendered as a big alloy with a rubber pinstripe, on a truck
+                 whose sidewall is the first thing anyone notices. The spokes
+                 also overran the tyre's own bead hole by 0.126 m and were
+                 painted across the sidewall. 0.710 lands the spoke tips on
+                 the 22-inch rim flange this model already declares: face
+                 62.5% of the tyre, sidewall 0.168 m, 2.7 times more rubber. */
+              s: [d * 0.710, d * 0.710, VEH.wheelWidth * (w[2] < 0 ? -1.02 : 1.02)],
               rot: "z" });
         /* A brake is a rotor and a caliper, and this model had only the
            rotor -- which is half of the thing the translucent tyre was made
@@ -1627,10 +1713,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        cylinder's original Z instead made it short and fat and left a stray
        bar sticking out past the body. */
     add({ id: "pipe-l", mesh: "cyl", layer: "thermal", colour: [0.16, 0.52, 0.60],
-          flow: true, t: [0.70, 0.32, -(VEH.packWidth / 2 + 0.14)],
+          flow: true, t: [0.70, 0.32, -(PIPE_Z)],
           s: [3.3, 0.08, 0.08], rot: "x" });
     add({ id: "pipe-r", mesh: "cyl", layer: "thermal", colour: [0.16, 0.52, 0.60],
-          flow: true, t: [0.70, 0.32, VEH.packWidth / 2 + 0.14],
+          flow: true, t: [0.70, 0.32, PIPE_Z],
           s: [3.3, 0.08, 0.08], rot: "x" });
 
     /* Coolant that actually moves. The pipes used to pulse in place, which
@@ -1673,8 +1759,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     }
 
     var pipeBackX = 0.70 - 1.65, pipeFrontX = 0.70 + 1.65;
-    [[-(VEH.packWidth / 2 + 0.14), pipeBackX, pipeFrontX],
-     [VEH.packWidth / 2 + 0.14, pipeFrontX, pipeBackX]].forEach(function (run, side) {
+    [[-(PIPE_Z), pipeBackX, pipeFrontX],
+     [PIPE_Z, pipeFrontX, pipeBackX]].forEach(function (run, side) {
       for (var i = 0; i < 5; i++) {
         add({ id: "coolant-" + side + "-" + i, mesh: "cyl", layer: "thermal",
               colour: [0.30, 0.72, 0.82], coolant: true, chargeOnly: false,
