@@ -212,15 +212,39 @@ out of 62 m. The receiver publishes what is needed to spot this — `gps_speed_m
 is Doppler, independent of the noise moving the position around, and `gps_epx_m`
 is its own error estimate, which ran 11 m to 73 m. Fixes are anchored: while the
 vehicle is judged stopped, one held position is reported instead of a cloud.
-**The odometer has the final say, and it is the only signal here with no noise
-in it.** Wheel speed and Doppler both answer *is it moving right now*, a
-question with error bars — this vehicle's Doppler reported 4.62 m/s while
+**The odometer is the only signal here with no noise in it — and it is
+coarse.** Wheel speed and Doppler both answer *is it moving right now*, a
+question with error bars: this vehicle's Doppler reported 4.62 m/s while
 parked, and `speed_kph` went silent for 261 consecutive rows. The odometer
-answers *has it gone anywhere*, which is cumulative and monotonic: it either
-counted a revolution or it did not. While it holds still the fix is pinned
-absolutely, with no distance escape, because a receiver that puts a parked
-truck a kilometre away is simply wrong and the odometer is the thing that
-knows.
+answers *has it gone anywhere*, cumulative and monotonic — it either counted or
+it did not.
+
+The first version of this treated that as licence to pin the position
+absolutely whenever the counter held still, with no distance escape, on the
+stated basis that the counter resolved to 0.01 km. **That resolution was
+assumed, never measured, and it is wrong.** Across every session recorded
+2026-09-08 to 2026-09-10 there are 1,182 non-zero odometer steps, and the only
+values are 0.1 km (820), 0.2 km (284), 0.3 km (75) and 0.4 km (3). There has
+never been a step below 0.1 km.
+
+So between two ticks the truck covers up to a hundred metres of road with the
+reading unchanged — and the displayed position froze there, with nothing able
+to release it, because the odometer branch returned early and skipped every
+other test including the distance escape. Measured on four real drives, on rows
+where the vehicle's **own wheels** read above 20 km/h, the anchor held 10 of
+61, 10 of 49, 6 of 25 and 8 of 48 fixes, moving the shown position as much as
+**194.8 m** from the fix it replaced. A filter built to stop the map inventing
+movement was instead deleting it.
+
+The odometer now only ever *releases* the anchor. A turning wheel releases it
+too, immediately — nothing holds a position against the vehicle's own report
+that it is moving. What the odometer's silence still buys is a waiver of the
+250 m distance escape, and that part matters: a receiver placing a parked truck
+a kilometre away is exactly what this filter is for, and the first attempt at
+the repair reintroduced those jumps by letting distance override a silent
+counter. Both properties are now measured rather than argued — parked jitter
+still collapses from 1192.3 m to 0 m, and fixes held while the wheels turn fall
+to zero across all four drives.
 
 That also fixed a failure the speed-only version had: on one session it
 reported **0 m for a truck whose odometer moved 100 m**, because wheel speed

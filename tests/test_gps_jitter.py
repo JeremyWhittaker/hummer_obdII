@@ -199,16 +199,77 @@ class OdometerAuthorityTests(unittest.TestCase):
         points = self.rows(12, 2500.0, speed=9.0)
         self.assertEqual(gps.track_distance_m(points), 0.0)
 
-    def test_the_smallest_advance_releases_it(self):
-        points = (self.rows(4, 2500.00)
-                  + [dict(fix(HOME[0] + 0.01, HOME[1]), odometer_km=2500.02)])
+    def test_the_smallest_advance_this_vehicle_reports_releases_it(self):
+        # 0.1 km, because that is what the vehicle actually reports. Across
+        # every session recorded 2026-09-08 to 2026-09-10 there are 1,182
+        # non-zero odometer steps and the distinct values are 0.1 (820),
+        # 0.2 (284), 0.3 (75) and 0.4 km (3). There has never been one smaller.
+        # The earlier version of this test used 0.02 km and passed, which made
+        # a threshold calibrated to a resolution this truck does not have look
+        # verified.
+        points = (self.rows(4, 2500.0)
+                  + [dict(fix(HOME[0] + 0.01, HOME[1]), odometer_km=2500.1)])
         self.assertGreater(gps.track_distance_m(points), 500)
 
     def test_an_advance_below_the_reporting_step_does_not(self):
-        # 0.01 km is the resolution; anything under it is the same reading.
+        # Below half a real step is float noise, not travel.
         points = (self.rows(4, 2500.000)
                   + [dict(fix(HOME[0] + 0.01, HOME[1]), odometer_km=2500.004)])
         self.assertEqual(gps.track_distance_m(points), 0.0)
+
+    def test_a_turning_wheel_releases_the_anchor_between_odometer_ticks(self):
+        """The defect this class was written confidently enough to miss.
+
+        The odometer branch used to be absolute: if the counter had not
+        advanced it returned the anchor and skipped every other test, including
+        MAX_ANCHOR_M. That was justified by a comment claiming the counter
+        resolved to 0.01 km. It resolves to 0.1 km, so between two ticks the
+        truck covers up to a hundred metres of road with the reading unchanged
+        -- and the displayed position froze there, with nothing able to release
+        it.
+
+        Measured on four real drives before the fix: on rows where the
+        vehicle's own wheels read above 20 km/h, the anchor held 10 of 61,
+        10 of 49, 6 of 25 and 8 of 48 fixes, displacing the shown position by
+        up to 194.8 m. After it, zero of all four.
+
+        Every existing test here asserts a SUMMED track distance, which is why
+        none of them saw it: holding a fix and then releasing it still travels
+        the same total. This one asserts where each emitted point actually is.
+        """
+        points = []
+        for i in range(8):
+            # A truck moving steadily, wheels reporting it, odometer stuck
+            # between ticks the entire time.
+            points.append(dict(fix(HOME[0] + i * 0.0009, HOME[1]),
+                               odometer_km=2500.0, wheel_fl_kph=55.0,
+                               speed_kph=55.0))
+        out = gps.anchor_stationary(points)
+        worst = max(gps.haversine_m(src["gps_lat"], src["gps_lon"],
+                                    got["gps_lat"], got["gps_lon"])
+                    for src, got in zip(points, out))
+        self.assertLess(worst, 1.0,
+                        f"a fix was moved {worst:.1f} m while the wheels "
+                        f"reported 55 km/h")
+        self.assertFalse(any(got["gps_anchored"] for got in out),
+                         "a moving truck was anchored")
+
+    def test_the_odometer_still_outranks_a_wild_fix_on_a_parked_truck(self):
+        """The property the fix above must not cost.
+
+        Letting a turning wheel release the anchor is right. Letting DISTANCE
+        release it is not: a receiver that puts a stationary truck a kilometre
+        away is exactly what this filter exists for, and the first attempt at
+        the fix above reintroduced those jumps by allowing MAX_ANCHOR_M to
+        override a silent odometer.
+        """
+        points = (self.rows(4, 2500.0)
+                  + [dict(fix(HOME[0] + 0.01, HOME[1]), odometer_km=2500.0)])
+        out = gps.anchor_stationary(points)
+        self.assertEqual(gps.track_distance_m(points), 0.0)
+        self.assertTrue(out[-1]["gps_anchored"],
+                        "a 1.1 km jump was accepted from a truck whose "
+                        "odometer never moved")
 
     def test_the_anchor_cannot_get_stuck(self):
         """The failure the wheel-speed veto actually had.

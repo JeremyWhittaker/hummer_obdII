@@ -357,17 +357,36 @@ STATIONARY_MPS = 0.5
 
 #: The smallest odometer change that counts as having gone somewhere.
 #:
-#: THE ODOMETER IS THE AUTHORITY, and it is a better one than anything else in
-#: the row. Wheel speed and Doppler both answer "is it moving right now", which
-#: is a question with noise in it -- this vehicle's Doppler reported 4.62 m/s
+#: The odometer is noiseless but COARSE, and the first version of this got that
+#: exactly backwards. Wheel speed and Doppler answer "is it moving right now",
+#: a question with noise in it -- this vehicle's Doppler reported 4.62 m/s
 #: while parked, and speed_kph goes silent for hundreds of rows at a time. The
-#: odometer answers "has it gone anywhere", which is cumulative, monotonic, and
-#: has no noise at all: it either counted a revolution or it did not.
+#: odometer answers "has it gone anywhere", cumulative and monotonic, with no
+#: noise: it either counted or it did not.
 #:
-#: So a fix is held whenever the odometer has not advanced since the anchor was
-#: set, whatever GPS claims. 0.01 km is the reporting resolution -- ten metres,
-#: below any real departure and above nothing.
-ODOMETER_MOVED_KM = 0.01
+#: What it is not is fine-grained. The original comment here claimed "0.01 km
+#: is the reporting resolution -- ten metres". That was assumed, never
+#: measured, and it is wrong for this vehicle. Across every session recorded
+#: 2026-09-08 to 2026-09-10 there are 1,182 non-zero odometer steps and the
+#: distinct values are 0.1 km (820), 0.2 km (284), 0.3 km (75) and 0.4 km (3).
+#: There has never been a step below 0.1 km. The real resolution is a hundred
+#: metres.
+#:
+#: That matters because the odometer branch used to be absolute -- it returned
+#: the anchor and skipped every other test, MAX_ANCHOR_M included. Between two
+#: ticks the truck can cover 100 m of road with the counter unchanged, so the
+#: displayed position froze while it drove, and nothing could release it.
+#: Measured on four real drives, on rows where the vehicle's OWN wheels read
+#: above 20 km/h, the anchor held 6 of 25, 8 of 48, 10 of 61 and 10 of 49
+#: fixes, displacing the shown position by up to 195 m.
+#:
+#: So the odometer now only ever RELEASES the anchor. Its silence corroborates
+#: stillness -- it sets the same latch a zero road speed sets -- but it no
+#: longer outvotes a wheel that says the truck is moving, and it no longer
+#: bypasses the distance escape. The threshold sits at 0.05 km: half the real
+#: step, so any genuine tick clears it, and far enough above zero that a
+#: float artefact does not.
+ODOMETER_MOVED_KM = 0.05
 
 #: Road speed, in km/h, below which the VEHICLE says it is not moving.
 #:
@@ -507,21 +526,23 @@ def anchor_stationary(points: list[dict]) -> list[dict]:
         # reach -- it goes silent with the rest of service 01, and on one
         # parked session it answered in none of 261 rows.
         odo = point.get("odometer_km")
+        odo_moved = False
         if odo is not None:
             if anchor_odo is None:
                 anchor_odo = odo
             elif odo - anchor_odo >= ODOMETER_MOVED_KM:
-                anchor = (lat, lon)
-                anchor_odo = odo
-                stopped = False
-                run = 0
-                out.append(dict(point, gps_lat=lat, gps_lon=lon,
-                                gps_anchored=False))
-                continue
-            else:
-                out.append(dict(point, gps_lat=anchor[0], gps_lon=anchor[1],
-                                gps_anchored=True))
-                continue
+                odo_moved = True
+
+        if odo_moved:
+            # Unambiguous: the counter advanced, so the wheels turned. Nothing
+            # noisy is involved in that and the anchor has no business holding.
+            anchor = (lat, lon)
+            anchor_odo = odo
+            stopped = False
+            run = 0
+            out.append(dict(point, gps_lat=lat, gps_lon=lon,
+                            gps_anchored=False))
+            continue
 
         # The vehicle's own road speed, when it answered, outranks anything the
         # receiver claims -- and it LATCHES, because it answers so rarely. On
@@ -535,8 +556,31 @@ def anchor_stationary(points: list[dict]) -> list[dict]:
         # vehicle that reported zero does not start moving without reporting
         # something, and if it somehow does, MAX_ANCHOR_M below is the escape.
         road = _vehicle_kph(point)
+        if road is not None and road >= VEHICLE_STOPPED_KPH:
+            # The wheels say it is moving RIGHT NOW. No held position survives
+            # that. This is the case the odometer branch used to swallow: it
+            # returned the anchor and skipped every test below, including
+            # MAX_ANCHOR_M, so a truck at 50 km/h stayed pinned until the
+            # counter happened to tick.
+            anchor = (lat, lon)
+            anchor_odo = odo if odo is not None else anchor_odo
+            stopped = False
+            run = 0
+            out.append(dict(point, gps_lat=lat, gps_lon=lon,
+                            gps_anchored=False))
+            continue
         if road is not None:
-            stopped = road < VEHICLE_STOPPED_KPH
+            stopped = True
+        # The odometer answered and has not advanced. Now that a turning wheel
+        # releases the anchor above, that silence is worth trusting again: if
+        # the truck were really moving it would have counted within 100 m, so a
+        # fix hundreds of metres away is the receiver being wrong, not the
+        # truck having travelled. This is what lets MAX_ANCHOR_M be waived
+        # below -- without the waiver a parked truck given a kilometre-away fix
+        # is released, which is the whole failure the anchor exists to stop.
+        odo_says_still = odo is not None and not odo_moved
+        if odo_says_still:
+            stopped = True
         if stopped:
             release = False
         elif speed is None:
@@ -547,10 +591,12 @@ def anchor_stationary(points: list[dict]) -> list[dict]:
         else:
             run = run + 1 if speed >= STATIONARY_MPS else 0
             release = run >= MOVING_RUN
-        # MAX_ANCHOR_M stays an unconditional escape even under the veto: a
-        # stuck speed reading must not be able to pin a vehicle across a real
-        # journey, and 250 m is far past any error this receiver reports.
-        if release or gap > MAX_ANCHOR_M:
+        # MAX_ANCHOR_M is the escape for a stuck SPEED reading, which can pin a
+        # vehicle across a real journey. It is not an escape from the odometer:
+        # a counter that answered and did not move has already ruled out the
+        # travel that a large gap would imply, so honouring the distance there
+        # would reintroduce exactly the wild-fix jumps being filtered out.
+        if release or (gap > MAX_ANCHOR_M and not odo_says_still):
             anchor = (lat, lon)
             held = False
         else:
