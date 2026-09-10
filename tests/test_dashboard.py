@@ -460,6 +460,103 @@ class CrossOriginTests(unittest.TestCase):
             self.assertIn("text/html", r.headers.get("Content-Type", ""))
 
 
+class HostGuardTests(unittest.TestCase):
+    """Which hostnames this API may be reached under.
+
+    do_GET refuses any Host it does not recognise, which is what stops a page
+    on an attacker's domain from resolving that domain to this address and
+    reading the answer -- DNS rebinding. CORS cannot do this job: it governs
+    whether a browser hands the *response* to a page, and the guard has to
+    refuse the request.
+
+    The guard had no allowlist, and that made it refuse legitimate proxies
+    too. `tailscale serve` forwards the original Host, so an API fronted at
+    https://hummer.<tailnet>.ts.net arrived as that hostname and every request
+    came back 403 -- with the proxy, the certificate and the CORS list all
+    correct, and nothing in any log saying which of the four was wrong.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.directory = Path(self.temp.name)
+        rows = [{"utc": "2026-01-01T12:00:00Z", "elapsed_s": 0, "pack_v": 390,
+                 "pack_a": 20, "speed_kph": 0, "soc_pct": 80, "energy_kwh": 152}]
+        path = self.directory / "drive-20260101T120000Z.csv"
+        fields = list(dict.fromkeys(k for r in rows for k in r))
+        with path.open("w", newline="") as handle:
+            writer = csv.DictWriter(handle, fields)
+            writer.writeheader()
+            writer.writerows(rows)
+
+    def serve(self, **kwargs):
+        store = SessionStore(self.directory, **kwargs)
+        server = make_server(store, port=0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 3)
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_port}"
+
+    def get(self, base, host=None):
+        headers = {"Host": host} if host else {}
+        return urlopen(Request(base + "/api/snapshot", headers=headers), timeout=3)
+
+    def test_an_unnamed_host_is_still_refused(self):
+        # The whole point of the guard. Adding an allowlist must not turn it
+        # into a formality.
+        base = self.serve()
+        with self.assertRaises(HTTPError) as error:
+            self.get(base, "attacker.example")
+        self.assertEqual(error.exception.code, 403)
+
+    def test_a_named_host_is_accepted(self):
+        base = self.serve(allow_hosts=("hummer.example.ts.net",))
+        with self.get(base, "hummer.example.ts.net") as response:
+            self.assertEqual(json.load(response)["schema"], 1)
+
+    def test_naming_one_host_does_not_admit_another(self):
+        # An allowlist that leaks past its entries is not an allowlist.
+        base = self.serve(allow_hosts=("hummer.example.ts.net",))
+        for bad in ("attacker.example", "hummer.example.ts.net.evil.example",
+                    "evil.hummer.example.ts.net"):
+            with self.subTest(bad=bad), self.assertRaises(HTTPError) as error:
+                self.get(base, bad)
+            self.assertEqual(error.exception.code, 403)
+
+    def test_the_listener_and_localhost_still_work_with_no_allowlist(self):
+        # The default deployment must not need the new flag.
+        base = self.serve()
+        with self.get(base) as response:
+            self.assertEqual(json.load(response)["schema"], 1)
+
+    def test_a_wildcard_host_is_refused_at_construction(self):
+        # Same reasoning as allow_origins: there is no safe version of "any
+        # hostname may reach the API that answers with the vehicle's position".
+        with self.assertRaises(ValueError):
+            SessionStore(self.directory, allow_hosts=("*",))
+
+    def test_a_host_that_could_never_match_is_refused_at_construction(self):
+        # The Host header is compared with the port already stripped, so an
+        # entry carrying one would never match anything and would look
+        # configured while silently failing closed -- the same trap
+        # allow_origins avoids by refusing a scheme-less origin.
+        for bad in ("hummer.example.ts.net:443", "https://hummer.example.ts.net",
+                    "hummer.example.ts.net/api", ""):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                SessionStore(self.directory, allow_hosts=(bad,))
+
+    def test_the_allowlist_does_not_widen_who_may_read_cross_origin(self):
+        # Two separate gates. Reaching the API under a permitted hostname says
+        # nothing about which pages may read the answer, and a reader that
+        # confused them would hand the vehicle's position to any origin that
+        # knew the proxy's name.
+        base = self.serve(allow_hosts=("hummer.example.ts.net",))
+        with self.get(base, "hummer.example.ts.net") as response:
+            self.assertIsNone(response.headers.get("Access-Control-Allow-Origin"))
+
+
 class SessionListTests(unittest.TestCase):
     """Which recordings are journeys, so the picker can say so.
 

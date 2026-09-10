@@ -336,6 +336,7 @@ class SessionStore:
     def __init__(self, directory: str | Path, stale_after: float = 45.0,
                  *, expose_location: bool = False, tile_cache: str | Path | None = None,
                  allow_origins: tuple[str, ...] = (), api_only: bool = False,
+                 allow_hosts: tuple[str, ...] = (),
                  places_file: str | Path | None = None):
         if not math.isfinite(stale_after) or stale_after <= 0:
             raise ValueError("stale-after must be positive and finite")
@@ -359,6 +360,26 @@ class SessionStore:
             if origin == "*" or not origin.startswith(("http://", "https://")):
                 raise ValueError(
                     f"allowed origin must be an explicit scheme://host[:port], not {origin!r}")
+        # Hostnames a reverse proxy is allowed to arrive with. The Host guard
+        # in do_GET exists to defeat DNS rebinding -- an attacker's page
+        # resolving their own name to this address and reading the answer --
+        # and it does that by accepting only the address the listener is bound
+        # to. That is right until something legitimate fronts this API under a
+        # name of its own: `tailscale serve` forwards the original Host, so
+        # https://hummer.<tailnet>.ts.net arrives as that hostname and every
+        # request is refused with 403.
+        #
+        # Naming the hostname explicitly keeps the guard. A name is only safe
+        # to add if an attacker cannot make it resolve to somewhere they
+        # control -- true of a MagicDNS name, not true of one whose DNS the
+        # operator does not hold. So this is an allowlist, never a wildcard,
+        # for the same reason allow_origins is.
+        self.allow_hosts = tuple(dict.fromkeys(allow_hosts))
+        for name in self.allow_hosts:
+            if name == "*" or not name or "/" in name or ":" in name:
+                raise ValueError(
+                    f"allowed host must be a bare hostname with no scheme, port "
+                    f"or path, not {name!r}")
         # A data server has no page to serve. Once the interface lives
         # somewhere else, still serving a second copy here is two things to
         # keep in step and one of them will drift.
@@ -792,7 +813,8 @@ def make_server(store: SessionStore, host: str = "127.0.0.1", port: int = 8765) 
         def do_GET(self):
             # Refuse DNS-rebinding hostnames. A deliberate interface bind may
             # be reached using that IP; loopback also permits localhost.
-            accepted = {self.server.server_address[0], "127.0.0.1", "localhost"}
+            accepted = ({self.server.server_address[0], "127.0.0.1", "localhost"}
+                        | set(store.allow_hosts))
             hostname = self.headers.get("Host", "").split(":", 1)[0]
             if hostname not in accepted:
                 self._reply(403, {"error": "host not allowed; use the listener IP or localhost"})
@@ -914,6 +936,13 @@ def main(argv=None) -> int:
                              "exactly -- never '*' -- because this API answers with the "
                              "vehicle's position, and a wildcard would hand that to any "
                              "page the operator happens to have open.")
+    parser.add_argument("--allow-host", action="append", default=[], metavar="HOST",
+                        help="a hostname this API may be reached under, in addition to "
+                             "the listener IP and localhost, e.g. hummer.example.ts.net. "
+                             "Repeatable. Needed when a reverse proxy fronts this API "
+                             "under a name of its own -- `tailscale serve` forwards the "
+                             "original Host, and the DNS-rebinding guard refuses it with "
+                             "403 otherwise. Only add a name whose DNS you control.")
     parser.add_argument("--api-only", action="store_true",
                         help="serve the JSON API and nothing else. Use when the interface "
                              "is hosted somewhere else; a second copy of the page here "
@@ -954,6 +983,7 @@ def main(argv=None) -> int:
                              expose_location=args.expose_location,
                              tile_cache=tile_cache,
                              allow_origins=tuple(args.allow_origin),
+                             allow_hosts=tuple(args.allow_host),
                              places_file=args.places_file,
                              api_only=args.api_only)
         if args.json:
@@ -967,6 +997,11 @@ def main(argv=None) -> int:
                 # able to see which other sites can read this vehicle's data
                 # without going and finding the unit file.
                 print("Readable from: " + ", ".join(store.allow_origins), flush=True)
+            if store.allow_hosts:
+                # Same reasoning as the origins above: a hostname that bypasses
+                # the rebinding guard is a security-relevant fact, and it
+                # belongs in the log rather than only in the unit file.
+                print("Also reachable as: " + ", ".join(store.allow_hosts), flush=True)
             if store.tiles is not None:
                 # Said out loud at start-up rather than buried in --help: this
                 # process will contact a third party about where the vehicle

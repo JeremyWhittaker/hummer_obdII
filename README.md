@@ -323,28 +323,43 @@ reach the node gets an empty page rather than someone else's driving history.
 
 #### Reaching it from a phone, off the LAN
 
-The arrangement above works on the LAN and fails on cellular, in three
-independent ways. Fixing any two of them still leaves a blank panel, which is
-why they are worth naming separately:
+The node and Home Assistant are not on the same network. The Pi rides a
+hotspot in the vehicle and is reachable only over the tailnet; Home Assistant
+is on the house LAN. So the browser has to cross between them, and away from
+the LAN that crossing fails four separate ways. Fixing any three still leaves
+a blank panel, which is why they are worth naming individually:
 
 1. **Mixed content.** Away from home the phone reaches Home Assistant through
    Nabu Casa, so the page is served over `https`. A panel stamped with an
    `http` API base cannot fetch it: the browser blocks the request before it
    reaches the network. There is no failed request to find and no error the
    page can catch — it renders "the node could not be reached", which looks
-   exactly like a node that is down.
-2. **Reachability.** The node's address is on a tailnet. A phone without
-   Tailscale cannot resolve it whatever the scheme.
-3. **CORS.** `--allow-origin` names the origins Home Assistant uses *on the
+   exactly like a node that is down, and sends you to check a node that is
+   fine.
+2. **CORS.** `--allow-origin` names the origins Home Assistant uses *on the
    LAN*, both `http`. Arriving through Nabu Casa the origin is
-   `https://<id>.ui.nabu.casa`, which is not among them, so the node refuses
-   the read even once the first two are fixed.
+   `https://<id>.ui.nabu.casa`, which is not among them.
+3. **The Host guard.** `do_GET` refuses any `Host` but the listener address,
+   which is what stops DNS rebinding — CORS cannot do that job, since it
+   governs whether a browser hands the *response* to a page rather than
+   whether the request is answered. `tailscale serve` forwards the *original*
+   `Host`, so requests arrive named for the proxy and every one is refused.
+   Measured on this vehicle: `Host: 100.71.118.116:8765` → 200,
+   `Host: hummer.<tailnet>.ts.net` → 403, with the certificate, the proxy and
+   the CORS list all correct. `--allow-host` names the proxy's hostname
+   without weakening the guard for anything else.
+4. **Reachability.** The address is on a tailnet, so the phone needs
+   Tailscale. Because the Pi is on a hotspot rather than the house LAN, this
+   is true on home WiFi too, not only on cellular.
 
-`scripts/enable-remote-dashboard.sh` does the three things that are on the
-node and the HA box: puts the API behind Tailscale's own https with a real
-certificate (`tailscale serve`), adds the Nabu Casa origin to the allow-list,
-and regenerates the panel against the https base. It needs `sudo` on the node.
-Installing Tailscale on the phone is the fourth step and is yours.
+`scripts/enable-remote-dashboard.sh` does the four things that are on the
+node and the HA box: deploys the current source (the node imports from a
+plain rsync'd `src/`, so it does not know `--allow-host` until then — and
+adding the flag to the unit file first would leave the service crash-looping
+on an unrecognised argument), puts the API behind Tailscale's own https with a
+real certificate, adds both the Nabu Casa origin and the proxy hostname, and
+regenerates the panel against the https base. It needs `sudo` on the node.
+Installing Tailscale on the phone is the last step and is yours.
 
 **It is `tailscale serve`, never `tailscale funnel`.** Funnel would fix
 reachability without Tailscale on the phone, and would do it by publishing
