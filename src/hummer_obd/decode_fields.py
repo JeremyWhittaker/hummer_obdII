@@ -13,6 +13,27 @@ Nothing in this repository could re-derive them. For a project whose stated
 standard is measurement over plausible interpretation, that is the wrong way
 round: the numbers should come from something a reader can run.
 
+**And the -0.81 has now failed to reproduce.** Run against the AC charge of
+2026-09-10, ``0x5401`` against pack current gives **r = -0.201** over 277 rows
+and **r = -0.025** over the 130 where the vehicle was actually plugged in.
+Neither is anywhere near -0.81.
+
+That is not a claim the earlier figure was wrong -- it was taken from a
+different session under conditions this one may not contain, and the tooling to
+compare them properly is this module. It is a claim that the number does not
+hold universally and should not be cited as though it does. Across this charge
+``0x5401`` correlates with nothing measured: pack current -0.025, state of
+charge -0.207, pack voltage +0.166, temperature +0.217, elapsed time -0.171,
+cell voltage -0.184. Every one of those is under 0.22 on samples of 130 to 255.
+
+What it does instead is take six values, ``0x91`` through ``0x96``, alternating
+between two of them on a timescale of tens of seconds while the pair itself
+drifts over the hour. A quantity does not do that. A state or a bitfield does.
+The comment in ``live.py`` saying this field is "kept unscaled until a charge
+session calibrates it" has now had its charge session, and the answer is that
+it did not calibrate as a quantity at all -- which is an answer, and a more
+useful one than a scaling nobody could reproduce.
+
 So this runs them. For every raw column it extracts every plausible field --
 single bytes, big-endian 16-bit pairs signed and unsigned, 24-bit windows --
 and correlates each against every quantity the vehicle reports directly.
