@@ -292,6 +292,14 @@ MODULE_DECODERS: dict[tuple[str, str], Callable[[bytes], dict]] = {
     # the same module rather than another: comparing 1D against 17 confounds
     # a bad decode with two modules genuinely seeing different rails, and
     # this comparison cannot.  If they disagree, 0x33E5 is misdecoded.
+    #
+    # It also turns out to be the more AVAILABLE of the two, which is the
+    # opposite of what "legislated" suggests.  Measured on 2026-09-08/09:
+    # PID 0142 answers 100% of moving samples and 22-27% of parked ones,
+    # while 0x33E5 answered 8 of 8 on a parked, HV-awake vehicle where 0142
+    # answered none.  Service 01 largely goes to sleep with the driveline on
+    # this truck; service 22 does not.  So this is not only a check on the
+    # decode -- it is the route that still reports while the vehicle sits.
     ("17", "33E5"): (
         lambda p: {"mod17_v": round(p[0] / 10, 1)} if p else {}),
 }

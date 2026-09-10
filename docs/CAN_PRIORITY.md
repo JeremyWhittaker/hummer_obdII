@@ -25,6 +25,58 @@ standard identification identifiers where none did:
 | `CB` | BSM-BatterySysMngr | answers | **answers** | `01 20 40 42` |
 | `CD` | BSM, second address | — | — | `01 20 40 42` |
 
+## Legislated does not mean dependable
+
+Module `17` advertises fourteen service 01 PIDs and answers them -- while the
+truck is moving. Parked, it mostly does not. Measured across two sessions on
+2026-09-08 and 09, PID `0142` (control module supply voltage) landed in 100% of
+moving samples (284/284 and 91/91) and 22-27% of stationary ones (48/178 and
+31/138). A third session on 2026-09-10 caught eleven parked HV-awake samples
+and `0142` answered none of them, while the enhanced identifier `0x33E5` --
+the same rail, the same module -- answered all eight it was asked for.
+
+That is worth stating because it is backwards from the intuition. The
+legislated service is the one with a standard behind it, and it is the one
+that goes quiet when the driveline does. Service 22 keeps answering. Any
+reading this project wants while the vehicle sits should come from the
+enhanced route, and the legislated one should be treated as a moving-vehicle
+measurement that happens to sometimes work at rest.
+
+## First result from the second route, 2026-09-10
+
+Nine samples of a moving vehicle, 381.55-389.93 V, 0.6-412.2 A.
+
+**Pack voltage agrees.** Modules `17` and `1D`, asked for `0x2885`
+independently, differ by a mean of +0.061 V -- 0.016% of the reading -- with a
+worst case of 0.403% and a delta of only -0.130 V in the sample drawing over
+200 A. The scatter that does exist (sd 0.638 V) is the shape of two modules
+sampling a fast-moving quantity at slightly different instants, not of a bad
+decode: a wrong scaling shows up as a systematic ratio or offset and this has
+neither. The measurement the project calls its headline now has a second ECU
+behind it.
+
+**The 12 V rail does not agree, and that is the interesting one.** At the same
+module, PID `0142` reads a mean 13.513 V and `0x33E5` reads 13.167 V -- an
+offset of +0.346 V with a standard deviation of 0.041. That is not noise and
+not rounding; `0x33E5` has 0.1 V resolution, so the gap is three and a half
+counts wide and holds steady.
+
+The project had seen a version of this before, comparing `0x33E5` at module
+`1D` against PID `0142` at module `17`, and could not tell a misdecoded field
+from two modules genuinely sitting at different points on a harness. Asking
+module `17` for both removes that confound entirely -- one module, one rail,
+two routes -- and the offset survives it. So it is not a wiring gradient
+between modules.
+
+What it is remains open, and is recorded as open. Three readings of one rail
+now sit in a consistent order -- the adapter at the connector highest near
+13.9 V, then PID `0142`, then `0x33E5` at `17`, then `0x33E5` at `1D` lowest --
+which is suggestive of a sense-point difference but is nine samples and should
+not be argued from yet. `0x33E5`'s scaling is not in doubt: it is merged
+upstream at `len 8, div 10`. Whether it means precisely what PID `0142` means
+is now a live question with a number attached to it, which it did not have
+before.
+
 ## Only one module serves legislated data
 
 The last column is the measured part that had not been written down. The
