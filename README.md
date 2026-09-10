@@ -221,9 +221,24 @@ a release, and the veto *latches*, because on that session the legislated PID
 answered in none of 261 rows while the wheel sensors answered twelve times and
 read zero every one.
 
-Validated against the vehicle's own odometer: an 8100 m drive that read
-**+3.2%** now reads **+0.48%**, and the parked session's invented path falls
-from **148 m to 16 m** — a house, rather than a city block.
+Validated against the vehicle's own odometer: the parked session's invented
+path falls from **148 m to 16 m** — a house, rather than a city block — and a
+drive that had a long parked stretch went from **+3.2% to +0.48%**.
+
+**This fixes distance accumulated while STOPPED, and nothing else.** A drive on
+2026-09-10 with one stationary fix in thirty-five came out identical before and
+after — 3918 m against a 3600 m odometer, **+8.83%**, because there was nothing
+to anchor. That residual is a different error: noise on each individual fix
+lengthens every segment and shortens none, so it only accumulates upward. This
+receiver reported a median `gps_epx_m` of **39.8 m on open highway**, and that
+much endpoint noise over 91 m segments predicts about 4.7% by itself.
+
+So the page does not ask the receiver a question the vehicle answers better.
+The truck counts its own wheel revolutions, and the map shows **that** as the
+trip distance with the GPS figure beside it — "trip 3.60 km / by GPS 3.92 km"
+— because the gap between the two is the honest measure of the fix quality.
+Smoothing a moving track is a separate job from filtering a stationary one and
+has not been done.
 
 | `hummer-obd-analyze` | Reads a session back; `--trend` compares them all. A session that drives and then charges gets both reports — charging is detected as *plugged in and taking current*, never from the sign of pack current alone, because regen reaches −315 A on this vehicle and would otherwise be read as its strongest charge | **no** |
 | `hummer-obd-live` | Derived quantities, then every sensor and how long since it answered | **no** |
