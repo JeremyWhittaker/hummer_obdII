@@ -152,3 +152,29 @@ class ScenePartTests(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class HonestyTests(unittest.TestCase):
+    """What the model draws confidently and cannot source, it must say so.
+
+    The README called the thermal plumbing unverified while the page drew 28
+    thermal parts with no caveat anywhere a reader would see it. Two stories
+    about the same geometry, and the one nobody reads was the honest one.
+    """
+
+    def test_the_unsourced_thermal_plumbing_says_so_on_the_model(self):
+        self.assertIn("The plumbing itself is UNSOURCED", PAGE)
+
+    def test_the_measured_temperature_is_distinguished_from_the_guessed_shapes(self):
+        # The tint is a real reading; the pipes are placeholders. A caveat that
+        # tarred both would be as misleading as none.
+        self.assertIn("the temperature above is measured", PAGE)
+
+    @unittest.skipIf(NODE is None, "node is not installed on this machine")
+    def test_the_caveat_covers_however_many_parts_are_actually_drawn(self):
+        # If the thermal layer is ever emptied the caveat should go with it,
+        # and if it grows the caveat still applies -- this asserts the pairing
+        # rather than a count that would rot.
+        thermal = [p for p in build_parts() if p["layer"] == "thermal"]
+        if thermal:
+            self.assertIn("UNSOURCED", PAGE)

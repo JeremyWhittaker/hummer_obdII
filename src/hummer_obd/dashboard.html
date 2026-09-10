@@ -3236,6 +3236,25 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       thermalBadge.appendChild(row);
       thermalBadge.appendChild(h("span", "note",
         "pack-side sensor. Which sensor, and where, is not established."));
+      /* Said on the model, not only in the README.
+         
+         Jeremy asked "what exactly is up with those cooling cylinders on the
+         bottom ... they look like they just go to the front and then don't go
+         anywhere", and the honest answer is that nobody here knows: a sourcing
+         pass for the Ultium thermal layout came back empty on what the
+         underbody cylinders are, whether there is a front radiator, how many
+         loops there are, and how coolant routes through the 24 modules. The
+         pipes end in mid-air because there is no sourced component to end them
+         into.
+         
+         A model that draws 28 confident-looking thermal parts while its own
+         documentation calls them unverified is telling two different stories.
+         The reader is looking at the model, so the caveat goes here too. */
+      thermalBadge.appendChild(h("span", "note",
+        "The plumbing itself is UNSOURCED. Pipe routing, the radiator and the "
+        + "loop count could not be found in GM material — the pipes end in "
+        + "mid-air because nothing sourced says what they connect to. Treat "
+        + "the shapes as placeholders; the temperature above is measured."));
     }
 
     /* The caption belongs to the view, not to this function. Setting it here
