@@ -1149,8 +1149,37 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     /* front fascia and light bar */
     slab("shell-fascia", noseX - 0.10, noseX, rocker + 0.28, beltline + 0.20,
          -W + 0.05, W - 0.05, TRIM);
-    slab("shell-lightbar", noseX - 0.04, noseX + 0.03, beltline - 0.02, beltline + 0.14,
-         -W + 0.30, W - 0.30, [0.62, 0.66, 0.70], { emissiveTag: "lights" });
+    /* --- the front light bar, which on this truck spells its own name ------
+       GMC's brochure calls it "LED front signature lighting; includes HUMMER
+       EV light bar, walk-up and departure animation", and the bar carries
+       illuminated HUMMER lettering that doubles as a CHARGE STATUS display.
+       That is a published feature of the vehicle, not an invention here, and
+       it is the one piece of this model that was already designed to show
+       telemetry before anybody wired telemetry to it.
+
+       So the six letters are six parts, and while the truck is charging they
+       fill left to right in proportion to state of charge -- five solid and
+       the sixth breathing at 84%, which is what a bar that reports charge
+       does. The letters are cut from the bar rather than laid on it, at
+       0.11 m wide with 0.035 m between, spanning the full width GMC gives it.
+
+       Full width, not inset: the previous bar stopped 0.30 m short of each
+       flank, which is a lamp, not the "full-width upper lightbar" every
+       description of this vehicle names. */
+    var barY0 = beltline - 0.02, barY1 = beltline + 0.14;
+    slab("shell-lightbar", noseX - 0.04, noseX + 0.02, barY0, barY1,
+         -W + 0.07, W - 0.07, [0.10, 0.11, 0.12]);
+    var LETTERS = ["H", "U", "M", "M", "E", "R"],
+        letterW = 0.11, letterGap = 0.035,
+        letterSpan = LETTERS.length * letterW + (LETTERS.length - 1) * letterGap,
+        letterZ = -letterSpan / 2;
+    for (var li = 0; li < LETTERS.length; li++) {
+      slab("lightbar-letter-" + li, noseX - 0.02, noseX + 0.035,
+           barY0 + 0.025, barY1 - 0.025,
+           letterZ, letterZ + letterW, [0.62, 0.66, 0.70],
+           { emissiveTag: "lights", letter: li, letters: LETTERS.length });
+      letterZ += letterW + letterGap;
+    }
 
     /* --- grille: horizontal bars across the fascia. Cheap in geometry and
        it is the feature a front three-quarter view looks for first. --- */
@@ -1830,13 +1859,20 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         /* A layer missing from this map resolves to undefined, which becomes
            a NaN alpha and a part that silently does not draw. Every layer a
            part can name has to have a value here. */
-        layers = { shell: 0.40, pack: 1, drive: 1, wheels: 1, thermal: 1,
+        /* 0.40 was calibrated while translucent surfaces still wrote depth,
+           so only the nearest shell panel actually drew and the body read as
+           semi-solid. With the depth mask off -- which is what makes seeing
+           through to the brakes work at all -- every panel now blends, and
+           looking through five of them at 0.40 compounds into fog rather than
+           a vehicle. The layer buttons are how you see inside; the default
+           should look like a truck. */
+        layers = { shell: 0.82, pack: 1, drive: 1, wheels: 1, thermal: 1,
                    aux: 1, underbody: 1, radar: 1, cabin: 1 },
         /* Every field the draw loop reads has to exist before the first
            snapshot arrives, or a frame renders NaN into the shader and the
            part disappears without an error anywhere. */
         live = { modules: [], kw: 0, brake: 0, flow: 0, speed: 0, steer: 0,
-                 corners: {}, charging: false, roll: 0, pitch: 0,
+                 corners: {}, charging: false, soc: null, roll: 0, pitch: 0,
                  fill: null, packTemp: null, lv: null, port: false,
                  fault: false, chargeKw: 0, regenKw: 0, radar: [0, 0, 0],
                  awake: false },
@@ -2094,6 +2130,22 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         if (p.id && p.id.indexOf("motor") === 0) {
           var m = Math.min(1, Math.abs(live.kw) / 180);
           emissive = live.kw < 0 ? [0, m * 0.55, m * 0.18] : [m * 0.62, m * 0.20, 0];
+        }
+        if (p.letter !== undefined) {
+          /* The bar reports charge, which is what GMC built it to do. Letters
+             fill left to right against state of charge; the leading one
+             breathes so the display reads as working rather than stuck. Not
+             charging, they are the running lights: dim, even, all six. */
+          var frac = (p.letter + 1) / p.letters,
+              soc = live.soc === null ? null : live.soc / 100;
+          if (live.charging && soc !== null) {
+            var lead = Math.sin(now * 0.0022) * 0.5 + 0.5;
+            var on = soc >= frac ? 1
+                   : (soc > frac - 1 / p.letters ? 0.25 + lead * 0.75 : 0.06);
+            emissive = [on * 0.10, on * 0.72, on * 0.34];
+          } else {
+            emissive = [0.34, 0.36, 0.40];
+          }
         }
         if (p.brake) {
           emissive = [live.brake * 0.9, live.brake * 0.08, live.brake * 0.08];
@@ -2735,6 +2787,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       },
       charging: derived("charging") === true,
       chargeKw: Math.abs(num(derived("pack_kw")) || 0),
+      /* State of charge, for the light bar, which GMC built to report it.
+         Read through atFrame so a replay lights the letters the truck had
+         lit at that moment rather than the ones it has now. */
+      soc: atFrame("soc_pct", num(sigValue("soc_pct"))),
       /* Power flowing INTO the pack while driving, which is regen. Distinct
          from chargeKw, which is the same magnitude while plugged in -- the
          two are never both meaningful at once, and conflating them would
