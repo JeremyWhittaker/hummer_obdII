@@ -355,6 +355,20 @@ STATIONARY_MPS = 0.5
 # length and offers the GPS figure beside it, and this module stays in charge
 # of POSITION rather than distance.
 
+#: The smallest odometer change that counts as having gone somewhere.
+#:
+#: THE ODOMETER IS THE AUTHORITY, and it is a better one than anything else in
+#: the row. Wheel speed and Doppler both answer "is it moving right now", which
+#: is a question with noise in it -- this vehicle's Doppler reported 4.62 m/s
+#: while parked, and speed_kph goes silent for hundreds of rows at a time. The
+#: odometer answers "has it gone anywhere", which is cumulative, monotonic, and
+#: has no noise at all: it either counted a revolution or it did not.
+#:
+#: So a fix is held whenever the odometer has not advanced since the anchor was
+#: set, whatever GPS claims. 0.01 km is the reporting resolution -- ten metres,
+#: below any real departure and above nothing.
+ODOMETER_MOVED_KM = 0.01
+
 #: Road speed, in km/h, below which the VEHICLE says it is not moving.
 #:
 #: This is the veto, and it is the thing the first three versions of this
@@ -469,6 +483,9 @@ def anchor_stationary(points: list[dict]) -> list[dict]:
     run = 0
     #: None until the vehicle first says something about its own motion.
     stopped = False
+    #: The odometer reading when the current anchor was set. None until the
+    #: odometer first answers, which on a sleeping truck may be never.
+    anchor_odo: Optional[float] = None
     for point in points:
         lat, lon = point.get("gps_lat"), point.get("gps_lon")
         if lat is None or lon is None:
@@ -478,6 +495,34 @@ def anchor_stationary(points: list[dict]) -> list[dict]:
         if anchor is None:
             anchor = (lat, lon)
         gap = haversine_m(anchor[0], anchor[1], lat, lon)
+        # THE ODOMETER FIRST. If it has not advanced since the anchor was set,
+        # the vehicle has not gone anywhere and no amount of GPS disagreement
+        # changes that. This is the only test here with no noise in it.
+        #
+        # Deliberately absolute: no distance escape, no MAX_ANCHOR_M override
+        # while the odometer holds still. A receiver that puts a parked truck a
+        # kilometre away is wrong, and the odometer is the thing that knows.
+        #
+        # The speed tests below remain for every row the odometer does not
+        # reach -- it goes silent with the rest of service 01, and on one
+        # parked session it answered in none of 261 rows.
+        odo = point.get("odometer_km")
+        if odo is not None:
+            if anchor_odo is None:
+                anchor_odo = odo
+            elif odo - anchor_odo >= ODOMETER_MOVED_KM:
+                anchor = (lat, lon)
+                anchor_odo = odo
+                stopped = False
+                run = 0
+                out.append(dict(point, gps_lat=lat, gps_lon=lon,
+                                gps_anchored=False))
+                continue
+            else:
+                out.append(dict(point, gps_lat=anchor[0], gps_lon=anchor[1],
+                                gps_anchored=True))
+                continue
+
         # The vehicle's own road speed, when it answered, outranks anything the
         # receiver claims -- and it LATCHES, because it answers so rarely. On
         # the parked session that motivated this, `speed_kph` returned nothing

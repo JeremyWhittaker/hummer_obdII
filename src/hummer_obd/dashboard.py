@@ -220,6 +220,11 @@ def _history(rows: list[dict], *, location: bool = False) -> list[dict]:
             for wheel in ("wheel_fl_kph", "wheel_fr_kph",
                           "wheel_rl_kph", "wheel_rr_kph"):
                 point[wheel] = reading(wheel)
+            # The odometer outranks all of them: cumulative, monotonic and
+            # noiseless, where speed is an instantaneous reading with error
+            # bars. Without it here the anchoring falls back to the noisy
+            # signals for every row.
+            point["odometer_km"] = reading("odometer_km")
         result.append(point)
     if location:
         # Measured against this vehicle's own odometer on 2026-09-10: raw fixes

@@ -212,7 +212,22 @@ out of 62 m. The receiver publishes what is needed to spot this — `gps_speed_m
 is Doppler, independent of the noise moving the position around, and `gps_epx_m`
 is its own error estimate, which ran 11 m to 73 m. Fixes are anchored: while the
 vehicle is judged stopped, one held position is reported instead of a cloud.
-**The vehicle's own wheels have the final say.** Three earlier versions of this
+**The odometer has the final say, and it is the only signal here with no noise
+in it.** Wheel speed and Doppler both answer *is it moving right now*, a
+question with error bars — this vehicle's Doppler reported 4.62 m/s while
+parked, and `speed_kph` went silent for 261 consecutive rows. The odometer
+answers *has it gone anywhere*, which is cumulative and monotonic: it either
+counted a revolution or it did not. While it holds still the fix is pinned
+absolutely, with no distance escape, because a receiver that puts a parked
+truck a kilometre away is simply wrong and the odometer is the thing that
+knows.
+
+That also fixed a failure the speed-only version had: on one session it
+reported **0 m for a truck whose odometer moved 100 m**, because wheel speed
+answered rarely, read zero, and the latch never released. An anchor that cannot
+release is not a filter, it is a deletion.
+
+**The wheels are the fallback**, for every row the odometer does not reach. Three earlier versions of this
 filter arbitrated between GPS position and GPS Doppler — two views of one noisy
 signal — while an independent witness sat in the same row saying the wheels were
 not turning. On a parked session Doppler noise still released the anchor twice,

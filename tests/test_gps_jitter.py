@@ -179,6 +179,68 @@ class VehicleVetoTests(unittest.TestCase):
         self.assertGreater(gps.track_distance_m(points), gps.MAX_ANCHOR_M)
 
 
+class OdometerAuthorityTests(unittest.TestCase):
+    """The odometer outranks everything, because it is the only signal here
+    with no noise in it.
+
+    Wheel speed and Doppler both answer "is it moving right now", a question
+    with error bars: this vehicle's Doppler reported 4.62 m/s while parked and
+    speed_kph went silent for 261 rows straight. The odometer answers "has it
+    gone anywhere", which is cumulative and monotonic -- it either counted a
+    revolution or it did not.
+    """
+
+    def rows(self, n, odo, lat=HOME[0], lon=HOME[1], **kw):
+        return [dict(fix(lat + (i % 3 - 1) * JITTER, lon, **kw),
+                     odometer_km=odo) for i in range(n)]
+
+    def test_an_unmoving_odometer_pins_the_truck_absolutely(self):
+        # Doppler screaming, position wandering, odometer still. Held.
+        points = self.rows(12, 2500.0, speed=9.0)
+        self.assertEqual(gps.track_distance_m(points), 0.0)
+
+    def test_the_smallest_advance_releases_it(self):
+        points = (self.rows(4, 2500.00)
+                  + [dict(fix(HOME[0] + 0.01, HOME[1]), odometer_km=2500.02)])
+        self.assertGreater(gps.track_distance_m(points), 500)
+
+    def test_an_advance_below_the_reporting_step_does_not(self):
+        # 0.01 km is the resolution; anything under it is the same reading.
+        points = (self.rows(4, 2500.000)
+                  + [dict(fix(HOME[0] + 0.01, HOME[1]), odometer_km=2500.004)])
+        self.assertEqual(gps.track_distance_m(points), 0.0)
+
+    def test_the_anchor_cannot_get_stuck(self):
+        """The failure the wheel-speed veto actually had.
+
+        On session 021134 it reported 0 m for a session whose odometer moved
+        100 m: wheel speed answered rarely, read zero, and the latch never
+        released. An anchor that cannot release is not a filter, it is a
+        deletion.
+        """
+        points = []
+        for leg in range(4):
+            points += self.rows(5, 2500.0 + leg * 0.5,
+                                lat=HOME[0] + leg * 0.004)
+        self.assertGreater(gps.track_distance_m(points), 800)
+
+    def test_a_silent_odometer_falls_back_to_the_speed_rules(self):
+        # It goes quiet with the rest of service 01, so the tests below it
+        # still have to work.
+        points = [fix(HOME[0], HOME[1]) for _ in range(10)]
+        points[4]["gps_speed_mps"] = 4.62
+        for p in points:
+            p["wheel_fl_kph"] = 0.0
+        self.assertEqual(gps.track_distance_m(points), 0.0)
+
+    def test_a_partly_silent_odometer_still_governs_the_rows_it_reaches(self):
+        points = self.rows(6, 2500.0, speed=6.0)
+        points += [fix(HOME[0], HOME[1], speed=6.0) for _ in range(4)]
+        # The odometer rows are pinned; the silent ones fall to Doppler, which
+        # needs MOVING_RUN consecutive samples and has them here.
+        self.assertLess(gps.track_distance_m(points), 60)
+
+
 class ThresholdTests(unittest.TestCase):
     def test_the_stationary_threshold_admits_a_creeping_vehicle(self):
         # 0.5 m/s is 1.8 kph. Traffic crawl is well above it.
