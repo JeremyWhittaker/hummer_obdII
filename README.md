@@ -175,7 +175,7 @@ The right-hand column is the one that matters operationally.
 | Command | What it does | Touches the vehicle? |
 |---|---|---|
 | `hummer-obd-capabilities` | Sanitized report of a node's live state | **no** |
-| `hummer-obd-analyze` | Reads a session back; `--trend` compares them all | **no** |
+| `hummer-obd-analyze` | Reads a session back; `--trend` compares them all. A session that drives and then charges gets both reports — charging is detected as *plugged in and taking current*, never from the sign of pack current alone, because regen reaches −315 A on this vehicle and would otherwise be read as its strongest charge | **no** |
 | `hummer-obd-live` | Derived quantities, then every sensor and how long since it answered | **no** |
 | `hummer-obd-dashboard` | Local browser dashboard, session history, charts and a driving / stationary energy budget | **no** |
 | `hummer-obd-decode` | Correlates undecoded raw fields against measured quantities | **no** |
