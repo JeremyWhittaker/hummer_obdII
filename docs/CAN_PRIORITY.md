@@ -47,13 +47,35 @@ measurement that happens to sometimes work at rest.
 Nine samples of a moving vehicle, 381.55-389.93 V, 0.6-412.2 A.
 
 **Pack voltage agrees.** Modules `17` and `1D`, asked for `0x2885`
-independently, differ by a mean of +0.061 V -- 0.016% of the reading -- with a
-worst case of 0.403% and a delta of only -0.130 V in the sample drawing over
-200 A. The scatter that does exist (sd 0.638 V) is the shape of two modules
-sampling a fast-moving quantity at slightly different instants, not of a bad
-decode: a wrong scaling shows up as a systematic ratio or offset and this has
-neither. The measurement the project calls its headline now has a second ECU
-behind it.
+independently over 57 paired samples, differ by a mean of **+0.032 V** --
+0.008% of a 386 V reading. The measurement the project calls its headline now
+has a second ECU behind it.
+
+The scatter is the interesting part, because it identifies itself. Deltas run
+-1.43 V to +2.74 V, sd 0.682, worst case 0.706% of reading, and seven of the
+fifty-seven samples sit more than a volt apart. That looks alarming until you
+ask *when*:
+
+| Current slewing | mean absolute delta |
+|---|---|
+| faster than median | 0.644 V (n=28) |
+| slower than median | 0.311 V (n=28) |
+
+The disagreement **doubles when current is changing fast**, and the largest
+delta of all -- +2.74 V -- lands at -33.25 A, a regen crossing, which is the
+steepest slew a drivetrain produces. Two ECUs sampling the same busbar
+milliseconds apart during a 350 A swing will not return the same number, and
+the size of the gap tracks how fast the busbar is moving.
+
+That is the signature of sampling skew, and it is *not* the signature of a bad
+decode. A wrong scaling is systematic: it biases the mean, and it grows with
+the reading rather than with its derivative. This bias is +0.032 V on 386 V,
+essentially zero, with symmetric scatter either side of it.
+
+An earlier version of this section published a mean of +0.061 V and a worst
+case of 0.403% from the first nine samples. The mean tightened and the worst
+case nearly doubled, which is what a nine-sample extreme normally does. The
+figures above are the fifty-seven-sample ones.
 
 **The 12 V rail does not agree, and that is the interesting one.** At the same
 module, PID `0142` reads a mean 13.513 V and `0x33E5` reads 13.167 V -- an
