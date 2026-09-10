@@ -72,10 +72,19 @@ ssh -t "jeremy@${NODE_TS_IP}" "
 "
 
 say "3/4  regenerating the panel against the https base"
+# PYTHONPATH=src is required: the package is not installed, and only pytest.ini
+# puts src on the path. Without it this dies with ModuleNotFoundError after the
+# node has already been reconfigured, which is the worst point to fail at.
+REPO=$(cd "$(dirname "$0")/.." && pwd)
 TMP=$(mktemp)
 trap 'rm -f "$TMP"' EXIT
-python3 -m hummer_obd.hapanel --api "https://${NODE_HOST}" --out "$TMP"
+( cd "$REPO" && PYTHONPATH=src python3 -m hummer_obd.hapanel \
+      --api "https://${NODE_HOST}" --out "$TMP" )
+[ -s "$TMP" ] || { echo "error: panel render produced nothing" >&2; exit 1; }
+grep -q "<canvas" "$TMP" || { echo "error: rendered file is not the dashboard" >&2; exit 1; }
 ssh -o BatchMode=yes "$HA" "cat > ${PANEL}" < "$TMP"
+# hapanel derives the version the same way; recomputed here so the value shown
+# is the one actually deployed rather than the one it intended to deploy.
 VERSION=$(sha256sum "$TMP" | cut -c1-12)
 
 say "4/4  verifying"
