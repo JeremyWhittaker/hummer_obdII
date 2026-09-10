@@ -208,6 +208,22 @@ Recorded in passing, not analysed: `0x5401` took the values `0x94` and `0x91`
 during this charge. Neither is among the states this project has previously
 seen (`00`, `14`, `24`, `27`, `2A`, `2B`, `54`).
 
+**And one thing this session did measure about `0x5401`.** Across the drive it
+held `0x00` through regen down to **-314.95 A**, and went non-zero only once
+the truck was plugged in, at -8 to -17 A. So it is a plug state and not a
+current: three hundred amps flowing *into* the pack does not move it.
+
+That matters because the dashboard's charge animation is gated on exactly this.
+The rule written for it -- energy pulses appear only while pack power is
+negative *and* the vehicle is not plugged in, so a charge cable can never
+animate mid-drive -- rests on `plugged` being false during regen. That was
+reasoned from the field's name when it was written. It is now measured, at the
+hardest case available: the heaviest regen in the session.
+
+The converse is measured too, on the same evening: plugged and drawing -15 A
+sets the state, so a genuine charge is not mistaken for regen either. Both
+directions of the guard now have a number behind them.
+
 One thing the swing did settle. Through that entire 1.1 V descent, `0x33E5` at
 module `17` and at module `1D` tracked each other to within 0.1 V -- 12.6/12.5,
 12.3/12.3, 12.2/12.1, 12.1/12.1. The enhanced route is internally consistent
