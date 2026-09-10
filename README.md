@@ -175,6 +175,17 @@ The right-hand column is the one that matters operationally.
 | Command | What it does | Touches the vehicle? |
 |---|---|---|
 | `hummer-obd-capabilities` | Sanitized report of a node's live state | **no** |
+**GPS jitter is filtered before anything reads a position.** A parked truck's
+receiver does not sit still: measured on 2026-09-10, two sessions where the
+truck never left the driveway recorded 114 m of "travel" out of 187 m and 51 m
+out of 62 m. The receiver publishes what is needed to spot this — `gps_speed_mps`
+is Doppler, independent of the noise moving the position around, and `gps_epx_m`
+is its own error estimate, which ran 11 m to 73 m. Fixes are anchored: while the
+vehicle is judged stopped, one held position is reported instead of a cloud.
+Validated against the vehicle's own odometer — a 6400 m drive that raw fixes
+overstated by **12.0%** reads **+1.1%** anchored, and the parked sessions
+collapse to nearly nothing.
+
 | `hummer-obd-analyze` | Reads a session back; `--trend` compares them all. A session that drives and then charges gets both reports — charging is detected as *plugged in and taking current*, never from the sign of pack current alone, because regen reaches −315 A on this vehicle and would otherwise be read as its strongest charge | **no** |
 | `hummer-obd-live` | Derived quantities, then every sensor and how long since it answered | **no** |
 | `hummer-obd-dashboard` | Local browser dashboard, session history, charts and a driving / stationary energy budget | **no** |

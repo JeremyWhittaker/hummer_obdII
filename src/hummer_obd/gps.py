@@ -307,3 +307,147 @@ class GpsReader:
             self.has_device = bool(isinstance(devices, list) and devices)
             self.reason = ("" if self.has_device
                            else "gpsd running but serving no device")
+
+
+# --- Jitter ----------------------------------------------------------------
+#
+# A parked vehicle's GPS does not sit still.  Measured on 2026-09-10, across
+# two sessions where the truck never left the driveway: 114 m of "travel" out
+# of 187 m, and 51 m out of 62 m.  Sixty and eighty-one percent of the recorded
+# distance was a stationary truck, drawn wandering around a box the size of a
+# house.  Even on real drives 5.7-6.6% of the distance is accumulated while the
+# receiver itself reports zero speed.
+#
+# The fix does not need a filter invented here, because the receiver already
+# publishes both things required to spot this.  `gps_speed_mps` is Doppler --
+# derived from carrier frequency shift, not from differencing positions, so it
+# is unaffected by the noise that moves the position around.  And `gps_epx_m`
+# is the receiver's own estimate of how wrong the position may be, which ran
+# 11.4 m to 72.9 m across the same sessions.  A five-metre step reported with a
+# twenty-metre error estimate is not a five-metre step.
+
+#: Below this the receiver's own Doppler speed says the vehicle is not moving.
+#: Deliberately generous: a truck creeping in traffic still registers well
+#: above it, and the cost of being wrong in this direction is one held fix.
+STATIONARY_MPS = 0.5
+
+#: Consecutive fixes reporting movement before the anchor is released.
+#:
+#: Doppler is better than differenced positions but it is not clean.  On the
+#: parked session of 2026-09-10 -- a truck that never left the driveway -- it
+#: reported 0.5 m/s or more in 8 of 60 fixes and peaked at 4.62 m/s, which is
+#: 16.6 kph of standing still.  Treating any single fix as authority released
+#: the anchor eight times and left 77 m of invented travel.
+#:
+#: Two rather than three: a real departure has to be held for one extra fix,
+#: about ten seconds, and at that point the vehicle has genuinely moved and the
+#: distance is picked up on the next segment anyway.  Three would start
+#: clipping the beginning of real trips.
+MOVING_RUN = 2
+
+#: A displacement must exceed this multiple of the fix's own error estimate
+#: before it counts as movement rather than noise.
+ERROR_MULTIPLE = 1.0
+
+#: Used when the receiver reports no error estimate at all.  Chosen as the
+#: median observed on this vehicle rather than a textbook figure.
+ASSUMED_EPX_M = 15.0
+
+#: Never hold a fix that has drifted further than this from the anchor,
+#: whatever the error estimate claims.  Without it a receiver reporting a
+#: wild error estimate could pin the vehicle in place across a real journey.
+MAX_ANCHOR_M = 250.0
+
+_EARTH_RADIUS_M = 6371000.0
+
+
+def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance in metres."""
+    import math
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (math.sin(dlat / 2) ** 2
+         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
+         * math.sin(dlon / 2) ** 2)
+    return 2 * _EARTH_RADIUS_M * math.asin(min(1.0, math.sqrt(a)))
+
+
+def _moved(distance_m: float, epx_m: Optional[float]) -> bool:
+    """Whether a displacement is bigger than the fix's own uncertainty."""
+    error = ASSUMED_EPX_M if epx_m is None or epx_m <= 0 else epx_m
+    return distance_m > error * ERROR_MULTIPLE
+
+
+def anchor_stationary(points: list[dict]) -> list[dict]:
+    """Hold one position while the vehicle is parked, instead of wandering.
+
+    Each point is a dict carrying at least ``gps_lat`` and ``gps_lon``, and
+    optionally ``gps_speed_mps`` and ``gps_epx_m``.  Returns new dicts -- the
+    input is not modified -- with the coordinates replaced by the anchor while
+    the vehicle is judged stationary, and ``gps_anchored`` set so a caller can
+    tell a held fix from a measured one.
+
+    Doppler decides.  ``gps_speed_mps`` comes from carrier frequency shift and
+    is independent of the noise moving the position around, so when it says the
+    vehicle is stopped the anchor holds regardless of where the fixes land.
+    Only when the receiver reports no speed at all does the displacement-versus-
+    error test take over.
+
+    The first version of this let a large displacement release the anchor even
+    while Doppler read zero, and on a parked session it removed 28.6% of the
+    jitter instead of nearly all: with a 12.7 m error estimate, a fix 15 m out
+    moved the anchor, the next fix 15 m back moved it again, and the truck
+    ratcheted around its own driveway exactly as before.
+
+    ``MAX_ANCHOR_M`` remains as a safety valve in both branches, so a receiver
+    stuck reporting zero speed cannot pin a vehicle across a real journey.
+    """
+    out: list[dict] = []
+    anchor: Optional[tuple[float, float]] = None
+    run = 0
+    for point in points:
+        lat, lon = point.get("gps_lat"), point.get("gps_lon")
+        if lat is None or lon is None:
+            out.append(dict(point))
+            continue
+        speed = point.get("gps_speed_mps")
+        if anchor is None:
+            anchor = (lat, lon)
+        gap = haversine_m(anchor[0], anchor[1], lat, lon)
+        if speed is None:
+            # No Doppler to appeal to, so the only question left is whether the
+            # step is bigger than the fix admits it might be wrong by.
+            run = 0
+            release = _moved(gap, point.get("gps_epx_m"))
+        else:
+            run = run + 1 if speed >= STATIONARY_MPS else 0
+            release = run >= MOVING_RUN
+        if release or gap > MAX_ANCHOR_M:
+            anchor = (lat, lon)
+            held = False
+        else:
+            held = True
+        fixed = dict(point)
+        fixed["gps_lat"], fixed["gps_lon"] = anchor
+        fixed["gps_anchored"] = held
+        out.append(fixed)
+    return out
+
+
+def track_distance_m(points: list[dict]) -> float:
+    """Distance along a track, after the stationary fixes are held.
+
+    Anchoring first is the whole point: summing raw fixes counted a parked
+    truck as having travelled 114 m of a 187 m session.
+    """
+    anchored = anchor_stationary(points)
+    total = 0.0
+    previous: Optional[tuple[float, float]] = None
+    for point in anchored:
+        lat, lon = point.get("gps_lat"), point.get("gps_lon")
+        if lat is None or lon is None:
+            continue
+        if previous is not None:
+            total += haversine_m(previous[0], previous[1], lat, lon)
+        previous = (lat, lon)
+    return total
