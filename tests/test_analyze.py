@@ -951,7 +951,7 @@ class SocQuantumTests(unittest.TestCase):
         for claim in ("the 0.5% step this vehicle reports SoC in",
                       "the 0.5% step SoC moves in"):
             self.assertNotIn(claim, message)
-        self.assertIn("irregular intervals", message)
+        self.assertIn("in jumps, not", message)
         self.assertIn("energy added", message)
 
     def test_the_message_reports_both_quantities_it_compares(self):
@@ -971,7 +971,7 @@ class SocQuantumTests(unittest.TestCase):
                  "soc_pct": 84.555, "energy_kwh": 161.12 + i * 0.01,
                  "elapsed_s": float(i * 15)} for i in range(70)]
         text = analyze.format_report({"charge": analyze._charge_report(rows)})
-        self.assertIn("SoC updates in jumps", text)
+        self.assertIn("SoC advances in jumps", text)
 
     def test_no_energy_no_explanation(self):
         # Nothing went in, so there is nothing to explain away.

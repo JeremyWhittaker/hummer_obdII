@@ -943,26 +943,32 @@ def is_charging(rows: list[dict]) -> bool:
     return len(charging_rows(rows)) >= MIN_CHARGE_ROWS
 
 
-#: The largest state-of-charge step this vehicle has been seen to take, which
-#: is NOT the same as the step it moves in.  An earlier version of this
-#: constant claimed it was, on the strength of two transitions that happened to
-#: be the same size, and a third arrived hours later and refuted it.
+#: The largest state-of-charge step this vehicle has been seen to take.  Used
+#: only as a threshold for deciding when a small SoC figure is uninformative;
+#: it is not a physical constant and no arithmetic should lean on it.
 #:
-#: Every SoC change observed on 2026-09-10, in one 2900-second session:
+#: This value has now been wrong twice, in opposite directions, and the history
+#: is kept because it is the argument for how the rest of this file is written.
+#: First it was published as "the step SoC moves in", 0.5%, on the strength of
+#: two transitions that matched.  A third of +0.400 refuted that, and the
+#: correction said neither the step nor the interval is fixed.  Five more
+#: transitions then showed that within a single state both are quite fixed:
 #:
-#:     t=  38.9   85.557 -> 85.055   -0.502
-#:     t= 181.9   85.055 -> 84.555   -0.500     143 s later
-#:     t=2869.6   84.555 -> 84.955   +0.400    2688 s later
+#:     DISCHARGING   -0.502, -0.500                       gap 143 s
+#:     CHARGING      +0.400, +0.399, +0.402, +0.399, +0.400
+#:                                              gaps 341, 354, 336, 332 s
 #:
-#: Neither the step nor the interval is fixed.  What is consistent is that the
-#: field is far coarser and far slower than it looks: 0x27C6 is 16 bits scaled
-#: to 100%, a nominal 0.0015%, and prints three decimals -- while moving three
-#: times in a session where energy_kwh took 59 distinct values.  The decimals
-#: are an offset carried between jumps, not resolution.
+#: So: about half a percent every 143 s while discharging, about four tenths
+#: every 340 s while charging.  The charging set is five samples agreeing to
+#: +/-0.002 and is worth something.  The discharging set is two samples and is
+#: not; it is recorded to be checked, not relied on.
 #:
-#: This value is therefore used only as a threshold for deciding when a zero
-#: SoC reading is uninformative rather than meaningful.  It is not a physical
-#: constant and no arithmetic should treat it as one.
+#: What has survived every revision, and is the only thing this file acts on:
+#: the field is far coarser and slower than it looks.  Seven changes in a
+#: 4200-second session where energy_kwh took 59 distinct values, and the
+#: smallest jump is 262 times its nominal 0.001526% resolution.  The three
+#: printed decimals are an offset carried between jumps.  Anything that needs
+#: a continuous quantity reads energy_kwh.
 SOC_STEP_SEEN_PCT = 0.5
 
 
@@ -1014,12 +1020,11 @@ def _charge_report(rows: list[dict]) -> dict:
         implied = abs(added) / EXPECTED_PACK_KWH * 100
         report["soc_below_quantum"] = (
             f"{abs(added):.2f} kWh is {implied:.2f}% of the pack, and SoC has "
-            f"moved {abs(gained):.3f}%. SoC updates in jumps of a few tenths of "
-            f"a percent at irregular intervals -- three changes in a 2900 s "
-            f"session, of -0.502, -0.500 and +0.400 -- so a small or zero "
-            f"figure here is the field not having jumped yet, not the pack "
-            f"not having taken energy. Use energy added, which moves "
-            f"continuously"
+            f"moved {abs(gained):.3f}%. SoC advances in jumps, not "
+            f"continuously -- measured while charging as about +0.400% every "
+            f"340 s across five transitions -- so a small or zero figure here "
+            f"is the field not having jumped yet, not the pack not having "
+            f"taken energy. Use energy added, which moves continuously"
         )
 
     # The independent second route, normalised to positive-is-charging.
