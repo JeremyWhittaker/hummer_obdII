@@ -2061,7 +2061,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            snapshot arrives, or a frame renders NaN into the shader and the
            part disappears without an error anywhere. */
         live = { modules: [], kw: 0, brake: 0, flow: 0, speed: 0, steer: 0,
-                 corners: {}, charging: false, soc: null, roll: 0, pitch: 0,
+                 corners: {}, charging: false, plugged: false, soc: null,
+                 roll: 0, pitch: 0,
                  fill: null, packTemp: null, lv: null, port: false,
                  fault: false, chargeKw: 0, regenKw: 0, radar: [0, 0, 0],
                  awake: false },
@@ -2432,17 +2433,43 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           emissive = [0.30 * load + 0.04, 0.13 * load + 0.015, 0.02 * load];
         }
         if (p.letter !== undefined) {
-          /* The bar reports charge, which is what GMC built it to do. Letters
-             fill left to right against state of charge; the leading one
-             breathes so the display reads as working rather than stuck. Not
-             charging, they are the running lights: dim, even, all six. */
+          /* The bar reports charge, which is what GMC built it to do -- and
+             it FLOWS, which is what was asked for and what the first version
+             did not deliver. That one lit letters up to the state of charge
+             and breathed the single letter straddling the threshold, so five
+             of the six were static on/off steps at any instant and nothing
+             ever travelled across the badge.
+             
+             Now there are two things happening at once, which is how a real
+             charge-status bar behaves: the FILL says how full the pack is,
+             and a WAVE runs left to right across the filled letters saying
+             that energy is still moving. Each letter carries its own phase --
+             that per-letter offset is the flow; a single shared sine is a
+             blink.
+
+             The wave runs at the charge rate, so a 19.2 kW charge visibly
+             hurries and a 1 kW trickle crawls. It stops dead when the pack
+             stops taking current, because a bar still sweeping on a finished
+             charge would be saying something untrue. */
           var frac = (p.letter + 1) / p.letters,
               soc = live.soc === null ? null : live.soc / 100;
           if (live.charging && soc !== null) {
-            var lead = Math.sin(now * 0.0022) * 0.5 + 0.5;
-            var on = soc >= frac ? 1
-                   : (soc > frac - 1 / p.letters ? 0.25 + lead * 0.75 : 0.06);
+            var filled = soc >= frac,
+                edge = !filled && soc > frac - 1 / p.letters,
+                rate = 0.4 + Math.min(1, Math.abs(live.chargeKw || 0) / 19.2) * 1.6,
+                /* Phase per letter is what makes it travel. 0.85 of a cycle
+                   across six letters keeps a visible crest rather than every
+                   letter peaking together. */
+                phase = now * 0.001 * rate - p.letter * (0.85 / p.letters),
+                wave = Math.sin(phase * Math.PI * 2) * 0.5 + 0.5,
+                on = filled ? 0.55 + wave * 0.45
+                   : edge ? 0.18 + wave * 0.55
+                   : 0.05 + wave * 0.05;
             emissive = [on * 0.10, on * 0.72, on * 0.34];
+          } else if (live.plugged) {
+            /* Plugged and not taking current: lit, even, still. The charge is
+               done and the bar should say so by NOT moving. */
+            emissive = [0.06, 0.42, 0.20];
           } else {
             emissive = [0.34, 0.36, 0.40];
           }
@@ -3087,6 +3114,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         rl: sigValue("wheel_rl_kph"), rr: sigValue("wheel_rr_kph")
       },
       charging: derived("charging") === true,
+      /* Plugged in but not necessarily taking current -- the two are
+         different states and the light bar shows them differently: a finished
+         charge is lit and still, a running one flows. */
+      plugged: derived("plugged") === true,
       chargeKw: Math.abs(num(derived("pack_kw")) || 0),
       /* State of charge, for the light bar, which GMC built to report it.
          Read through atFrame so a replay lights the letters the truck had
@@ -3649,6 +3680,22 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     var span = (state.snapshot && state.snapshot.history) || [],
         began = span.length ? clockOf(span[0].utc) : null,
         ended = span.length ? clockOf(span[span.length - 1].utc) : null;
+    /* WHERE IT IS. The ask was "just show the gps location with the map", and
+       the map had every statistic about the fixes except the position itself
+       -- count, altitude, satellites, extent, never a coordinate. A map pin
+       tells you where on this map; six decimal places tell you where on
+       earth, and they are what you paste into anything else.
+
+       Named place first when a fence matches, because "home" is the answer to
+       the question and the numbers are the fallback. */
+    var here = pts.length ? pts[pts.length - 1] : null;
+    if (here) {
+      var named = state.snapshot && state.snapshot.journey
+                && state.snapshot.journey.to;
+      stat(named ? "at" : "position",
+           named ? named + " · " + here[0].toFixed(5) + ", " + here[1].toFixed(5)
+                 : here[0].toFixed(6) + ", " + here[1].toFixed(6));
+    }
     if (began && ended && began !== ended) stat("ran", began + " → " + ended);
     /* "home → work" is a thing a person remembers; a pair of coordinates is
        not. Only shown when a fence actually matched -- an unnamed trip says
