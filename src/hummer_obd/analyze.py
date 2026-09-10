@@ -981,6 +981,25 @@ def is_charging(rows: list[dict]) -> bool:
 #: -- energy over SoC, 190.66 with sd 0.30 across 170 samples -- is the one to
 #: trust, because it does not difference two quantised numbers.
 #:
+#: AND THEN 212.7 TURNED UP IN A SPEC SHEET.  Published figures for this pack
+#: give 212.7 kWh usable, which is the differential estimate above to four
+#: significant figures.  A number that matches a manufacturer's spec exactly,
+#: arrived at by a method that had just been called worthless, is the shape of
+#: a discovery, and it is worth writing down that it is not one.
+#:
+#: The offset such a slope implies is -18.73 kWh at zero charge.  If that were
+#: real, energy/SoC would not be constant -- it would climb as SoC rose, by
+#: **1.51%** across the 78.85% to 89.65% swing this project has measured.  The
+#: measured drift across exactly that swing is **0.055%**, twenty-seven times
+#: smaller.  The offset is refuted by data collected before the question was
+#: asked.
+#:
+#: Quantisation accounts for it precisely instead: 8.51 kWh at 191.9 kWh usable
+#: is a true SoC change of 4.435%, the field reported 4.001%, and the
+#: difference is 0.434% -- one 0.400% step, the exact granularity measured
+#: above.  Two numbers agreeing to four figures is not evidence when one of
+#: them has a known error bar wide enough to reach the other.
+#:
 #: What has survived every revision, and is the only thing this file acts on:
 #: the field is far coarser and slower than it looks.  Seven changes in a
 #: 4200-second session where energy_kwh took 59 distinct values, and the
