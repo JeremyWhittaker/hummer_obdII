@@ -67,6 +67,26 @@ steepest slew a drivetrain produces. Two ECUs sampling the same busbar
 milliseconds apart during a 350 A swing will not return the same number, and
 the size of the gap tracks how fast the busbar is moving.
 
+**A worst case is not a bound, and this note kept treating it as one.** Three
+samples of the same pair, taken as more data arrived:
+
+| samples | mean delta | worst case |
+|---|---|---|
+| 9 | +0.061 V | 0.403% |
+| 57 | +0.032 V | 0.706% |
+| 77 (a second drive) | −0.044 V | 0.976% |
+
+The mean is stable at essentially zero and the standard deviation barely moves
+— 0.682 V then 0.750 V. The worst case grows every time anyone looks, which is
+what a sample maximum does: it can only increase with n, and quoting it as a
+tolerance invites exactly the false alarm it produced here. **The mean and the
+spread are the figures that mean something.**
+
+The 0.976% sample is the mechanism again, for the third time: current changed
+**244.2 A between those two reads** — a regen-to-power transition from −31.75 A
+to +212.4 A — while the samples either side of it, with gentler slew, disagree
+by 0.23 V and 0.57 V.
+
 **The extreme case, caught on 2026-09-10.** At the instant the contactors
 opened, module `17` read 67.45 V and module `1D` read 17.32 V -- a 50.13 V
 disagreement, 13% of reading, nineteen times the worst case above. One sample
