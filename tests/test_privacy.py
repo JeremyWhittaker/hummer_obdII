@@ -108,6 +108,50 @@ class TestNoVehicleDataIsCommitted(unittest.TestCase):
                     hits.setdefault(name, m)
         self.assertEqual(hits, {}, f"possible VIN in tracked files: {hits}")
 
+    def test_no_committed_file_carries_a_remote_access_hostname(self):
+        # A Nabu Casa remote domain is a credential, not a setting. Home
+        # Assistant serves /config/www/ through it with no authentication at
+        # all -- docs/AGENT-HOME-ASSISTANT-ACCESS.md verified that a plain
+        # curl with no Authorization header returns 200 -- so publishing the
+        # hostname in a public repository hands over every file under
+        # /local/, which is where the dashboard panel lives.
+        #
+        # scripts/enable-remote-dashboard.sh needs this value and deliberately
+        # reads it from Home Assistant at runtime instead of carrying it. This
+        # asserts the next edit does not take the shortcut.
+        import re
+        # The real thing is a long opaque label. Placeholders written for
+        # humans -- <id>, <something> -- are angle-bracketed and must keep
+        # passing, or the docs cannot explain the mechanism they document.
+        remote = re.compile(r"\b[a-z0-9]{16,}\.ui\.nabu\.casa\b")
+        hits = {}
+        for name in _git("ls-files").split():
+            path = REPO / name
+            if not path.is_file() or path.stat().st_size > 2_000_000:
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            found = remote.findall(text)
+            if found:
+                hits.setdefault(name, found[0])
+        self.assertEqual(hits, {}, f"remote-access hostname in tracked files: {hits}")
+
+    def test_that_guard_would_actually_catch_one(self):
+        # A regex that matches nothing passes for the wrong reason. This pins
+        # the shape it is looking for against a synthetic example, so the test
+        # above cannot rot into an assertion that always holds.
+        import re
+        remote = re.compile(r"\b[a-z0-9]{16,}\.ui\.nabu\.casa\b")
+        # Assembled rather than written out: a literal example here would be
+        # caught by the guard above, which scans this file too. Keeping the
+        # guard absolute is worth more than the readability of one string.
+        suffix = ".ui.nabu" + ".casa"
+        self.assertTrue(remote.search("https://a1b2c3d4e5f6g7h8i9j0" + suffix))
+        self.assertFalse(remote.search("https://<id>" + suffix))
+        self.assertFalse(remote.search("https://<something>" + suffix))
+
     def test_the_pinned_fixture_vins_are_still_present(self):
         # An allowlist that stops matching reality is how a check quietly
         # becomes a lie: if a fixture VIN is renamed, the pin must be updated

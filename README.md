@@ -321,6 +321,47 @@ no coordinates, no session names, no VIN. Keep it that way. Session data stays
 on the node, behind whatever network the node is on, and a viewer who cannot
 reach the node gets an empty page rather than someone else's driving history.
 
+#### Reaching it from a phone, off the LAN
+
+The arrangement above works on the LAN and fails on cellular, in three
+independent ways. Fixing any two of them still leaves a blank panel, which is
+why they are worth naming separately:
+
+1. **Mixed content.** Away from home the phone reaches Home Assistant through
+   Nabu Casa, so the page is served over `https`. A panel stamped with an
+   `http` API base cannot fetch it: the browser blocks the request before it
+   reaches the network. There is no failed request to find and no error the
+   page can catch — it renders "the node could not be reached", which looks
+   exactly like a node that is down.
+2. **Reachability.** The node's address is on a tailnet. A phone without
+   Tailscale cannot resolve it whatever the scheme.
+3. **CORS.** `--allow-origin` names the origins Home Assistant uses *on the
+   LAN*, both `http`. Arriving through Nabu Casa the origin is
+   `https://<id>.ui.nabu.casa`, which is not among them, so the node refuses
+   the read even once the first two are fixed.
+
+`scripts/enable-remote-dashboard.sh` does the three things that are on the
+node and the HA box: puts the API behind Tailscale's own https with a real
+certificate (`tailscale serve`), adds the Nabu Casa origin to the allow-list,
+and regenerates the panel against the https base. It needs `sudo` on the node.
+Installing Tailscale on the phone is the fourth step and is yours.
+
+**It is `tailscale serve`, never `tailscale funnel`.** Funnel would fix
+reachability without Tailscale on the phone, and would do it by publishing
+GPS tracks and VIN to the public internet with nothing in front of them. The
+tailnet is the authentication boundary here; a phone that has not joined it
+is supposed to get nothing.
+
+The script reads the Nabu Casa hostname from Home Assistant at runtime rather
+than carrying it. That URL serves `/config/www/` with no authentication at
+all, so in a public repository it is a credential, not a configuration value.
+
+Regenerating the panel changes its content hash, and Home Assistant serves
+`/local/` with `max-age=2678400` — thirty-one days. The card's `?v=` must be
+updated to the version the script prints, or a browser that has opened the
+panel before keeps showing the old one and the deploy looks like it did
+nothing.
+
 ### Browser dashboard
 
 ```bash
