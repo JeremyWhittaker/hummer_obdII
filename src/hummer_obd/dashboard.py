@@ -193,6 +193,12 @@ def _history(rows: list[dict], *, location: bool = False) -> list[dict]:
             # from raw fixes and a stationary vehicle wanders a house-sized box.
             point["gps_speed_mps"] = reading("gps_speed_mps")
             point["gps_epx_m"] = reading("gps_epx_m")
+            # The vehicle's own witness. speed_kph goes quiet long before the
+            # wheel sensors do -- it answered in none of 261 rows on a parked
+            # session where all four wheels answered -- so all five travel.
+            for wheel in ("wheel_fl_kph", "wheel_fr_kph",
+                          "wheel_rl_kph", "wheel_rr_kph"):
+                point[wheel] = reading(wheel)
         result.append(point)
     if location:
         # Measured against this vehicle's own odometer on 2026-09-10: raw fixes

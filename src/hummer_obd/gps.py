@@ -331,6 +331,24 @@ class GpsReader:
 #: above it, and the cost of being wrong in this direction is one held fix.
 STATIONARY_MPS = 0.5
 
+#: Road speed, in km/h, below which the VEHICLE says it is not moving.
+#:
+#: This is the veto, and it is the thing the first three versions of this
+#: filter all lacked. They arbitrated between GPS position and GPS Doppler --
+#: two views of one noisy signal -- while a completely independent witness sat
+#: in the same CSV row saying the wheels were not turning.
+#:
+#: Measured: on a parked session where `speed_kph` read 0.0 in every sample
+#: that answered, the anchor still released twice on Doppler noise (0.612 m/s
+#: with a 39.9 m error estimate, and 1.575 m/s), leaving three positions
+#: 120 m and 132 m apart and 148 m of invented path. MOVING_RUN cannot reject
+#: those: both noise bursts held above threshold for two consecutive fixes,
+#: which is exactly what MOVING_RUN tests for.
+#:
+#: A drivetrain reporting zero is better evidence than a receiver reporting
+#: motion, so when the vehicle speaks it wins.
+VEHICLE_STOPPED_KPH = 1.0
+
 #: Consecutive fixes reporting movement before the anchor is released.
 #:
 #: Doppler is better than differenced positions but it is not clean.  On the
@@ -372,6 +390,26 @@ def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * _EARTH_RADIUS_M * math.asin(min(1.0, math.sqrt(a)))
 
 
+#: Every column in which this vehicle reports its own road speed. `speed_kph`
+#: is the legislated PID and is the one that goes quiet first -- it returned
+#: nothing at all across a 261-row parked session where all four wheel sensors
+#: answered. Any of them saying zero is the same statement.
+VEHICLE_SPEED_COLUMNS = ("speed_kph", "wheel_fl_kph", "wheel_fr_kph",
+                         "wheel_rl_kph", "wheel_rr_kph")
+
+
+def _vehicle_kph(point: dict) -> Optional[float]:
+    """The fastest speed the vehicle itself reports in this row, or None.
+
+    Fastest rather than an average: one wheel reading zero while another turns
+    is a vehicle that is moving, and the question here is only ever whether it
+    is stationary.
+    """
+    seen = [point[name] for name in VEHICLE_SPEED_COLUMNS
+            if isinstance(point.get(name), (int, float))]
+    return max(seen) if seen else None
+
+
 def _moved(distance_m: float, epx_m: Optional[float]) -> bool:
     """Whether a displacement is bigger than the fix's own uncertainty."""
     error = ASSUMED_EPX_M if epx_m is None or epx_m <= 0 else epx_m
@@ -405,6 +443,8 @@ def anchor_stationary(points: list[dict]) -> list[dict]:
     out: list[dict] = []
     anchor: Optional[tuple[float, float]] = None
     run = 0
+    #: None until the vehicle first says something about its own motion.
+    stopped = False
     for point in points:
         lat, lon = point.get("gps_lat"), point.get("gps_lon")
         if lat is None or lon is None:
@@ -414,7 +454,23 @@ def anchor_stationary(points: list[dict]) -> list[dict]:
         if anchor is None:
             anchor = (lat, lon)
         gap = haversine_m(anchor[0], anchor[1], lat, lon)
-        if speed is None:
+        # The vehicle's own road speed, when it answered, outranks anything the
+        # receiver claims -- and it LATCHES, because it answers so rarely. On
+        # the parked session that motivated this, `speed_kph` returned nothing
+        # in all 261 rows while the four wheel sensors answered 12 times and
+        # read 0 every one. Consulting only the current row would have left the
+        # veto inactive for the 249 rows in between, including both fixes where
+        # Doppler noise released the anchor.
+        #
+        # Latching is safe in one direction only, and this is that direction: a
+        # vehicle that reported zero does not start moving without reporting
+        # something, and if it somehow does, MAX_ANCHOR_M below is the escape.
+        road = _vehicle_kph(point)
+        if road is not None:
+            stopped = road < VEHICLE_STOPPED_KPH
+        if stopped:
+            release = False
+        elif speed is None:
             # No Doppler to appeal to, so the only question left is whether the
             # step is bigger than the fix admits it might be wrong by.
             run = 0
@@ -422,6 +478,9 @@ def anchor_stationary(points: list[dict]) -> list[dict]:
         else:
             run = run + 1 if speed >= STATIONARY_MPS else 0
             release = run >= MOVING_RUN
+        # MAX_ANCHOR_M stays an unconditional escape even under the veto: a
+        # stuck speed reading must not be able to pin a vehicle across a real
+        # journey, and 250 m is far past any error this receiver reports.
         if release or gap > MAX_ANCHOR_M:
             anchor = (lat, lon)
             held = False

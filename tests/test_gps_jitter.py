@@ -107,6 +107,78 @@ class AnchorTests(unittest.TestCase):
         self.assertEqual(gps.track_distance_m([]), 0.0)
 
 
+class VehicleVetoTests(unittest.TestCase):
+    """The vehicle's own wheels outrank the receiver, and the veto latches.
+
+    Three versions of this filter arbitrated between GPS position and GPS
+    Doppler -- two views of one noisy signal -- while an independent witness
+    sat in the same CSV row saying the wheels were not turning. On a parked
+    session the anchor released twice on Doppler noise (0.612 m/s at 39.9 m
+    error, then 1.575 m/s), leaving three positions 120 m and 132 m apart and
+    148 m of invented path. MOVING_RUN cannot reject those: both bursts held
+    above threshold for two consecutive fixes, which is what it tests for.
+    """
+
+    def test_doppler_noise_cannot_move_a_truck_whose_wheels_read_zero(self):
+        points = [fix(HOME[0], HOME[1]) for _ in range(10)]
+        points[4]["gps_speed_mps"] = 0.612
+        points[5]["gps_speed_mps"] = 1.575
+        for p in points:
+            p["speed_kph"] = 0.0
+        self.assertEqual(gps.track_distance_m(points), 0.0)
+
+    def test_the_wheel_sensors_count_when_the_legislated_pid_is_silent(self):
+        # speed_kph answered in NONE of 261 rows on the session that motivated
+        # this, while all four wheel sensors answered and read zero.
+        points = [fix(HOME[0], HOME[1]) for _ in range(10)]
+        points[4]["gps_speed_mps"] = 1.575
+        points[5]["gps_speed_mps"] = 1.575
+        for p in points:
+            p["speed_kph"] = None
+            p["wheel_fl_kph"] = 0.0
+        self.assertEqual(gps.track_distance_m(points), 0.0)
+
+    def test_the_veto_latches_across_rows_the_vehicle_did_not_answer(self):
+        """12 rows in 261 answered. A veto read per-row would be idle for 249.
+
+        A vehicle that reported zero does not start moving without reporting
+        something.
+        """
+        points = [fix(HOME[0], HOME[1]) for _ in range(30)]
+        points[0]["wheel_fl_kph"] = 0.0          # the only row that answers
+        for p in points[1:]:
+            p["speed_kph"] = None
+        points[20]["gps_speed_mps"] = 1.6
+        points[21]["gps_speed_mps"] = 1.6
+        self.assertEqual(gps.track_distance_m(points), 0.0)
+
+    def test_a_vehicle_that_reports_moving_releases_normally(self):
+        points = ([fix(HOME[0], HOME[1]) for _ in range(3)]
+                  + [dict(fix(HOME[0] + 0.002 * i, HOME[1], speed=12.0),
+                          speed_kph=45.0) for i in range(1, 6)])
+        self.assertGreater(gps.track_distance_m(points), 500)
+
+    def test_one_turning_wheel_is_a_moving_vehicle(self):
+        # Fastest, not average: a wheel reading zero beside one that turns is
+        # a vehicle in motion, and the only question here is stationarity.
+        self.assertGreaterEqual(
+            gps._vehicle_kph({"wheel_fl_kph": 0.0, "wheel_fr_kph": 40.0}), 40.0)
+
+    def test_no_vehicle_reading_falls_back_to_the_gps_rules(self):
+        points = [fix(HOME[0], HOME[1]) for _ in range(8)]
+        points[3]["gps_speed_mps"] = 12.0
+        points[4]["gps_speed_mps"] = 12.0
+        points[5] = fix(HOME[0] + 0.01, HOME[1], speed=12.0)
+        self.assertGreater(gps.track_distance_m(points), 500)
+
+    def test_a_stuck_zero_cannot_pin_a_vehicle_across_a_real_journey(self):
+        # MAX_ANCHOR_M stays an unconditional escape even under the veto.
+        far = gps.MAX_ANCHOR_M * 2 / 111195.0
+        points = [dict(fix(HOME[0], HOME[1]), speed_kph=0.0),
+                  dict(fix(HOME[0] + far, HOME[1]), speed_kph=0.0)]
+        self.assertGreater(gps.track_distance_m(points), gps.MAX_ANCHOR_M)
+
+
 class ThresholdTests(unittest.TestCase):
     def test_the_stationary_threshold_admits_a_creeping_vehicle(self):
         # 0.5 m/s is 1.8 kph. Traffic crawl is well above it.
