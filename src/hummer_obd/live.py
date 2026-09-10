@@ -78,6 +78,8 @@ LABELS: dict[str, tuple[str, str]] = {
     "pack_a": ("pack current", "A"),
     "hv_power_kw": ("power, volts x amps", "kW"),
     "dmc2_v": ("drive motor 12 V", "V"),
+    "pack_v_1d": ("pack voltage, module 1D", "V"),
+    "mod17_v": ("module 17 12 V, enhanced route", "V"),
     "wheel_fl_kph": ("wheel speed, front left", "km/h"),
     "wheel_fr_kph": ("wheel speed, front right", "km/h"),
     "wheel_rl_kph": ("wheel speed, rear left", "km/h"),
@@ -208,7 +210,7 @@ EXPANSIONS: dict[str, tuple[str, object]] = {
 }
 
 
-def _decoder_columns(did: str) -> tuple[str, ...]:
+def _decoder_columns(did: str, module: str = "") -> tuple[str, ...]:
     """Which CSV columns a decoder produces, asked of the decoder itself.
 
     Feeding it a run of zero bytes is enough to learn the *shape* of its
@@ -216,8 +218,15 @@ def _decoder_columns(did: str) -> tuple[str, ...]:
     every hand-maintained inventory in this project has drifted from the code
     at least once, and this one would be read while something was already
     going wrong.
+
+    *module* matters because two modules can answer one identifier into two
+    different columns.  Without it this attributed `pack_v` to whichever
+    group was walked last -- module 1D, once 1D began answering 0x2885 as
+    well -- and the map would have named the wrong module for the project's
+    headline reading while looking entirely healthy.
     """
-    decoder = drive.DECODERS.get(did)
+    decoder = (drive.MODULE_DECODERS.get((module, did))
+               or drive.DECODERS.get(did))
     if decoder is None:
         return ()
     for width in (32, 16, 8, 4, 2, 1):
@@ -268,7 +277,7 @@ def column_sources() -> dict[str, tuple[str, str]]:
         module = group.address[0][6:8]
         friendly = MODULE_NAMES.get(group.name, group.name)
         for did in group.dids:
-            for column in _decoder_columns(did):
+            for column in _decoder_columns(did, module):
                 sources[column] = (f"{friendly} (module {module})", f"0x{did}")
     # GPS does not come off the CAN bus at all. Attributed here so it shows
     # as its own block rather than an unattributed straggler -- and so that a

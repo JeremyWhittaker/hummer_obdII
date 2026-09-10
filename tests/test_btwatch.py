@@ -100,7 +100,8 @@ class RestraintTests(unittest.TestCase):
         dog = self.dog()
         down = btwatch.Health(obd=False, radar=False, rfcomm="closed")
         with patch.object(dog, "_act", return_value=True):
-            dog.step(down); dog.step(down)
+            dog.step(down)
+            dog.step(down)
         self.assertEqual(dog.strikes, 2)
         dog.step(btwatch.Health(obd=True, radar=False, rfcomm="connected"))
         self.assertEqual(dog.strikes, 0)

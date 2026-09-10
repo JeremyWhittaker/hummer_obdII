@@ -452,13 +452,19 @@ ENHANCED_READ_DIDS: Final[dict[str, str]] = {
              "PR #14, module 40, UNMERGED, not BT1"),
     "40E6": ("battery coolant temperature 2 candidate -- OBDb/Cadillac-LYRIQ "
              "PR #14, module 40, UNMERGED, not BT1"),
-    "2429": ("nominal battery voltage per its source, CONTRADICTED HERE -- "
-             "OBDb/Cadillac-LYRIQ PR #14 "
-             "(LYRIQ_HVBAT_NOMINAL_V), hdr DA17, 16-bit / 64 volts, max 1023. "
-             "The source calls it the constant rated pack voltage rather than a "
-             "live measurement, so a value that does not move is the expected "
-             "result and not a failed decode. UNMERGED, 2025 Lyriq BEV3, "
-             "not BT1"),
+    "2429": ("REFUTED AS A VOLTAGE, REDECODED AS TORQUE -- OBDb/Cadillac-LYRIQ "
+             "PR #14 (LYRIQ_HVBAT_NOMINAL_V), hdr DA17, 16-bit / 64 volts, "
+             "max 1023, UNMERGED, 2025 Lyriq BEV3, not BT1. That is the "
+             "source's claim and this vehicle contradicts it: the field held "
+             "0x5806 through a pack-voltage swing of 0.83 V to 377.89 V, and "
+             "moves the WRONG WAY under load. It reads as a bipolar "
+             "drive/regen torque signal zero-referenced at 22534 (0x5806), "
+             "cross-validated on a second drive it was never fitted to. An "
+             "earlier version of this line said a value that does not move "
+             "was the expected result -- which would have retired the field "
+             "as working-as-intended and stopped the question. See "
+             "confidence.CONFIDENCE['2429'] for the evidence; the level there "
+             "is 3, not 0"),
     "33E5": (
         "drive motor control module battery voltage -- "
         "OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DA1D "

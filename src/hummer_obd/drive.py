@@ -66,7 +66,8 @@ from .safety import (
 from . import gps as gps_module
 from .transport import SerialTransport, Transport, TransportError
 
-__all__ = ["AddressGroup", "GROUPS", "DECODERS", "COLUMNS",
+__all__ = ["AddressGroup", "GROUPS", "DECODERS", "MODULE_DECODERS",
+           "UNCAPTURED", "COLUMNS",
            "STANDARD_ADDRESS", "POWER_WINDOW_S", "record", "main"]
 
 
@@ -270,6 +271,55 @@ class AddressGroup:
     priority: str = "ATCP14"
 
 
+#: Decoders for identifiers that answer at more than one module, keyed by
+#: (module, identifier).  :data:`DECODERS` is keyed by identifier alone, so
+#: reading one at two modules would land both answers in one column and the
+#: second would silently overwrite the first -- a column that means "whichever
+#: module replied last" and looks exactly like a working one.  These take
+#: precedence; anything not listed falls through to :data:`DECODERS`.
+MODULE_DECODERS: dict[tuple[str, str], Callable[[bytes], dict]] = {
+    # Module 17 is the recorder's route to pack voltage and current.  1D
+    # answers 0x2885 too, independently, and comparing the two is the only
+    # check this project has on its own headline measurement: if they
+    # disagree, one decode is wrong and no amount of internal consistency
+    # would have shown it.
+    ("1D", "2885"): (
+        lambda p: {"pack_v_1d": round(_u16(p, 0) / 100, 2)} if len(p) >= 2 else {}),
+    # The same module's 12 V rail by a second route.  Module 17 already
+    # reports it through legislated PID 0142, and asking 17 for 0x33E5 as
+    # well puts the sourced enhanced decode (Equinox EV, byte / 10) beside a
+    # legislated one that cannot be wrong about its scaling.  Deliberately
+    # the same module rather than another: comparing 1D against 17 confounds
+    # a bad decode with two modules genuinely seeing different rails, and
+    # this comparison cannot.  If they disagree, 0x33E5 is misdecoded.
+    ("17", "33E5"): (
+        lambda p: {"mod17_v": round(p[0] / 10, 1)} if p else {}),
+}
+
+#: Proven to answer on this vehicle, deliberately not recorded, and why.
+#:
+#: The test that forbids leaving a proven identifier uncaptured reads this, so
+#: an omission has to be argued for in writing.  That is the whole mechanism:
+#: the failure it guards against is not disagreement about what is worth
+#: recording, it is forgetting that the question was ever asked.
+UNCAPTURED: dict[tuple[str, str], str] = {
+    ("1E", "2885"): (
+        "pack voltage from a third module.  1D was added on 2026-09-09 and "
+        "costs one extra read, because the recorder already points its header "
+        "at 1D every cycle.  1E is addressed by nothing, so reading it needs a "
+        "whole AddressGroup -- five AT commands to move header, filter and "
+        "flow control -- and the median cycle on this vehicle is already "
+        "11.2 s over Bluetooth.  Two independent routes settle a disagreement "
+        "as well as three do; a third would cost about 8% of the sample rate."
+    ),
+    ("1E", "33E5"): (
+        "module 1E's own supply voltage.  Same preamble cost as above, for a "
+        "fourth reading of a rail the recorder now has from 1D, from 17, and "
+        "from legislated PID 0142."
+    ),
+}
+
+
 GROUPS: tuple[AddressGroup, ...] = (
     AddressGroup(
         name="battery",
@@ -291,14 +341,14 @@ GROUPS: tuple[AddressGroup, ...] = (
         ecu="17",
         address=("ATSHDA17F1", "ATCRA142AF117", "ATFCSH14DA17F1",
                  "ATFCSD300000", "ATFCSM1"),
-        dids=("2885", "2414", "2429"),
+        dids=("2885", "2414", "2429", "33E5"),
     ),
     AddressGroup(
         name="drive_motor",
         ecu="1D",
         address=("ATSHDA1DF1", "ATCRA142AF11D", "ATFCSH14DA1DF1",
                  "ATFCSD300000", "ATFCSM1"),
-        dids=("33E5",),
+        dids=("33E5", "2885"),
     ),
     AddressGroup(
         name="body",
@@ -415,7 +465,8 @@ COLUMNS: tuple[str, ...] = (
     "evse_current_raw", "group_v1_raw", "group_v2_raw", "group_v3_raw",
     "hv_temp_raw", "field_4127_raw", "field_4124_raw",
     "coolant_1_raw", "coolant_2_raw",
-    "pack_v", "pack_a", "field_2429_raw", "hv_power_kw",
+    "pack_v", "pack_a", "field_2429_raw", "hv_power_kw", "pack_v_1d",
+    "mod17_v",
     "dmc2_v",
     "wheel_fl_kph", "wheel_fr_kph", "wheel_rl_kph", "wheel_rr_kph",
     "brake_kpa", "steering_deg", "lateral_g", "longitudinal_g",
@@ -660,7 +711,8 @@ def record(
                     payload = _payload(reply, request)
                     if payload is None:
                         continue
-                    decoder = DECODERS.get(did)
+                    decoder = (MODULE_DECODERS.get((group.ecu, did))
+                               or DECODERS.get(did))
                     if decoder:
                         row.update(decoder(payload))
             except TransportError as exc:

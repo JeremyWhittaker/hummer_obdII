@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 from hummer_obd import drive
+from hummer_obd.confidence import CONFIDENCE
 from hummer_obd.drive import (
     DEAD_CYCLES_BEFORE_EXIT,
     COLUMNS,
@@ -246,13 +247,27 @@ class TestDecoders(unittest.TestCase):
 
 
 class TestCycleShape(unittest.TestCase):
-    def test_each_identifier_is_asked_once_per_cycle(self):
+    def test_each_identifier_is_asked_once_per_module_per_cycle(self):
+        """Once per *module*, which is not the same as once per cycle.
+
+        It was, until 0x2885 and 0x33E5 began to be read at two modules each
+        on 2026-09-09.  The request bytes are identical either way -- what
+        makes them different questions is the ATSH ahead of them -- so a
+        whole-cycle count of "222885" now legitimately reads 2, and counting
+        that way would have to be relaxed to "at least once" to pass.  That
+        would give up the thing this test is for: catching an identifier
+        asked twice at the same module, which is a wasted round trip on a
+        link where the median cycle is already 11.2 s.
+        """
         fake = _Fake()
         record(fake, max_cycles=1, sleeper=lambda s: None)
-        for group in GROUPS:
+        starts = [fake.sent.index(g.address[0]) for g in GROUPS]
+        for position, group in enumerate(GROUPS):
+            end = starts[position + 1] if position + 1 < len(starts) else len(fake.sent)
+            window = fake.sent[starts[position]:end]
             for did in group.dids:
-                with self.subTest(did=did):
-                    self.assertEqual(fake.sent.count(f"22{did}"), 1)
+                with self.subTest(module=group.ecu, did=did):
+                    self.assertEqual(window.count(f"22{did}"), 1)
 
     def test_standard_pids_are_addressed_to_the_module_that_answers_them(self):
         # These used to be broadcast to DB33F1, and a broadcast is answered by
@@ -1166,19 +1181,79 @@ class TestEveryProvenIdentifierIsCaptured(unittest.TestCase):
     decoded from that.
     """
 
-    #: Everything module CB has been shown to answer on this vehicle.
-    PROVEN_AT_CB = frozenset({
-        "27C6", "27AF", "27C7", "27C0", "0046", "5401", "2AF5", "2B43",
-        "2AF1", "27BF", "27BB", "27B5", "2709",
-    })
+    def test_nothing_proven_is_left_uncaptured(self):
+        """Driven by the registry, per module -- not by a list kept by hand.
 
-    def test_nothing_proven_at_cb_is_left_uncaptured(self):
-        recorded = {d for g in drive.GROUPS for d in g.dids}
-        missing = sorted(self.PROVEN_AT_CB - recorded)
-        self.assertEqual(
-            missing, [],
-            f"proven to answer and never recorded, so never decodable: {missing}",
+        The first version of this test carried a frozenset of the thirteen
+        identifiers module CB answers, which made it a copy of something the
+        project already knew and could therefore fall behind it.  It did.
+        Reading the registry instead, and pairing each identifier with the
+        modules it actually answered at, immediately found three captures
+        that a by-identifier check cannot see: 0x2885 -- pack voltage, the
+        headline measurement here -- was proven at 17, 1D and 1E and read
+        only at 17, and 0x33E5 was proven at all three and read only at 1D.
+        A set of identifiers says 0x2885 is recorded.  It is, once.
+        """
+        recorded = {(g.ecu, d) for g in drive.GROUPS for d in g.dids}
+        forgotten = sorted(
+            (module, did)
+            for did, evidence in CONFIDENCE.items()
+            for module in evidence.answers_at
+            if evidence.level >= 1
+            and (module, did) not in recorded
+            and (module, did) not in drive.UNCAPTURED
         )
+        self.assertEqual(
+            forgotten, [],
+            "proven to answer and neither recorded nor argued against in "
+            f"drive.UNCAPTURED: {forgotten}",
+        )
+
+    def test_a_deliberate_omission_has_to_say_why(self):
+        # An exemption table that accepts a bare entry is a way to silence
+        # the test above rather than answer it.
+        for key, reason in drive.UNCAPTURED.items():
+            with self.subTest(key=key):
+                self.assertGreater(len(reason), 80,
+                                   f"{key} is exempted without a reason")
+
+    def test_an_exemption_cannot_outlive_the_proof_it_refers_to(self):
+        # Removing an identifier from the registry, or recording it after
+        # all, must not leave a stale paragraph explaining why it is absent.
+        for module, did in drive.UNCAPTURED:
+            with self.subTest(did=did):
+                self.assertIn(did, CONFIDENCE, "exempted but no longer proven")
+                self.assertIn(module, CONFIDENCE[did].answers_at)
+
+    def test_two_modules_answering_one_identifier_get_two_columns(self):
+        """The bug this guards is silent, which is why it is asserted.
+
+        DECODERS is keyed by identifier alone.  Reading 0x2885 at both 17 and
+        1D through it would put both answers in `pack_v`, the second
+        overwriting the first, and the column would then mean "whichever
+        module replied last" while looking entirely healthy.
+        """
+        shared = [did for _, did in drive.MODULE_DECODERS]
+        for did in shared:
+            with self.subTest(did=did):
+                modules = [m for m, d in
+                           {(g.ecu, d) for g in drive.GROUPS for d in g.dids}
+                           if d == did]
+                self.assertGreater(len(modules), 1,
+                                   "a per-module decoder for a single module "
+                                   "is indirection with nothing behind it")
+        columns = set()
+        for (ecu, did), decoder in drive.MODULE_DECODERS.items():
+            produced = set(decoder(bytes.fromhex("1234")))
+            plain = set(drive.DECODERS[did](bytes.fromhex("1234")))
+            self.assertTrue(produced.isdisjoint(plain),
+                            f"({ecu},{did}) writes the same column as the "
+                            f"plain decoder: {produced & plain}")
+            self.assertTrue(produced.isdisjoint(columns), "two per-module "
+                            "decoders share a column")
+            columns |= produced
+            for column in produced:
+                self.assertIn(column, drive.COLUMNS)
 
     def test_the_four_added_have_columns_and_are_read_as_text(self):
         from hummer_obd.analyze import _TEXT_COLUMNS

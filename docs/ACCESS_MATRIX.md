@@ -127,7 +127,7 @@ Every cell below is produced by putting that command to that gate and recording 
 
 ## 2. What is collected
 
-**62 columns** per sample. The level is from `hummer_obd.confidence`; **only level 3 and above is a production telemetry reading**, and **18 of 62** columns clear that bar. Everything below it is either raw evidence being accumulated or a candidate waiting for the vehicle state that will decide it.
+**64 columns** per sample. The level is from `hummer_obd.confidence`; **only level 3 and above is a production telemetry reading**, and **20 of 64** columns clear that bar. Everything below it is either raw evidence being accumulated or a candidate waiting for the vehicle state that will decide it.
 
 | Column | Where it comes from | Identifier | Priority | Level |
 |---|---|---|---|---|
@@ -172,6 +172,8 @@ Every cell below is produced by putting that command to that gate and recording 
 | `pack_a` | pack power (module 17) | `0x2414` | 0x14 | **4** cross-validated in more than one state |
 | `field_2429_raw` | pack power (module 17) | `0x2429` | 0x14 | **3** cross-validated |
 | `hv_power_kw` | computed by the recorder, not read from a module | `V x A` | — | — |
+| `pack_v_1d` | drive motor controller (module 1D) | `0x2885` | 0x14 | **4** cross-validated in more than one state |
+| `mod17_v` | pack power (module 17) | `0x33E5` | 0x14 | **3** cross-validated |
 | `dmc2_v` | drive motor controller (module 1D) | `0x33E5` | 0x14 | **3** cross-validated |
 | `wheel_fl_kph` | brake / chassis controller (module 28) | `0x4A7A` | 0x14 | **3** cross-validated |
 | `wheel_fr_kph` | brake / chassis controller (module 28) | `0x4A7A` | 0x14 | **3** cross-validated |

@@ -3310,6 +3310,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     volts:          ["lv", "12 V rail, sensed at the OBD-II connector"],
     module_voltage: ["lv", "12 V rail, sensed at module 17 — the precise one"],
     dmc2_v:         ["lv", "12 V rail, sensed at module 1D"],
+    mod17_v:        ["lv", "12 V rail, module 17 again by the enhanced route — "
+                           "it is here to disagree with module_voltage, not to "
+                           "be read on its own"],
+    pack_v_1d:      ["hv", "pack voltage as module 1D measures it, beside "
+                           "module 17's — two modules, one busbar"],
     charger_5401_raw: ["charge", "charge port lit when the state byte is non-zero"],
 
     /* --- fault lamp --- */
