@@ -185,8 +185,14 @@ select:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid 
   .hero > :first-child{
     grid-row:auto;display:flex;flex-direction:column;min-height:0;
   }
-  .hero > :first-child .vehicle-wrap{flex:1 1 auto;min-height:260px;display:flex}
-  .hero > :first-child #scene{flex:1 1 auto;height:auto;min-height:0}
+  /* A flex COLUMN. As a row -- which is what `display:flex` alone gives --
+     the wrap's children laid out side by side, and the layer buttons were
+     squeezed into a clipped vertical strip over the truck. Caught by taking
+     a screenshot of the replay and looking at it. */
+  .hero > :first-child .vehicle-wrap{
+    flex:1 1 auto;min-height:260px;display:flex;flex-direction:column;
+  }
+  .hero > :first-child #scene{flex:1 1 auto;height:auto;min-height:200px}
   .hero-side{grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
   .hero-side > .card{display:flex;flex-direction:column;min-height:0;overflow:hidden}
   .hero-side .map-wrap{flex:1 1 auto;min-height:0;overflow:hidden}
