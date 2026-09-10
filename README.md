@@ -185,10 +185,25 @@ saying where home is every night for weeks, and the driveway it parks in is a
 better fence than a rooftop pin from a postal address. The list lives outside
 the repository, because a home address is not telemetry.
 
-Reading places is a GET like everything else here. **Writing them is not
-exposed to the network at all** — a place is created on the machine with
-`hummer-obd-places add`, because this node sits on a vehicle's diagnostic port
-and a place list is not a good enough reason to give it a write surface.
+**Naming a stop is the one write this node accepts.** A *Places* tab lists the
+stops found in the selected session; typing a name into an unnamed one POSTs to
+`/api/places`. That is the only path, the only verb, and it is fenced: the
+request must carry an `Origin` named on the node's own command line, the body is
+bounded before it is read, and every field goes through the same validation the
+CLI uses. A `radius_m` of `0` deletes, so there is no second verb.
+
+Adding that endpoint was refused once, on the grounds that a server on a
+vehicle's diagnostic port should be GET-only. That was the wrong call — the ask
+was for a way to add locations from Home Assistant, and declining it substituted
+one person's risk appetite for the owner's on their own network. `hummer-obd-places`
+still works from the machine, for anyone who prefers it.
+
+One deployment note the endpoint cannot fix by itself: the unit runs with
+`ProtectHome=read-only` and its only writable path is the tile cache, so saving
+a place returns *"place list is not writable"* until the config directory is
+added to `ReadWritePaths`. `scripts/allow-places-write.sh` installs a drop-in
+that adds exactly that one directory, or `--places-file` can point the list
+somewhere already writable.
 
 **GPS jitter is filtered before anything reads a position.** A parked truck's
 receiver does not sit still: measured on 2026-09-10, two sessions where the

@@ -422,6 +422,38 @@ class SessionStore:
             self._places_stamp = stamp
         return self._places
 
+    def save_place(self, payload: dict) -> None:
+        """Add or replace one named place. Raises ValueError on bad input.
+
+        Delete is `radius_m: 0` rather than a DELETE verb, so the write
+        surface stays exactly one path and one method.
+        """
+        name = str(payload.get("name", "")).strip()
+        if not name:
+            raise ValueError("a place needs a name")
+        if len(name) > 60:
+            raise ValueError("name is too long")
+        with self._lock:
+            current = places_mod.Places.load(self._places_path)
+            if payload.get("radius_m") == 0:
+                if not current.remove(name):
+                    raise ValueError(f"no place named {name!r}")
+            else:
+                try:
+                    lat = float(payload["lat"])
+                    lon = float(payload["lon"])
+                except (KeyError, TypeError, ValueError):
+                    raise ValueError("lat and lon are required numbers") from None
+                radius = payload.get("radius_m", places_mod.DEFAULT_RADIUS_M)
+                try:
+                    radius = float(radius)
+                except (TypeError, ValueError):
+                    raise ValueError("radius_m must be a number") from None
+                note = str(payload.get("note", ""))[:200]
+                current.add(places_mod.Place(name, lat, lon, radius, note))
+            current.save(self._places_path)
+            self._places, self._places_stamp = current, None
+
     def sessions(self) -> dict:
         sessions = []
         for path in self._paths():
@@ -658,11 +690,78 @@ def make_server(store: SessionStore, host: str = "127.0.0.1", port: int = 8765) 
             self.send_response(204)
             self._cors()
             if self.headers.get("Origin") in store.allow_origins:
-                self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
                 self.send_header("Access-Control-Allow-Headers", "Accept, Content-Type")
                 self.send_header("Access-Control-Max-Age", "600")
             self.send_header("Content-Length", "0")
             self.end_headers()
+
+        #: The largest a place list submission may be. A name, two floats and a
+        #: radius is a few hundred bytes; this is generous and still refuses a
+        #: body that could exhaust a Pi Zero's memory before it is parsed.
+        MAX_WRITE_BYTES = 4096
+
+        def do_POST(self):
+            """The single write this node accepts: naming a place.
+
+            Adding one was declined once on the grounds that a server sitting
+            on a vehicle's diagnostic port should be GET-only. That was the
+            right instinct and the wrong call -- the owner asked for a way to
+            add locations from Home Assistant, and refusing it on my own
+            judgment substituted my risk appetite for theirs on their own
+            network. So it exists, and it is fenced:
+
+            * ONE path. /api/places and nothing else.
+            * ORIGIN REQUIRED, and it must be one named on the command line.
+              A browser will not send a cross-origin POST without preflight,
+              and the preflight above answers only for allowed origins -- but
+              this is checked again here rather than trusted, because a
+              non-browser client sends whatever it likes.
+            * The body is bounded before it is read, not after.
+            * Every field goes through Place(), which already refuses a fence
+              smaller than the receiver's own error, coordinates out of range,
+              and a nameless place.
+            * It writes place names. It cannot reach the vehicle, the session
+              files, or any path the caller chooses -- the file is fixed at
+              construction.
+            """
+            url = urlsplit(self.path)
+            origin = self.headers.get("Origin")
+            if url.path != "/api/places":
+                self._reply(404, {"error": "not found"})
+                return
+            if not origin or origin not in store.allow_origins:
+                # 403 rather than 401: there is no credential that would help.
+                self._reply(403, {"error": "writes require an allowed origin"})
+                return
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                self._reply(400, {"error": "bad content length"})
+                return
+            if length <= 0 or length > self.MAX_WRITE_BYTES:
+                self._reply(413, {"error": f"body must be 1-{self.MAX_WRITE_BYTES} bytes"})
+                return
+            try:
+                payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                self._reply(400, {"error": "body must be JSON"})
+                return
+            if not isinstance(payload, dict):
+                self._reply(400, {"error": "expected an object"})
+                return
+            try:
+                store.save_place(payload)
+            except ValueError as error:
+                self._reply(400, {"error": str(error)})
+                return
+            except OSError:
+                self._reply(503, {"error": "place list is not writable"})
+                return
+            self._reply(200, {"places": [
+                {"name": place.name, "lat": place.lat, "lon": place.lon,
+                 "radius_m": place.radius_m, "note": place.note}
+                for place in store.places()]})
 
         def do_GET(self):
             # Refuse DNS-rebinding hostnames. A deliberate interface bind may
@@ -796,6 +895,11 @@ def main(argv=None) -> int:
     parser.add_argument("--tile-cache", default=None,
                         help="directory for cached map tiles "
                              "(default: a 'tiles' directory beside --dir)")
+    parser.add_argument("--places-file", default=None, metavar="PATH",
+                        help="named places (default ~/hummer-obd/config/places.json). "
+                             "The service runs with ProtectHome=read-only, so this "
+                             "must be inside a ReadWritePaths directory for naming "
+                             "a place to work")
     parser.add_argument("--no-map-tiles", action="store_true",
                         help="draw the map without background tiles. Tiles are "
                              "fetched by this node from tile.openstreetmap.org, "
@@ -824,6 +928,7 @@ def main(argv=None) -> int:
                              expose_location=args.expose_location,
                              tile_cache=tile_cache,
                              allow_origins=tuple(args.allow_origin),
+                             places_file=args.places_file,
                              api_only=args.api_only)
         if args.json:
             print(json.dumps(store.snapshot(args.session), indent=2, allow_nan=False))

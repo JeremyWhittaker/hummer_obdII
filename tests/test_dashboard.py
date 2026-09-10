@@ -230,9 +230,15 @@ class DashboardTests(unittest.TestCase):
                 with self.subTest(url=url), self.assertRaises(HTTPError) as error:
                     urlopen(base + url, timeout=3)
                 self.assertEqual(error.exception.code, expected)
+            # One write path exists, and only one. A POST anywhere else is a
+            # 404, and a POST to the write path from an unnamed origin -- or
+            # with no origin at all, as here -- is refused outright.
             with self.assertRaises(HTTPError) as error:
                 urlopen(Request(base + "/api/snapshot", data=b"04", method="POST"), timeout=3)
-            self.assertEqual(error.exception.code, 501)
+            self.assertEqual(error.exception.code, 404)
+            with self.assertRaises(HTTPError) as error:
+                urlopen(Request(base + "/api/places", data=b"{}", method="POST"), timeout=3)
+            self.assertEqual(error.exception.code, 403)
             with self.assertRaises(HTTPError) as error:
                 urlopen(Request(base + "/api/snapshot", headers={"Host": "untrusted.example"}), timeout=3)
             self.assertEqual(error.exception.code, 403)

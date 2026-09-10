@@ -373,6 +373,14 @@ select:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid 
   width:32px;height:32px;border-radius:50%;cursor:pointer;flex:none;line-height:1;
 }
 .playback input[type="range"]{flex:1;accent-color:var(--ev-orange);min-width:80px}
+.stop-row{padding:10px 0}
+.stop-head{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.stop-rule{border:0;border-top:1px solid var(--rule);margin:0}
+.stop-form{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
+.stop-form input{flex:1 1 240px;min-width:0;padding:6px 9px;border-radius:6px;
+  border:1px solid var(--rule);background:var(--bg-raised);color:var(--ink);
+  font:inherit;font-size:12.5px}
+.stop-form button{padding:6px 14px}
 .play-time{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);min-width:92px;text-align:right}
 .map-stats{display:flex;flex-wrap:wrap;gap:16px;margin-top:11px;font-size:11.5px;color:var(--ink-3)}
 .map-stats b{color:var(--ink);font-variant-numeric:tabular-nums;font-weight:600}
@@ -541,6 +549,16 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
 </div>
 
+<div id="panel-places" role="tabpanel" hidden>
+  <div class="card bracket">
+    <h2>Where this truck stops</h2>
+    <p class="sub" id="places-sub">Clusters of parked fixes from the selected session. Naming one
+       teaches every future trip what it was.</p>
+    <div id="stops-list"></div>
+    <p class="sub" id="places-known"></p>
+  </div>
+</div>
+
 <div id="panel-numbers" role="tabpanel" hidden>
 <section class="tiles fadeable" id="tiles"></section>
 
@@ -657,6 +675,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     /* Radar markers currently on the map, with their timestamps, so the
        replay can light the one it is passing. Rebuilt whenever the map is. */
     plotted: [],
+    /* Stops found in the selected session, and the named fences they are
+       matched against. `stopsLoaded` distinguishes "no stops" from "not asked
+       yet", which the tab shows differently. */
+    stops: [], places: [], stopsLoaded: false,
     /* The history row the replay is sitting on, or null when it is not. */
     frame: null, autoplay: false, mainView: "live",
     map: null, play: { timer: null },
@@ -675,6 +697,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     "f-duration","f-period","f-age","vehicle-sub","legend",
     "module-caveat","map","map-tiles","map-grid","trail","trail-head","map-empty","map-stats",
     "alert-marks","playback","play","scrub","play-time",
+    "panel-places","stops-list","places-known","places-sub",
     "tiles","chart","chart-empty","chart-sub","tab-power","tab-soc","tab-speed",
     "notes","signal-search","signals-body","signal-sub","scene","scene-status","layers","views","mainviews","panel-live","panel-numbers","charge-badge","thermal-badge","r8-state","r8-face","r8-history","r8-sub"
   ].forEach(function (id) { el[id] = byId(id); });
@@ -2741,7 +2764,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
      it is what the page is for; the numbers are there when they are wanted. */
   var MAIN_VIEWS = [
     { key: "live", label: "Live", panel: "panel-live" },
-    { key: "numbers", label: "Data & logs", panel: "panel-numbers" }
+    { key: "numbers", label: "Data & logs", panel: "panel-numbers" },
+    { key: "places", label: "Places", panel: "panel-places" }
   ];
 
   function buildMainViews() {
@@ -3213,6 +3237,90 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     box(-4.0, -5.2, 8.0, 8.6, "#8f3212", 1.4);       /* cab */
     box(-3.4, 4.4, 6.8, 6.2, "#c4451a", 0.9);        /* bed */
     return g;
+  }
+
+  /* ---------- places ----------
+     A stop is a cluster of parked fixes; a place is a stop with a name. The
+     node finds the first and the owner supplies the second, and the whole
+     point of the tab is that the UNNAMED stops are visible -- an endpoint
+     that knows where you stopped and never shows anyone is the same as not
+     having it, which is what this was for a while.
+
+     Naming posts to the node. That write is fenced at the other end: one
+     path, an origin that has to be named on the node's own command line, a
+     bounded body, and every field through the same validation the CLI uses. */
+  function renderPlaces() {
+    clear(el["stops-list"]);
+    var stops = state.stops || [], known = state.places || [];
+
+    el["places-known"].textContent = known.length
+      ? known.length + " named: " + known.map(function (p) { return p.name; }).join(", ")
+      : "No places named yet.";
+
+    if (!stops.length) {
+      el["stops-list"].appendChild(
+        h("p", "sub", state.stopsLoaded
+          ? "No stop long enough to name in this session. A pause under five minutes is a traffic light."
+          : "Reading the session…"));
+      return;
+    }
+
+    stops.forEach(function (stop, index) {
+      var row = h("div", "stop-row");
+      var head = h("div", "stop-head");
+      head.appendChild(h("b", null, stop.place || "Unnamed stop"));
+      var mins = stop.seconds ? Math.round(stop.seconds / 60) : null;
+      head.appendChild(h("span", "sub",
+        (mins !== null ? mins + " min" : "") +
+        " · " + stop.fixes + " fixes" +
+        (stop.first_utc ? " · " + (clockOf(stop.first_utc) || "") : "")));
+      row.appendChild(head);
+      row.appendChild(h("div", "sub mono",
+        stop.lat.toFixed(6) + ", " + stop.lon.toFixed(6)));
+
+      if (!stop.place) {
+        var form = h("div", "stop-form");
+        var input = h("input");
+        input.type = "text";
+        input.placeholder = "Name this place — home, work, Fry’s…";
+        input.setAttribute("aria-label", "Name for the stop at "
+                           + stop.lat.toFixed(4) + ", " + stop.lon.toFixed(4));
+        var save = h("button", null, "Save");
+        var said = h("span", "sub");
+        function submit() {
+          var name = input.value.trim();
+          if (!name) { said.textContent = "A place needs a name."; return; }
+          save.disabled = true;
+          said.textContent = "Saving…";
+          api("/api/places", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: name, lat: stop.lat, lon: stop.lon })
+          }).then(function (data) {
+            state.places = (data && data.places) || [];
+            stop.place = name;
+            renderPlaces();
+          }).catch(function (error) {
+            save.disabled = false;
+            /* Said out loud rather than swallowed. The node refuses a fence
+               smaller than its own GPS error, and a silent failure here would
+               read as "it saved" to anyone not watching a console. */
+            said.textContent = "Not saved: " + (error && error.message
+                               ? error.message : "the node refused it");
+          });
+        }
+        save.addEventListener("click", submit);
+        input.addEventListener("keydown", function (e) {
+          if (e.key === "Enter") submit();
+        });
+        form.appendChild(input);
+        form.appendChild(save);
+        form.appendChild(said);
+        row.appendChild(form);
+      }
+      el["stops-list"].appendChild(row);
+      if (index < stops.length - 1) el["stops-list"].appendChild(h("hr", "stop-rule"));
+    });
   }
 
   /* ---------- the map ----------
@@ -4221,6 +4329,27 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     return message || "the refresh failed";
   }
 
+  /* The write-capable sibling of getJson. Kept separate rather than adding a
+     method argument, so nothing that reads can accidentally start writing.
+
+     It surfaces the node's OWN error text, because the node refuses things for
+     reasons a person can act on -- a fence smaller than its GPS error, a name
+     it will not take -- and "HTTP 400" tells them none of it. */
+  function api(path, init) {
+    var controller = new AbortController(),
+        timer = window.setTimeout(function () { controller.abort(); }, TIMEOUT_MS);
+    return fetch(API + path, Object.assign({
+      cache: "no-store", credentials: "same-origin", signal: controller.signal
+    }, init || {})).then(function (r) {
+      return r.json().catch(function () { return null; }).then(function (body) {
+        if (!r.ok) {
+          throw new Error(body && body.error ? body.error : "HTTP " + r.status);
+        }
+        return body;
+      });
+    }).finally(function () { window.clearTimeout(timer); });
+  }
+
   function getJson(path, timeout) {
     path = API + path;
     var controller = new AbortController(),
@@ -4269,6 +4398,23 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       state.snapshot = snapshot; state.network = "ok"; state.error = "";
       state.retried = false;
       render();
+      /* Stops and places, after the snapshot rather than beside it: both are
+         cheap, neither is needed to draw the live view, and a slow one must
+         not hold up the thing the page is actually for. Failures are quiet on
+         purpose -- a node without a place file is the ordinary case, not an
+         outage worth a banner. */
+      getJson("/api/stops?session=" + encodeURIComponent(wanted))
+        .then(function (data) {
+          if (generation !== state.generation || wanted !== state.selected) return;
+          state.stops = (data && data.stops) || [];
+          state.stopsLoaded = true;
+          renderPlaces();
+        }).catch(function () { state.stopsLoaded = true; renderPlaces(); });
+      getJson("/api/places").then(function (data) {
+        if (generation !== state.generation) return;
+        state.places = (data && data.places) || [];
+        renderPlaces();
+      }).catch(function () {});
     }).catch(function (err) {
       if (generation !== state.generation) return;
       /* One dropped request is not an outage. A single poll is lost every

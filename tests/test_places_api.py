@@ -5,6 +5,7 @@ this server sits on a vehicle's diagnostic port, every route it has is a GET,
 and a place list is not a good enough reason to change that.
 """
 
+import threading
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -50,21 +51,124 @@ class ReadingTests(unittest.TestCase):
 
 
 class WriteSurfaceTests(unittest.TestCase):
-    def test_the_handler_has_no_write_methods(self):
-        """Read over HTTP, write on the machine.
+    """One write path, fenced. Previously there were none at all.
 
-        Asserted structurally rather than by convention, because the whole
-        point is that a future edit adding do_POST for something convenient
-        would silently open a write surface on a node wired to a vehicle.
-        """
+    Refusing to add one was the wrong call: the owner asked for a way to add
+    locations from Home Assistant and got a judgment about risk appetite on
+    their own network instead. So the surface exists, and these tests are the
+    fence rather than the absence.
+    """
+
+    def test_the_only_write_verb_is_post(self):
         with TemporaryDirectory() as tmp:
             server = dashboard.make_server(store_with(tmp), port=0)
             try:
                 handler = server.RequestHandlerClass
-                for method in ("do_POST", "do_PUT", "do_DELETE", "do_PATCH"):
+                self.assertTrue(hasattr(handler, "do_POST"))
+                for method in ("do_PUT", "do_DELETE", "do_PATCH"):
                     with self.subTest(method=method):
                         self.assertFalse(hasattr(handler, method))
             finally:
+                server.server_close()
+
+    def post(self, store, body, origin="http://ha.example:8123"):
+        import json as _json
+        from urllib.error import HTTPError
+        from urllib.request import Request, urlopen
+        server = dashboard.make_server(store, port=0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            request = Request(
+                f"http://127.0.0.1:{server.server_port}/api/places",
+                data=body if isinstance(body, bytes) else _json.dumps(body).encode(),
+                method="POST",
+                headers={"Content-Type": "application/json",
+                         **({"Origin": origin} if origin else {})})
+            try:
+                with urlopen(request, timeout=3) as response:
+                    return response.status, _json.load(response)
+            except HTTPError as error:
+                return error.code, None
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def store(self, tmp):
+        return dashboard.SessionStore(
+            tmp, expose_location=True, places_file=Path(tmp) / "places.json",
+            allow_origins=("http://ha.example:8123",))
+
+    def test_an_allowed_origin_can_name_a_place(self):
+        with TemporaryDirectory() as tmp:
+            store = self.store(tmp)
+            code, body = self.post(store, {"name": "home", "lat": HOME[0],
+                                           "lon": HOME[1]})
+            self.assertEqual(code, 200)
+            self.assertEqual([p["name"] for p in body["places"]], ["home"])
+            self.assertEqual([p.name for p in store.places()], ["home"])
+
+    def test_an_unnamed_origin_is_refused(self):
+        with TemporaryDirectory() as tmp:
+            code, _ = self.post(self.store(tmp),
+                                {"name": "x", "lat": HOME[0], "lon": HOME[1]},
+                                origin="http://evil.example")
+            self.assertEqual(code, 403)
+
+    def test_no_origin_at_all_is_refused(self):
+        # A browser will not send one cross-origin without preflight, but a
+        # non-browser client sends whatever it likes.
+        with TemporaryDirectory() as tmp:
+            code, _ = self.post(self.store(tmp),
+                                {"name": "x", "lat": HOME[0], "lon": HOME[1]},
+                                origin=None)
+            self.assertEqual(code, 403)
+
+    def test_an_oversized_body_is_refused_by_length_not_by_parsing(self):
+        with TemporaryDirectory() as tmp:
+            code, _ = self.post(self.store(tmp), b"{" + b"a" * 9000 + b"}")
+            self.assertEqual(code, 413)
+
+    def test_a_fence_smaller_than_the_receiver_error_is_refused(self):
+        with TemporaryDirectory() as tmp:
+            code, _ = self.post(self.store(tmp), {"name": "tiny", "lat": HOME[0],
+                                                  "lon": HOME[1], "radius_m": 5})
+            self.assertEqual(code, 400)
+
+    def test_rubbish_is_refused(self):
+        with TemporaryDirectory() as tmp:
+            store = self.store(tmp)
+            for body in (b"not json", b"[]", b'{"name": ""}',
+                         b'{"name": "x"}', b'{"name": "x", "lat": 999, "lon": 0}'):
+                with self.subTest(body=body):
+                    code, _ = self.post(store, body)
+                    self.assertEqual(code, 400)
+
+    def test_a_zero_radius_deletes(self):
+        with TemporaryDirectory() as tmp:
+            store = self.store(tmp)
+            self.post(store, {"name": "home", "lat": HOME[0], "lon": HOME[1]})
+            code, body = self.post(store, {"name": "home", "radius_m": 0})
+            self.assertEqual(code, 200)
+            self.assertEqual(body["places"], [])
+
+    def test_the_write_path_is_the_only_one(self):
+        from urllib.error import HTTPError
+        from urllib.request import Request, urlopen
+        with TemporaryDirectory() as tmp:
+            server = dashboard.make_server(self.store(tmp), port=0)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                for path in ("/api/snapshot", "/api/sessions", "/api/stops", "/"):
+                    with self.subTest(path=path), self.assertRaises(HTTPError) as e:
+                        urlopen(Request(
+                            f"http://127.0.0.1:{server.server_port}{path}",
+                            data=b"{}", method="POST",
+                            headers={"Origin": "http://ha.example:8123"}), timeout=3)
+                    self.assertEqual(e.exception.code, 404)
+            finally:
+                server.shutdown()
                 server.server_close()
 
 
