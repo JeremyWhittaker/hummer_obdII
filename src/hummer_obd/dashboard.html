@@ -1436,13 +1436,43 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        front of the new ones. The duplicate bed-floor also meant two parts
        shared one id. Deleted. */
 
-    /* --- fender flares. Squared and proud of the body: the single feature
-       that makes this vehicle recognisable from any angle. --- */
+    /* --- fender flares -------------------------------------------------
+       These were the "two bulky boxes over the tires that aren't there".
+
+       Each flare was ONE SLAB 1.24 m long and 0.88 m TALL, running from the
+       rocker to above the beltline and standing proud of the flank -- a wall
+       down the side of the truck covering the whole wheel and most of the
+       door below it. A fender flare is not that. It is a LIP around the wheel
+       arch, a hand's width of trim following the tyre.
+
+       So it follows the tyre now. The arch is a circle of radius 0.55 m --
+       the 0.4471 m tyre plus clearance -- centred on the wheel, and the flare
+       is a band 0.13 m deep swept along it from 12 degrees to 168, built as
+       nine stepped segments because this renderer draws axis-aligned boxes
+       and has no rotation for them. Nine reads as a curve at any size the
+       model is actually viewed at; three would read as a hexagon.
+
+       The steps are what make it an arch rather than a staircase: each
+       segment's TOP follows the circle and its bottom is a fixed depth below,
+       so the silhouette is the arc and the inner edge is the arc too. */
+    var FLARE_R = 0.55, FLARE_DEPTH = 0.13, FLARE_STEPS = 9;
     [[AXLE, "f"], [-AXLE, "r"]].forEach(function (ax) {
       [-1, 1].forEach(function (side) {
-        var z0 = side < 0 ? -W - 0.09 : W - 0.02, z1 = side < 0 ? -W + 0.02 : W + 0.09;
-        slab("flare-" + ax[1] + (side < 0 ? "l" : "r"),
-             ax[0] - 0.62, ax[0] + 0.62, rocker + 0.02, beltline + 0.06, z0, z1, TRIM);
+        var z0 = side < 0 ? -W - 0.085 : W - 0.02,
+            z1 = side < 0 ? -W + 0.02 : W + 0.085,
+            tag = "flare-" + ax[1] + (side < 0 ? "l" : "r");
+        for (var i = 0; i < FLARE_STEPS; i++) {
+          /* Segment spans the angles [a0, a1]; its x extent is the chord and
+             its top is the higher of the two arc points, so no gap opens
+             between neighbours on the rising side. */
+          var a0 = (12 + (168 - 12) * (i / FLARE_STEPS)) * Math.PI / 180,
+              a1 = (12 + (168 - 12) * ((i + 1) / FLARE_STEPS)) * Math.PI / 180,
+              xa = ax[0] + FLARE_R * Math.cos(a0),
+              xb = ax[0] + FLARE_R * Math.cos(a1),
+              top = VEH.wheelRadius + FLARE_R * Math.max(Math.sin(a0), Math.sin(a1));
+          slab(tag + "-" + i, Math.min(xa, xb), Math.max(xa, xb),
+               top - FLARE_DEPTH, top, z0, z1, TRIM);
+        }
       });
     });
 
