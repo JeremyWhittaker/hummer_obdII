@@ -1188,7 +1188,17 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        per side, which is the difference between the floor width and the
        between-the-housings width, and they are why a 1.53 x 1.55 x 0.55 box
        holds 36.7 cu ft rather than the 46.1 the outer dimensions imply. */
-    var bedFloor = beltline, bedRail = beltline + VEH.bedDepth,
+    /* The rail sits AT the beltline and the floor hangs below it -- not the
+       other way round, which is what this said and what Jeremy spotted:
+       "clearly the bed rests below the rear window in its entirety". With the
+       floor at the beltline the rails stood 0.55 m higher still, level with
+       the middle of the backlight, and the truck looked like it was carrying
+       a box in front of its own rear window.
+
+       The beltline is where the cab's glass starts. A pickup's bed rails run
+       roughly along that same line, which is why you can see over them out of
+       the rear window. Depth then goes downward from there. */
+    var bedRail = beltline, bedFloor = beltline - VEH.bedDepth,
         bedInner = VEH.bedWidth / 2, housing = VEH.bedInnerWidth / 2;
     slab("bed-floor", tailX + 0.03, bulkX, bedFloor, bedFloor + 0.04,
          -bedInner, bedInner, [0.16, 0.17, 0.18]);
@@ -1686,6 +1696,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
             travel: { from: -2.30, to: -1.18, phase: pulse / 5 },
             t: [-2.26, 1.06, -2.30], s: [0.09, 0.09, 0.10] });
     }
+    /* Stamped once, and never written again. `home` is where the part was
+       DEFINED; `t` is where it is this frame, which for a travelling pulse is
+       somewhere else every frame. Sorting on `t` reshuffled the draw order
+       continuously and made the translucent parts flicker, so the sort reads
+       `home` and the index breaks ties into a total order. */
+    parts.forEach(function (part, index) {
+      part.home = [part.t[0], part.t[1], part.t[2]];
+      part.ord = index;
+    });
     return parts;
   }
 
@@ -1854,6 +1873,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         canvas.width = Math.round(w * ratio); canvas.height = Math.round(h * ratio);
       }
       gl.viewport(0, 0, canvas.width, canvas.height);
+      /* Before the clear, not after. gl.clear honours the depth mask, so a
+         frame that ended with writes disabled -- which every frame does, once
+         the translucent pass has run -- would clear colour and leave the
+         depth buffer holding the previous frame entirely. */
+      gl.depthMask(true);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
       /* Advance each wheel by its own measured speed. Integrating an angle
@@ -1875,9 +1899,21 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         /* Narrower than the orbit camera's, because this view is reading
            instruments rather than surveying a cabin -- a wide angle pushes
            the cluster into the distance and fills the frame with door card.
-           The near plane clears the windshield, about half a metre from the
-           eye; the orbit camera's 0.1 m would slice the dashboard off. */
-        proj = m4persp(0.82, w / h, 0.04, 120);
+
+           NEAR AND FAR ARE THE FLICKER. A depth buffer spreads its precision
+           logarithmically from the near plane, so the ratio far/near is what
+           decides how finely two close surfaces can be told apart. This was
+           0.04 to 120 -- three thousand to one -- and at the two-metre range
+           where the dashboard actually sits there was not enough resolution
+           left to separate a panel from the trim laid on it. They swapped
+           places from frame to frame, which is the flicker.
+
+           Nothing in this scene is beyond about twenty metres, so 40 is a
+           generous far plane rather than a tight one, and 0.2 m still clears
+           everything: the eye sits roughly 0.8 m from the windshield. The
+           comment here used to say the near plane was "about half a metre"
+           while the code said 0.04, which is how it survived. */
+        proj = m4persp(0.82, w / h, 0.2, 40);
         view = m4look(eye, [eye[0] + cp * cy, eye[1] + sp, eye[2] + cp * sy],
                       [0, 1, 0]);
       } else {
@@ -1885,7 +1921,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         eye = [Math.cos(yaw) * Math.cos(cam.pitch) * cam.dist,
                Math.sin(cam.pitch) * cam.dist + 0.9,
                Math.sin(yaw) * Math.cos(cam.pitch) * cam.dist];
-        proj = m4persp(0.72, w / h, 0.1, 120);
+        /* Same reasoning as the driver camera above: 0.1 to 120 was
+           1200:1, and the orbit camera never comes closer than about four
+           metres, so 0.35 costs nothing and buys an order of magnitude of
+           depth resolution across the body panels. */
+        proj = m4persp(0.72, w / h, 0.35, 40);
         view = m4look(eye, [0, 0.85, 0], [0, 1, 0]);
       }
       gl.uniformMatrix4fv(loc.proj, false, proj);
@@ -1941,22 +1981,44 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
       /* Opaque first, then the translucent shell back-to-front, or the
          shell writes depth and hides everything it is meant to reveal. */
+      /* The comparator reads p.t, and p.t is where the travelling pulses
+         write their animated position -- so every frame the pulses moved, the
+         sort reshuffled, and any two translucent parts at nearly equal
+         distance traded places. That is a second, independent flicker, and it
+         is why parts are ordered on where they were DEFINED (p.home, captured
+         once) rather than where they are this instant. A pulse sliding along
+         a cable does not change which side of the glass it is on.
+
+         The index tiebreak makes the order total. Returning 0 for equal keys
+         leaves the result at the mercy of the sort implementation, and an
+         unstable sort turns a tie into a coin flip sixty times a second. */
       var order = parts.slice().sort(function (a, b) {
         var aa = a.alpha !== undefined ? a.alpha : layers[a.layer],
             ba = b.alpha !== undefined ? b.alpha : layers[b.layer];
         if ((aa < 1) !== (ba < 1)) return aa < 1 ? 1 : -1;
         if (aa < 1) {
-          var da = (a.t[0]-eye[0])*(a.t[0]-eye[0]) + (a.t[2]-eye[2])*(a.t[2]-eye[2]),
-              db = (b.t[0]-eye[0])*(b.t[0]-eye[0]) + (b.t[2]-eye[2])*(b.t[2]-eye[2]);
-          return db - da;
+          var ah = a.home || a.t, bh = b.home || b.t,
+              da = (ah[0]-eye[0])*(ah[0]-eye[0]) + (ah[2]-eye[2])*(ah[2]-eye[2]),
+              db = (bh[0]-eye[0])*(bh[0]-eye[0]) + (bh[2]-eye[2])*(bh[2]-eye[2]);
+          if (db !== da) return db - da;
         }
-        return 0;
+        return (a.ord || 0) - (b.ord || 0);
       });
+
+      /* Translucent surfaces must not write depth. The sort puts them last
+         and back-to-front, which decides what blends over what -- but while
+         they were still writing depth, each one also stamped an occluder into
+         the buffer, so a pane of glass hid the glass behind it and the pack
+         behind that. Turning the mask off for the translucent pass is what
+         makes "see through the tyres to the brakes" actually work rather than
+         work only for whichever surface happened to draw first. */
+      var writingDepth = true;
 
       order.forEach(function (p) {
         var alpha = p.alpha !== undefined ? p.alpha * layers[p.layer] : layers[p.layer];
         if (p.chargeOnly && !live.charging) return;
         if (alpha <= 0.01) return;
+        if (writingDepth && alpha < 1) { gl.depthMask(false); writingDepth = false; }
         if (p.travel) {
           /* Position is a function of the clock, so it is computed here
              rather than stored: the parts list stays a description of the
@@ -3311,10 +3373,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     module_voltage: ["lv", "12 V rail, sensed at module 17 — the precise one"],
     dmc2_v:         ["lv", "12 V rail, sensed at module 1D"],
     mod17_v:        ["lv", "12 V rail, module 17 again by the enhanced route — "
-                           "it is here to disagree with module_voltage, not to "
-                           "be read on its own"],
+                         + "it is here to disagree with module_voltage, not to "
+                         + "be read on its own"],
     pack_v_1d:      ["hv", "pack voltage as module 1D measures it, beside "
-                           "module 17's — two modules, one busbar"],
+                         + "module 17's — two modules, one busbar"],
     charger_5401_raw: ["charge", "charge port lit when the state byte is non-zero"],
 
     /* --- fault lamp --- */
