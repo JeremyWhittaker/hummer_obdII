@@ -472,6 +472,40 @@ def _ratio(rows: list[dict], top: str, bottom: str,
     }
 
 
+#: No production traction pack has fewer than ten cells in series.  This is a
+#: bound, not a tuned threshold: it is loose by a factor of nine on this
+#: vehicle, and that looseness is the point.  A cutoff picked to suit a 400 V
+#: pack would quietly need revisiting for any other one; this cannot be wrong.
+MIN_PLAUSIBLE_SERIES = 10
+
+
+def contactors_closed(row: dict) -> bool:
+    """Whether the pack is joined to the bus in this row.
+
+    ``pack_v`` measures the bus.  ``cell_avg_v`` measures the cells, through
+    sense lines that stay connected when the contactors open.  So the instant
+    the pack drops out one collapses and the other does not, and every ratio
+    between them stops comparing two views of one circuit and starts comparing
+    two different circuits.
+
+    Measured on 2026-09-10, in a session that drove and then charged: thirteen
+    contactor-open samples read ``pack_v`` of 0.94-17.04 V while
+    ``cell_avg_v`` held at 4.0508 throughout.  Including them turned a
+    series-cell ratio of **96.027, sd 0.327, against an expected 96.0** into
+    **88.104, sd 26.280**, and raised "a decoder scaling may have changed".
+    Nothing had changed.  A warning that fires on correct data is worse than
+    no warning, because it is the one people learn to scroll past.
+
+    A row that lacks either field is not judged here -- absence is not
+    evidence of an open contactor, and this filter has no business dropping
+    rows on a question it cannot see.
+    """
+    pack_v, cell_v = row.get("pack_v"), row.get("cell_avg_v")
+    if not (_is_finite_number(pack_v) and _is_finite_number(cell_v)):
+        return True
+    return float(pack_v) >= MIN_PLAUSIBLE_SERIES * float(cell_v)
+
+
 def _cross_checks(rows: list[dict]) -> dict:
     """Relationships between columns that should hold whatever the vehicle did.
 
@@ -483,7 +517,10 @@ def _cross_checks(rows: list[dict]) -> dict:
     quietly reporting wrong physics.
     """
     checks: dict = {}
-    series = _ratio(rows, "pack_v", "cell_avg_v")
+    # Only the pack-voltage ratio needs this: the others divide quantities that
+    # both survive the contactors opening.
+    series = _ratio([r for r in rows if contactors_closed(r)],
+                    "pack_v", "cell_avg_v")
     if series:
         series["expected"] = EXPECTED_SERIES_CELLS
         checks["series_cells"] = series

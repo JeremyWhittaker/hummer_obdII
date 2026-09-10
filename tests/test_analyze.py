@@ -804,3 +804,40 @@ class TestSessionsDoNotGoBackwardsInTime(unittest.TestCase):
                     pinned, names,
                     f"{pinned} is pinned as a known backwards-time session but "
                     "is no longer committed; remove it from KNOWN")
+
+
+class ContactorFilterTests(unittest.TestCase):
+    """A cross-check must not fire on a pack that was merely switched off."""
+
+    def test_an_open_contactor_row_is_excluded(self):
+        # pack_v collapsed, cell_avg_v unchanged -- the shape measured on
+        # 2026-09-10 when the truck opened its contactors going to sleep.
+        self.assertFalse(analyze.contactors_closed(
+            {"pack_v": 0.94, "cell_avg_v": 4.0508}))
+        self.assertFalse(analyze.contactors_closed(
+            {"pack_v": 17.04, "cell_avg_v": 4.0508}))
+
+    def test_a_live_pack_is_kept(self):
+        self.assertTrue(analyze.contactors_closed(
+            {"pack_v": 389.06, "cell_avg_v": 4.0508}))
+
+    def test_a_row_that_cannot_be_judged_is_kept(self):
+        # Absence is not evidence of an open contactor.
+        for row in ({}, {"pack_v": 389.0}, {"cell_avg_v": 4.05},
+                    {"pack_v": None, "cell_avg_v": 4.05}):
+            with self.subTest(row=row):
+                self.assertTrue(analyze.contactors_closed(row))
+
+    def test_the_bound_is_loose_rather_than_tuned(self):
+        # It must not be a cutoff picked to suit this pack.  At 96 series
+        # cells the real ratio is 96; the bound sits at 10.
+        self.assertLess(analyze.MIN_PLAUSIBLE_SERIES,
+                        analyze.EXPECTED_SERIES_CELLS / 4)
+
+    def test_the_ratio_survives_a_session_that_disconnects(self):
+        # The regression itself: 143 live rows and 13 open-contactor rows.
+        # Unfiltered this reports ~88 and warns; filtered it reports ~96.
+        rows = ([{"pack_v": 389.06, "cell_avg_v": 4.0527} for _ in range(143)]
+                + [{"pack_v": 0.94, "cell_avg_v": 4.0508} for _ in range(13)])
+        checks = analyze._cross_checks(rows)
+        self.assertAlmostEqual(checks["series_cells"]["mean"], 96.0, delta=0.5)
