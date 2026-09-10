@@ -2606,6 +2606,30 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            the "eliminating some of the unnecessary stuff around" part of the
            ask. Faded rather than removed, so the windscreen aperture and the
            A-pillars still frame the view the way they do from a seat. */
+        if (state.view === "cutaway") {
+          /* A LONGITUDINAL SECTION, which is what a cutaway drawing is and
+             what fading the body could never be. Fading leaves every panel in
+             front of every part, so the internals are always seen THROUGH
+             something -- and at any alpha low enough to see past, the truck
+             stops reading as a truck. Removing half of it instead leaves the
+             far side intact as a silhouette and takes the near side away
+             completely, which is how a cutaway works on paper.
+
+             Cut on the centreline, driver's half removed, because the driver's
+             side is the one an owner recognises and the one whose seat, cluster
+             and charge port sit on it.
+
+             Anything whose near face is on the removed side goes; a part that
+             merely straddles the plane stays, because a pack cut in half at
+             the centreline is still the pack and deleting it would leave the
+             floor empty. */
+          if (p.t[2] < -0.02) return;
+          /* Everything that survives is solid. The whole point of removing the
+             body is that nothing needs to be see-through any more -- the
+             translucency existed only to look past bodywork that is no longer
+             there. */
+          alpha = 1;
+        }
         if (cam.mode === "driver" && p.layer !== "cabin" && p.layer !== "radar") {
           /* Everything outside the cabin, not just the body. Fading only
              shell and wheels left the pack, the drive units, the thermal
@@ -2920,6 +2944,19 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
              which is exactly why it deserves a button: nobody discovers it
              by accident. */
           cam.pitch = -0.95; cam.yaw = -0.55; cam.dist = 7.4; cam.spin = 0;
+        } else if (key === "cutaway") {
+          /* Square onto the cut face, from the surviving side. Looking at a
+             section from any other angle shows you the outside of the half
+             that is left, which is the one thing the view exists not to show.
+             Slightly above the centreline because the pack floor and the
+             drive units are the subject and they sit low. */
+          /* The eye must stand on the side that was REMOVED, or the section
+             shows you the outside of the half that is left -- which is the one
+             thing this view exists not to show. Driver's half is cut, so the
+             camera goes to -Z and looks across the empty space at the cut
+             face. Getting this backwards renders a perfectly ordinary truck
+             and looks like the cut never happened. */
+          cam.pitch = 0.16; cam.yaw = -Math.PI / 2; cam.dist = 7.6; cam.spin = 0;
         } else {
           cam.pitch = 0.34; cam.yaw = -0.72; cam.dist = 8.2; cam.spin = 0;
         }
@@ -3120,7 +3157,13 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
          + "this truck." },
     { key: "underside", label: "Underside",
       sub: "Looking up from below. There is no ground plane, so the pack, the "
-         + "skid plates and the coolant runs are all visible." }
+         + "skid plates and the coolant runs are all visible." },
+    { key: "cutaway", label: "Cutaway",
+      sub: "The truck sectioned down its centreline, driver's half removed. "
+         + "Everything inboard is drawn solid at full opacity — no glass, "
+         + "no fade, nothing between you and the part. The bodywork that "
+         + "survives is the far half, so the section reads as a section "
+         + "rather than as a truck with a hole in it." }
   ];
 
   /* Which half of the page is showing. The live view is the default because
