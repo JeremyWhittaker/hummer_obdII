@@ -279,6 +279,19 @@ the tyres are: a plate that hides the pack defeats the point of looking up at
 it. The rear tie rods are drawn and never animated — four-wheel steer is on
 the spec sheet, and nothing in this project measures a rear angle.
 
+**Energy is drawn travelling the path it actually takes.** Charging, pulses
+run the HV cable from the port to the pack at a speed taken from measured pack
+power. Regenerating, they run from both drive units inward — both, because
+every published statement about this vehicle's regen is about the driveline as
+a whole, there is no per-axle telemetry, and GM publishes no front-axle
+disconnect, so showing one axle regenerating and not the other would invent a
+distinction. They appear only while pack power is genuinely negative and the
+vehicle is not plugged in, so a charge cable can never animate during a drive.
+
+The friction brakes stay on their own measurement. GM blends them "when
+regenerative braking is reduced", not on every regen event, so the discs light
+from `brake_kpa` and nothing else.
+
 **Coolant goes through the modules, because GM says it does.** Its service
 publication for this vehicle: *"Each CMA and the A28 EV Battery Disconnect
 Relay assembly contain internal coolant passages."* A CMA is one of the 24

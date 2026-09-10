@@ -1634,6 +1634,40 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           hvflow: true, t: [-1.75, 0.56, -(W - 0.10)],
           s: [1.30, 0.045, 0.045], rot: "x" });
 
+    /* Energy arriving, drawn travelling the run it actually arrives on.
+       From the port end toward the pack, at a speed taken from measured pack
+       power, and only while charging -- which now means plugged AND energy
+       actually moving, not merely a non-zero state byte. */
+    for (var cp = 0; cp < 4; cp++) {
+      add({ id: "hv-charge-pulse-" + cp, mesh: "bev", layer: "aux",
+            colour: [0.30, 0.80, 0.45], chargeOnly: true, pulse: true,
+            travel: { axis: 0, from: -2.40, to: -1.10, phase: cp / 4 },
+            t: [-2.40, 0.56, -(W - 0.10)], s: [0.10, 0.075, 0.075] });
+    }
+
+    /* --- regen, drawn where it comes from ------------------------------
+       Energy returning from the drive units to the pack. Both ends, because
+       every published statement about this vehicle's regen is about the
+       driveline as a whole -- there is no per-axle telemetry, and GM
+       publishes no front-axle disconnect for it, so showing one axle
+       regenerating and not the other would be inventing a distinction.
+
+       These appear only while pack power is genuinely negative. The friction
+       brakes are a separate question and stay on their own measurement: GM
+       blends them "when regenerative braking is reduced", so glowing discs on
+       every regen event would be wrong. They light from brake_kpa and
+       nothing else. */
+    [[AXLE - 0.30, VEH.packLength / 2, "f"],
+     [-(AXLE - 0.30), -VEH.packLength / 2, "r"]].forEach(function (run) {
+      for (var rp = 0; rp < 3; rp++) {
+        add({ id: "regen-pulse-" + run[2] + rp, mesh: "bev", layer: "drive",
+              colour: [0.25, 0.85, 0.45], regenflow: true, pulse: true,
+              travel: { axis: 0, from: run[0], to: run[1], phase: rp / 3,
+                        rate: "regen" },
+              t: [run[0], 0.50, 0], s: [0.09, 0.07, 0.07] });
+      }
+    });
+
     /* --- the wall end -------------------------------------------------
        Only drawn while the vehicle is actually charging. A cord hanging off
        a truck doing 70 mph would be a lie told for the sake of an animation.
@@ -1773,7 +1807,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         live = { modules: [], kw: 0, brake: 0, flow: 0, speed: 0, steer: 0,
                  corners: {}, charging: false, roll: 0, pitch: 0,
                  fill: null, packTemp: null, lv: null, port: false,
-                 fault: false, chargeKw: 0, radar: [0, 0, 0], awake: false },
+                 fault: false, chargeKw: 0, regenKw: 0, radar: [0, 0, 0],
+                 awake: false },
         angle = { fl: 0, fr: 0, rl: 0, rr: 0 }, lastFrame = 0;
 
     gl.enable(gl.DEPTH_TEST);
@@ -1929,6 +1964,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           var axis = p.travel.axis === undefined ? 2 : p.travel.axis,
               speed = p.travel.rate === "coolant"
                 ? 0.55 * (live.flow || 0)
+                : p.travel.rate === "regen"
+                ? 0.35 + Math.min(1, live.regenKw / 120) * 0.90
                 : 0.20 + Math.min(1, Math.abs(live.chargeKw || 0) / 19.2) * 0.55,
               along = ((now * 0.001 * speed + p.travel.phase) % 1);
           p.t[axis] = p.travel.from + (p.travel.to - p.travel.from) * along;
@@ -1987,6 +2024,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         if (p.brake) {
           emissive = [live.brake * 0.9, live.brake * 0.08, live.brake * 0.08];
         }
+        if (p.regenflow) {
+          /* Hidden unless the pack is genuinely taking power back. */
+          if (live.regenKw <= 0.5) return;
+          var rl = Math.min(1, live.regenKw / 120);
+          emissive = [0.05 * rl, 0.55 * rl + 0.15, 0.25 * rl];
+        }
         if (p.hvflow) {
           /* Lit when energy is actually crossing it, in the direction it is
              going: green arriving, orange leaving. Dark when nothing is
@@ -2026,10 +2069,21 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
              does not blink. */
           emissive = live.charging ? [0.06, 0.55, 0.24] : [0.12, 0.30, 0.72];
         }
-        if (p.pulse) {
+        if (p.pulse && !p.regenflow) {
           /* Brightest in the middle of the run, so each one arrives and fades
-             into the port rather than snapping out of existence. */
-          var t01 = (p.t[2] - p.travel.from) / (p.travel.to - p.travel.from),
+             into the port rather than snapping out of existence.
+
+             Read along the axis the pulse actually travels. This was hard-
+             coded to p.t[2] when every pulse ran on Z, and the pulses added
+             later run on X -- so their ratio came out at 4.06 instead of 0..1,
+             clamped to 1, and sin(pi) is zero. They were being drawn, in the
+             right places, perfectly black. Nothing errored and nothing looked
+             broken; there was simply nothing there.
+
+             Regen pulses set their own brightness from measured power and are
+             excluded, or this would overwrite it. */
+          var pax = p.travel.axis === undefined ? 2 : p.travel.axis,
+              t01 = (p.t[pax] - p.travel.from) / (p.travel.to - p.travel.from),
               lit = Math.sin(Math.max(0, Math.min(1, t01)) * Math.PI);
           emissive = [0.10 * lit, 0.75 * lit, 0.85 * lit];
         }
@@ -2606,7 +2660,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         rl: sigValue("wheel_rl_kph"), rr: sigValue("wheel_rr_kph")
       },
       charging: derived("charging") === true,
-      chargeKw: Math.abs(num(derived("pack_kw")) || 0)
+      chargeKw: Math.abs(num(derived("pack_kw")) || 0),
+      /* Power flowing INTO the pack while driving, which is regen. Distinct
+         from chargeKw, which is the same magnitude while plugged in -- the
+         two are never both meaningful at once, and conflating them would
+         animate a charge cable during a drive. */
+      regenKw: (function () {
+        var kw = atFrame("pack_kw", num(derived("pack_kw")));
+        return kw !== null && kw < 0 && derived("charging") !== true ? -kw : 0;
+      })()
     });
 
     /* --- what is happening at the cord, in numbers -------------------
