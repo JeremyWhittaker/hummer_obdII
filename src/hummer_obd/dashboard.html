@@ -737,6 +737,40 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
      frames and never light it. */
   var ALERT_WINDOW_MS = 20000;
 
+  /* A raw hex field scaled against the range it covered IN THIS SESSION.
+     
+     Deliberately not scaled to a physical unit: these are hex fields whose
+     meaning is not established, and asserting a degree or a percent would be
+     inventing one. What a picture can honestly say is "high or low for this
+     drive", which is enough to watch it move and respond to load.
+     
+     Against the field WIDTH would have been the obvious choice and is useless:
+     0x01F4 is 500 of a 16-bit 65535, so every reading would sit at 0.8% and
+     the tint would never leave its floor. The session's own span is the only
+     normaliser here that produces a visible, non-invented number.
+     
+     A field that never moved returns 0.5 rather than 0 or 1 -- mid-scale is
+     the honest picture of a constant, where either extreme would imply the
+     reading had gone somewhere. */
+  function rawFraction(name) {
+    var hist = (state.snapshot && state.snapshot.history) || [],
+        here = sigValue(name), lo = null, hi = null;
+    function parse(v) {
+      return (typeof v === "string" && /^[0-9A-Fa-f]+$/.test(v))
+        ? parseInt(v, 16) : null;
+    }
+    var now = parse(here);
+    if (now === null) return null;
+    for (var i = 0; i < hist.length; i++) {
+      var v = parse(hist[i][name]);
+      if (v === null) continue;
+      if (lo === null || v < lo) lo = v;
+      if (hi === null || v > hi) hi = v;
+    }
+    if (lo === null || hi === null || hi === lo) return 0.5;
+    return Math.max(0, Math.min(1, (now - lo) / (hi - lo)));
+  }
+
   function clockOf(utc) {
     if (!utc) return null;
     var at = new Date(utc);
@@ -2062,6 +2096,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            part disappears without an error anywhere. */
         live = { modules: [], kw: 0, brake: 0, flow: 0, speed: 0, steer: 0,
                  corners: {}, charging: false, plugged: false, soc: null,
+                 coolant1: null, coolant2: null, compressor: null,
                  roll: 0, pitch: 0,
                  fill: null, packTemp: null, lv: null, port: false,
                  fault: false, chargeKw: 0, regenKw: 0, radar: [0, 0, 0],
@@ -2423,6 +2458,23 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           } else {
             emissive = [0.52, 0.54, 0.58];
           }
+        }
+        if (p.id === "pipe-r" && live.coolant1 !== null) {
+          /* Warm where the reading sits high in its range, cool where it sits
+             low. The left pipe stays plain so the two can be compared -- one
+             tinted pipe beside an untinted one says "this is the one with a
+             reading behind it", which two tinted pipes would not. */
+          emissive = [0.30 * live.coolant1, 0.16 + 0.22 * live.coolant1,
+                      0.26 * (1 - live.coolant1) + 0.10];
+        }
+        if (p.id === "hvac" && live.coolant2 !== null) {
+          /* On or off, which is all the index ever claimed for this one. */
+          var hot = live.coolant2 > 0.02;
+          emissive = hot ? [0.10, 0.34, 0.40] : [0.03, 0.06, 0.07];
+        }
+        if (p.id === "chiller" && live.compressor !== null) {
+          emissive = [0.06 + 0.20 * live.compressor, 0.24 * live.compressor + 0.08,
+                      0.34 * live.compressor + 0.10];
         }
         if (p.hairpin) {
           /* Copper carrying current glows; copper sitting idle is just
@@ -3118,6 +3170,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
          different states and the light bar shows them differently: a finished
          charge is lit and still, a running one flows. */
       plugged: derived("plugged") === true,
+      /* The three raw thermal fields the part index promised were drawn and
+         which nothing read. Their units are unknown, so what is shown is
+         where the reading sits WITHIN ITS OWN FIELD WIDTH -- a relative ramp,
+         which is exactly what the index says it is and no more. Claiming a
+         temperature here would be inventing a scale. */
+      coolant1: rawFraction("coolant_1_raw"),
+      coolant2: rawFraction("coolant_2_raw"),
+      compressor: rawFraction("compressor_temp_raw"),
       chargeKw: Math.abs(num(derived("pack_kw")) || 0),
       /* State of charge, for the light bar, which GMC built to report it.
          Read through atFrame so a replay lights the letters the truck had

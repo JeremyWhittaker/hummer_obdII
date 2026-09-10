@@ -159,6 +159,18 @@ def _history(rows: list[dict], *, location: bool = False) -> list[dict]:
             value = row.get(name)
             valid_row = name == "elapsed_s" or usable
             return value if valid_row and _finite(value) and _valid(name, value) else None
+
+        def raw(name, usable=usable, row=row):
+            """A hex field, which `reading` drops.
+
+            `_finite` is a numeric test and a raw field is a string of hex
+            bytes, so every raw column read through `reading` came back None --
+            which is how three of them reached the history as absent while the
+            page was told they were there. `_valid` already has the hex branch;
+            this is the same validation without the numeric gate.
+            """
+            value = row.get(name)
+            return value if usable and _valid(name, value) else None
         v, a = reading("pack_v"), reading("pack_a")
         point = {
             "utc": row.get("utc"),
@@ -181,6 +193,15 @@ def _history(rows: list[dict], *, location: bool = False) -> list[dict]:
             "lateral_g": reading("lateral_g"),
             "longitudinal_g": reading("longitudinal_g"),
             "temp_f": reading("temp_f"),
+            # The three raw thermal fields, carried so the page can scale them
+            # against what THIS SESSION did. Their units are unknown and their
+            # values occupy a tiny slice of their field width -- 0x01F4 is 500
+            # of 65535 -- so a fraction-of-width ramp is invisible and a
+            # physical scale would be invented. The session's own range is the
+            # one honest normaliser.
+            "coolant_1_raw": raw("coolant_1_raw"),
+            "coolant_2_raw": raw("coolant_2_raw"),
+            "compressor_temp_raw": raw("compressor_temp_raw"),
         }
         if location:
             # Only when the operator asked for it. The trail is what a map is

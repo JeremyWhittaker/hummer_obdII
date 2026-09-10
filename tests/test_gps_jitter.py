@@ -222,6 +222,24 @@ class HistoryIsAnchoredTests(unittest.TestCase):
         source = inspect.getsource(dashboard._history)
         self.assertIn("anchor_stationary", source)
 
+    def test_raw_hex_fields_survive_the_history(self):
+        """`_finite` is a numeric test and a raw field is a string of hex.
+
+        Every raw column read through `reading` came back None, which is how
+        three thermal fields reached the history as absent while the part
+        index told the reader they were drawn on the model. The page then had
+        nothing to scale them against.
+        """
+        from hummer_obd import dashboard
+        rows = [{"utc": f"2026-09-10T05:{i:02d}:00Z", "elapsed_s": float(i),
+                 "coolant_1_raw": "01F4", "coolant_2_raw": "0283",
+                 "compressor_temp_raw": "3C"} for i in range(5)]
+        points = dashboard._history(rows)
+        for name in ("coolant_1_raw", "coolant_2_raw", "compressor_temp_raw"):
+            with self.subTest(name=name):
+                self.assertTrue(all(p[name] for p in points),
+                                f"{name} was dropped from the history")
+
     def test_location_off_still_returns_rows(self):
         from hummer_obd import dashboard
         points = dashboard._history(self.rows(), location=False)
