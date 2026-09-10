@@ -68,6 +68,48 @@ module `17` for both removes that confound entirely -- one module, one rail,
 two routes -- and the offset survives it. So it is not a wiring gradient
 between modules.
 
+### Offset or scale? Not answerable from a moving vehicle, and here is why
+
+The obvious next question is whether `0x33E5` is out by a constant or by a
+factor. It cannot be settled with this data, and the reason is worth writing
+down because it will be the reason next time too.
+
+The rail does not move enough. Over 39 paired samples PID `0142` spans
+0.286 V -- **smaller than the 0.359 V gap being explained**. Fit both models
+and compare them the only fair way, as residuals in volts:
+
+| Model | Residual sd |
+|---|---|
+| offset, `y = x - 0.3594` | 0.0447 V |
+| scale, `y = 0.97329 x` | 0.0448 V |
+| `0x33E5` quantisation floor (0.1 V step) | 0.0289 V |
+
+They differ by one ten-thousandth of a volt, and both sit at about 1.5x the
+resolution floor -- which is to say both fit as well as an 0.1 V field can be
+made to fit anything. Over a span narrower than the offset itself, a constant
+and a factor draw the same line.
+
+This is the trap `confidence.CONFIDENCE['2429']` records in prose, now with
+numbers on it. Compare the two by relative spread instead and the ratio looks
+**36 times tighter** -- sd/|mean| of 0.0034 against 0.1243 -- entirely because
+one mean sits near 1.0 and the other near 0.36. That is a property of the
+denominators, not of the vehicle, and it is how an earlier version of this
+project talked itself into "the differences are multiplicative".
+
+What would settle it is a state where the rail genuinely swings: DC-DC off at
+rest near 12.4 V against DC-DC active near 13.9 V is roughly 1.5 V, four times
+the offset, and enough to separate the models cleanly.
+
+There is a catch, and it is the finding from the section above turned against
+us: **the state that would answer this is the state where PID `0142` stops
+answering.** Service 01 sleeps with the driveline. Eleven parked HV-awake
+samples produced zero `0142` readings while `0x33E5` produced eight. Pairing
+the two across a wide rail swing therefore needs the narrow window where the
+vehicle is awake enough for service 01 and the DC-DC has not yet settled --
+key-on, before drive. The recorder already crosses that boundary on every
+session it opens; nothing new needs to be asked of the vehicle. It is a matter
+of accumulating the transitions rather than of instrumenting anything.
+
 What it is remains open, and is recorded as open. Three readings of one rail
 now sit in a consistent order -- the adapter at the connector highest near
 13.9 V, then PID `0142`, then `0x33E5` at `17`, then `0x33E5` at `1D` lowest --
