@@ -154,6 +154,78 @@ if __name__ == "__main__":  # pragma: no cover
     unittest.main()
 
 
+@unittest.skipIf(NODE is None, "node is not installed on this machine")
+class IntersectionTests(unittest.TestCase):
+    """Parts must not occupy the same space as other parts.
+
+    A twelve-agent audit found the model riddled with these and every one of
+    them survived every screenshot, because each piece looks correct alone and
+    only the pair is wrong: coolant lines cutting an 0.857 m chord through both
+    front tyres, halfshafts skewering all four air springs, the HV cable
+    running through the left rear wheel, the charge cord plugged into a wheel
+    arch. Nothing in a render says "these two overlap".
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.parts = [p for p in build_parts() if not p["id"].startswith("evse")]
+
+    @staticmethod
+    def _box(p):
+        return [(p["t"][i] - abs(p["s"][i]) / 2, p["t"][i] + abs(p["s"][i]) / 2)
+                for i in range(3)]
+
+    @classmethod
+    def _overlap(cls, a, b, slack=1e-6):
+        ba, bb = cls._box(a), cls._box(b)
+        return all(ba[i][0] < bb[i][1] - slack and bb[i][0] < ba[i][1] - slack
+                   for i in range(3))
+
+    #: A halfshaft enters the wheel it drives. That is what a halfshaft is.
+    ALLOWED_IN_WHEEL = {"shaft-f", "shaft-r"}
+
+    def test_nothing_runs_through_a_wheel(self):
+        wheels = [p for p in self.parts if p["id"].startswith(("tyre-", "rim-"))]
+        self.assertTrue(wheels, "no wheels to test against")
+        offenders = set()
+        for wheel in wheels:
+            for part in self.parts:
+                if part["id"].startswith(("tyre-", "rim-", "brake-", "flare-",
+                                          "wheel-", "hub")):
+                    continue
+                if part["layer"] in ("shell", "cabin"):
+                    continue
+                if part["id"] in self.ALLOWED_IN_WHEEL:
+                    continue
+                if self._overlap(wheel, part):
+                    offenders.add(part["id"])
+        self.assertEqual(sorted(offenders), [],
+                         f"parts inside a wheel: {sorted(offenders)}")
+
+    def test_nothing_on_the_vehicle_is_wider_than_the_vehicle(self):
+        """GMC publishes 2.202 m across the flares and 2.380 across mirrors.
+
+        The rock rails were the widest thing on the model, and the flares --
+        which DEFINE the 2.202 -- were hung outboard of it.
+        """
+        limit = 1.101 + 1e-3
+        mirrors = {"mirror-l", "mirror-r", "cam-mirror-l", "cam-mirror-r"}
+        wide = [(p["id"], round(max(abs(v) for v in self._box(p)[2]), 3))
+                for p in self.parts
+                if p["id"] not in mirrors
+                and max(abs(v) for v in self._box(p)[2]) > limit]
+        self.assertEqual(wide, [], f"wider than the published half-width: {wide}")
+
+    def test_nothing_hangs_below_the_published_ground_clearance(self):
+        # The skid plates -- the vehicle's own armour -- used to be the
+        # violation, bottoming out 0.072 m below the figure in the same table.
+        clearance = 0.2565 - 1e-3
+        low = [(p["id"], round(self._box(p)[1][0], 3)) for p in self.parts
+               if not p["id"].startswith(("tyre-", "rim-", "brake-"))
+               and self._box(p)[1][0] < clearance]
+        self.assertEqual(low, [], f"below the ground clearance: {low}")
+
+
 class HonestyTests(unittest.TestCase):
     """What the model draws confidently and cannot source, it must say so.
 

@@ -1906,10 +1906,16 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     });
 
     /* The two screens, at their published diagonals. */
+    /* Recessed into the instrument panel rather than standing on it. The
+       housing spanned y 1.510..1.690 while the dash pad tops out at 1.520, so
+       0.170 m of a 0.180 m housing stood proud -- a screen sitting on the
+       dashboard like a tablet left on it, not an instrument binnacle. Sizes
+       are untouched: the 0.1397 x 0.2794 screen is a 12.3 inch diagonal and
+       that is the published figure. */
     add({ id: "cluster-housing", mesh: "bev", layer: "cabin", colour: [0.10, 0.11, 0.12],
-          t: [ipX + 0.02, 1.60, seatZ], s: [0.055, 0.180, 0.325] });
+          t: [ipX + 0.02, 1.46, seatZ], s: [0.055, 0.180, 0.325] });
     add({ id: "cluster-screen", mesh: "bev", layer: "cabin", colour: [0.02, 0.03, 0.04],
-          screen: "cluster", t: [ipX - 0.014, 1.60, seatZ], s: [0.014, 0.1397, 0.2794] });
+          screen: "cluster", t: [ipX - 0.014, 1.46, seatZ], s: [0.014, 0.1397, 0.2794] });
     add({ id: "centre-housing", mesh: "bev", layer: "cabin", colour: [0.10, 0.11, 0.12],
           t: [ipX + 0.02, 1.53, 0.12], s: [0.055, 0.195, 0.350] });
     add({ id: "centre-screen", mesh: "bev", layer: "cabin", colour: [0.02, 0.03, 0.04],
@@ -1949,7 +1955,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       [0.62, -0.42].forEach(function (x, i) {
         slab("handle-" + (side < 0 ? "l" : "r") + i,
              x - 0.11, x + 0.11, beltline + 0.05, beltline + 0.11,
-             side < 0 ? -W - 0.005 : W - 0.035, side < 0 ? -W + 0.035 : W + 0.005,
+             /* Flush to the widest plane rather than 5 mm past it. Nothing
+                but the mirrors exceeds |z| = 1.101 on this vehicle. */
+             side < 0 ? -W : W - 0.04, side < 0 ? -W + 0.04 : W,
              [0.46, 0.49, 0.52]);
       });
     });
@@ -2078,7 +2086,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        measured off a drawing rather than read off a page. It replaces a
        position that was 270 mm too far forward and 170 mm too high. */
     add({ id: "charge", mesh: "bev", layer: "aux", colour: [0.20, 0.24, 0.26],
-          t: [-2.53, 0.95, -(W + 0.02)], s: [0.24, 0.24, 0.08] });
+          /* Was at -(W + 0.02) with an 0.08 depth, so its outer face reached
+             |z| 1.161 -- 0.060 m past the truck's own widest point. A charge
+             door is flush with the panel it is cut into, not a box bolted to
+             the outside of one. */
+          t: [-2.53, 0.95, -(W - 0.04)], s: [0.24, 0.24, 0.08] });
 
     /* --- the HV run from the charge port ------------------------------
        GM's rescue sheet for this vehicle shows a pair of orange cables
