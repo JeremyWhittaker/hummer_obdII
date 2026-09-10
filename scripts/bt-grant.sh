@@ -5,6 +5,8 @@
 # BEFORE installing it -- a malformed one can lock you out of sudo entirely --
 # and refuses to install anything that does not validate.
 set -euo pipefail
+. "$(dirname "$0")/lib/require-node.sh"
+require_node
 
 TARGET=/etc/sudoers.d/hummer-bluetooth
 STAGE=$(mktemp)

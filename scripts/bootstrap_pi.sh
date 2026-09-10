@@ -5,6 +5,8 @@
 # systemd units.  It enables nothing, never pairs Bluetooth devices, and never
 # touches the vehicle.  Safe to re-run.
 set -euo pipefail
+. "$(dirname "$0")/lib/require-node.sh"
+require_node
 
 DEST="${DEST:-/home/jeremy/hummer-obd}"
 cd "$DEST"

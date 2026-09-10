@@ -8,6 +8,8 @@
 # waits for real connectivity (address + DNS + internet), and puts the previous
 # profile back if the target does not come up.  It never prints a Wi-Fi key.
 set -uo pipefail
+. "$(dirname "$0")/lib/require-node.sh"
+require_node
 export PATH="$PATH:/usr/sbin:/sbin"
 
 TARGET="${1:?usage: switch_wifi_profile.sh <saved-profile> [log-path]}"

@@ -936,6 +936,43 @@ tests/               unit and PTY-backed integration tests
 docs/                architecture, build, operations, safety, and handoff notes
 ```
 
+### Which machine a script configures
+
+Scripts here fall into three groups, and the difference matters because most
+of them run `sudo`:
+
+- **Run on the node.** `bootstrap_pi.sh`, `bt-grant.sh`, `bt-recover.sh`,
+  `enable_service_control.sh`, `pair_obdlink.sh`, `switch_wifi_profile.sh`.
+  These change systemd units, `/etc/sudoers.d`, `/etc/default`, kernel modules
+  or Wi-Fi profiles on whatever machine invokes them. Each one sources
+  `scripts/lib/require-node.sh` and calls `require_node` before touching
+  anything; on a machine that is not a Raspberry Pi it prints what it would
+  have needed and exits without changing a byte.
+- **Run from a workstation, targeting the node over ssh.**
+  `deploy.sh`, `deploy-panel.sh`, `allow-places-write.sh`,
+  `enable-remote-dashboard.sh`. These name their target and must *not* carry
+  the guard, since being run from a workstation is the only correct way to use
+  them.
+- **Change nothing.** `collect_evidence.sh`, `pi_smoke.sh`, `run_trial.sh`,
+  `install_mark_alias.sh`, `install_waveshare_driver.sh`.
+
+The guard exists because a comment is not a guard. `allow-places-write.sh`
+carried "run this on the Pi" in its header, was run from a workstation, wrote
+a systemd drop-in into that workstation's `/etc`, and only then failed with
+"Unit hummer-dashboard.service not found" — litter on the wrong machine and no
+fix on the right one. Five siblings had the same shape and worse blast radius:
+`switch_wifi_profile.sh` would have reconfigured the workstation's Wi-Fi and
+`bt-recover.sh` would have unloaded its Bluetooth driver, each disconnecting
+the person running it.
+
+The test is `/proc/device-tree/model` rather than the hostname, so it fails
+closed on anything without a device tree and keeps working if the node is
+renamed. `tests/test_scripts_target_the_right_machine.py` pins every script
+into one of the three groups — a new script cannot be added without someone
+deciding which machine it may configure — and asserts the guard is called
+*before* the first mutation, since writing first and checking afterwards is
+the exact failure it replaces.
+
 ## Development quick start
 
 No vehicle or Raspberry Pi is needed to run the test suite.

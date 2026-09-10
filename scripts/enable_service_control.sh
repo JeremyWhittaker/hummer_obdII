@@ -29,6 +29,8 @@
 # machine, and recovering from that needs physical access -- which, on a
 # machine that lives in a vehicle, may mean a trip to wherever it is parked.
 set -euo pipefail
+. "$(dirname "$0")/lib/require-node.sh"
+require_node
 
 if [ "${EUID:-$(id -u)}" -ne 0 ]; then
     echo "ERROR: run this with sudo" >&2

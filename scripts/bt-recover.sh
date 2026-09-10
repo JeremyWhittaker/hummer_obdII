@@ -19,6 +19,8 @@
 # Safe to run when nothing is wrong: every rung is skipped if the controller
 # is already up, and the script exits 0 having done nothing.
 set -uo pipefail
+. "$(dirname "$0")/lib/require-node.sh"
+require_node
 
 REBOOT_IF_NEEDED="${1:-}"
 OBD_MAC="00:04:3E:84:BD:82"

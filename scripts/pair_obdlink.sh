@@ -8,6 +8,8 @@
 #   sudo ./pair_obdlink.sh sdp  <MAC>    # print the Serial Port Profile record
 #   sudo ./pair_obdlink.sh bind <MAC> <CHANNEL>
 set -euo pipefail
+. "$(dirname "$0")/lib/require-node.sh"
+require_node
 
 PATH="$PATH:/usr/sbin:/sbin"
 NAME_PATTERN='obdlink|obd ?ii|obd2|stn[0-9]|scantool'
