@@ -2179,11 +2179,40 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            see". Narrowing to 0.66 keeps both screens inside the frame and
            makes everything a quarter larger. */
         proj = m4persp(0.66, w / h, 0.2, 40);
-        /* The up-vector carries the roll. Tilting it is how a horizon tips
-           for someone strapped into a seat, and it costs one cosine. */
+        /* The up-vector carries the roll -- but it has to be rolled ABOUT THE
+           VIEW AXIS, which is what the previous version got wrong.
+
+           It passed [sin(lean), cos(lean), 0]: a tilt in the world XY plane.
+           The driver camera looks along +X, so that tilt lies almost entirely
+           ALONG the view direction, and m4look's Gram-Schmidt removes exactly
+           the component parallel to the view before building the basis. The
+           roll was being computed, passed in, and then cancelled by the
+           orthogonalisation. The horizon never moved.
+
+           Rolled properly: take the forward vector, get the right vector from
+           it and world up, recover a true up perpendicular to both, then
+           rotate that up around forward by the lean angle. */
+        var fwd = [cp * cy, sp - dive, cp * sy],
+            flen = Math.hypot(fwd[0], fwd[1], fwd[2]) || 1;
+        fwd = [fwd[0] / flen, fwd[1] / flen, fwd[2] / flen];
+        /* right = fwd x worldUp, written out. The first version inlined the
+           zeros of worldUp = [0,1,0] and got the operand order backwards --
+           [f2, 0, -f0] instead of [-f2, 0, f0] -- which is the negation, so
+           the horizon would have tipped the wrong way. Caught by evaluating
+           it against a known case rather than by reading it. */
+        var right = [-fwd[2], 0, fwd[0]],
+            rlen = Math.hypot(right[0], right[1], right[2]) || 1;
+        right = [right[0] / rlen, right[1] / rlen, right[2] / rlen];
+        var trueUp = [right[1] * fwd[2] - right[2] * fwd[1],
+                      right[2] * fwd[0] - right[0] * fwd[2],
+                      right[0] * fwd[1] - right[1] * fwd[0]],
+            cl = Math.cos(lean), sl = Math.sin(lean),
+            up = [trueUp[0] * cl + right[0] * sl,
+                  trueUp[1] * cl + right[1] * sl,
+                  trueUp[2] * cl + right[2] * sl];
         view = m4look(eye,
-                      [eye[0] + cp * cy, eye[1] + sp - dive, eye[2] + cp * sy],
-                      [Math.sin(lean), Math.cos(lean), 0]);
+                      [eye[0] + fwd[0], eye[1] + fwd[1], eye[2] + fwd[2]],
+                      up);
       } else {
         var yaw = cam.yaw + cam.spin;
         eye = [Math.cos(yaw) * Math.cos(cam.pitch) * cam.dist,
@@ -2238,7 +2267,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         attitude = m4();
       }
       var breath = 0;
-      if (live.charging) {
+      /* Not from the driver's seat. The breath scales the whole model about
+         the world origin, and from a fixed eye 0.84 m away that slides the
+         dashboard a couple of centimetres in and out -- which is exactly the
+         motion the driver camera was rebuilt to stop. It is a thing to watch
+         from outside the vehicle, not from inside it. */
+      if (live.charging && cam.mode !== "driver") {
         var load = Math.min(1, Math.abs(live.chargeKw || 0) / 19.2),
             rate = 0.20 + load * 0.55,
             phase = (now * 0.001 * rate) % 1;
@@ -2293,8 +2327,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            the "eliminating some of the unnecessary stuff around" part of the
            ask. Faded rather than removed, so the windscreen aperture and the
            A-pillars still frame the view the way they do from a seat. */
-        if (cam.mode === "driver" && (p.layer === "shell" || p.layer === "wheels")) {
-          alpha *= 0.16;
+        if (cam.mode === "driver" && p.layer !== "cabin" && p.layer !== "radar") {
+          /* Everything outside the cabin, not just the body. Fading only
+             shell and wheels left the pack, the drive units, the thermal
+             plumbing and the eTrunk drawn at full opacity -- and with the
+             shell down at 0.16 you looked straight through the firewall at
+             them, which is the opposite of "make the displays the primary
+             focus". The cabin and the radar detector stay: they are the two
+             things actually in front of a driver. */
+          alpha *= p.layer === "shell" ? 0.10 : 0.05;
         }
         if (p.chargeOnly && !live.charging) return;
         if (alpha <= 0.01) return;
