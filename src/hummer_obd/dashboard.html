@@ -1110,7 +1110,23 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            at -0.58, making the cab 0.8 m too short and the bed that much too
            long -- on a truck whose proportions are most of what identifies
            it. */
-        bulkX = -1.3767;
+        bulkX = -1.3767,
+        /* HOISTED. These were declared 90 lines below, inside the bed block,
+           and used above it by the bed lamps and two of the cameras. `var`
+           hoists the NAME but not the VALUE, so those four parts read
+           `undefined`, computed `undefined - 0.05` = NaN, and were handed to
+           the shader as a NaN model matrix -- which draws nothing and reports
+           nothing. Bed lighting and the bed and tailgate cameras were simply
+           absent, and the four NaN parts an audit found were these four.
+
+           Same class of mistake as the Python-style string concatenation
+           earlier: valid JavaScript that means something other than it
+           looks like it means. Declared once, at the top, where every
+           consumer is below it. */
+        bedRail = beltline,
+        bedFloor = beltline - VEH.bedDepth,
+        bedInner = VEH.bedWidth / 2,
+        housing = VEH.bedInnerWidth / 2;
 
     /* --- lower body -------------------------------------------------
        This was one slab from nose to tail at a constant 0.46 m, and GMC's own
@@ -1284,6 +1300,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
     /* --- greenhouse. Glass is its own material and its own layer so the
        cabin can be cleared without losing the body around it. --- */
+    /* THE BACKLIGHT. There was no rear window at all -- the glass list was
+       side, side, windscreen -- which made "the bed rests below the rear
+       window" a claim about a part that did not exist. It sits in the cab's
+       rear wall at the bulkhead, from the same beltline the side glass starts
+       at up to the same roof line, and the bed rail below it is at `beltline`
+       exactly, so the box now genuinely clears it. */
+    slab("glass-back", bulkX + 0.02, bulkX + 0.08, beltline + 0.16, roof - 0.10,
+         -W + 0.10, W - 0.10, GLASS, { alpha: 0.42, layer: "shell" });
     slab("glass-side-l", bulkX + 0.06, cowlX - 0.04, beltline + 0.16, roof - 0.10,
          -W + 0.01, -W + 0.06, GLASS, { alpha: 0.42, layer: "shell" });
     slab("glass-side-r", bulkX + 0.06, cowlX - 0.04, beltline + 0.16, roof - 0.10,
@@ -1332,8 +1356,6 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        The beltline is where the cab's glass starts. A pickup's bed rails run
        roughly along that same line, which is why you can see over them out of
        the rear window. Depth then goes downward from there. */
-    var bedRail = beltline, bedFloor = beltline - VEH.bedDepth,
-        bedInner = VEH.bedWidth / 2, housing = VEH.bedInnerWidth / 2;
     slab("bed-floor", tailX + 0.03, bulkX, bedFloor, bedFloor + 0.04,
          -bedInner, bedInner, [0.16, 0.17, 0.18]);
     slab("bed-wall-l", tailX + 0.03, bulkX, bedFloor, bedRail, -W + 0.02, -bedInner, BODY);
@@ -1348,10 +1370,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            -AXLE - 0.42, -AXLE + 0.42, bedFloor, bedFloor + 0.30,
            side * housing, side * bedInner, [0.20, 0.22, 0.23]);
     });
-    slab("bed-tail", tailX + 0.10, tailX + 0.24, beltline, beltline + 0.34, -W + 0.02, W - 0.02, BODY);
-    slab("bed-bulk", bulkX - 0.12, bulkX, beltline, beltline + 0.40, -W + 0.02, W - 0.02, BODY);
-    slab("bed-floor", tailX + 0.16, bulkX - 0.06, beltline - 0.04, beltline + 0.02,
-         -W + 0.06, W - 0.06, TRIM);
+    /* The pre-rework bed used to be three slabs here -- bed-tail, bed-bulk and
+       a second bed-floor -- and when the box was rebuilt to GMC's published
+       dimensions above, these were left behind. Two of them stood 0.18 m and
+       0.24 m ABOVE the glass line, which is exactly the complaint the rebuild
+       was meant to answer: "clearly the bed rests below the rear window in
+       its entirety". It did not, because the old walls were still there in
+       front of the new ones. The duplicate bed-floor also meant two parts
+       shared one id. Deleted. */
 
     /* --- fender flares. Squared and proud of the body: the single feature
        that makes this vehicle recognisable from any angle. --- */

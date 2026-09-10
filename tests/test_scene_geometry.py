@@ -1,0 +1,154 @@
+"""Run the page's own buildScene() in node and check the geometry it produces.
+
+Every other test in this suite tests Python. The vehicle model is 600 lines of
+JavaScript that no Python test can reach, and it has now failed twice in ways
+that produce NO error anywhere: once when a Python-style string concatenation
+killed the whole script, and once when four parts were positioned from a `var`
+used above its own declaration.
+
+That second one is the reason this file computes rather than greps. `var`
+hoists the name and not the value, so `bedRail - 0.05` evaluated to NaN, the
+shader was handed a NaN model matrix, and the bed lamps and two cameras drew
+nothing. No exception, no console message, no failing test -- the parts were
+simply not there, and the only way to notice was to count them.
+
+So this extracts VEH, the derived constants and buildScene from the page,
+executes them, and asserts against the actual list of parts.
+"""
+
+import json
+import re
+import shutil
+import subprocess
+import tempfile
+import unittest
+from importlib.resources import files
+from pathlib import Path
+
+PAGE = files("hummer_obd").joinpath("dashboard.html").read_text(encoding="utf-8")
+NODE = shutil.which("node") or shutil.which("nodejs")
+
+
+def _script() -> str:
+    return re.findall(r"<script[^>]*>([\s\S]*?)</script>", PAGE)[0]
+
+
+def _balanced(source: str, start: int) -> str:
+    """The text from *start* through the brace that closes its first block."""
+    depth, opened = 0, source.index("{", start)
+    for i in range(opened, len(source)):
+        if source[i] == "{":
+            depth += 1
+        elif source[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start:i + 1]
+    raise AssertionError("unbalanced braces in dashboard.html")
+
+
+def build_parts() -> list[dict]:
+    """The parts list the page would build, as data."""
+    source = _script()
+    veh = re.search(r"var VEH = \{[\s\S]*?\n  \};", source)
+    assert veh, "VEH literal not found"
+    consts = re.findall(r"^  var (?:HALF_TRACK|AXLE|HALF_W) = [^;]+;", source, re.M)
+    assert len(consts) == 3, f"expected 3 derived constants, found {len(consts)}"
+    scene = _balanced(source, source.index("function buildScene"))
+    harness = (veh.group(0) + "\n" + "\n".join(consts) + "\n" + scene + """
+const parts = buildScene();
+process.stdout.write(JSON.stringify(parts.map(p => ({
+  id: p.id, t: p.t, s: p.s, layer: p.layer, alpha: p.alpha === undefined ? null : p.alpha
+}))));
+""")
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "scene.js"
+        path.write_text(harness, encoding="utf-8")
+        done = subprocess.run([NODE, str(path)], capture_output=True,
+                              text=True, timeout=120)
+    assert done.returncode == 0, f"buildScene failed:\n{done.stderr[:800]}"
+    return json.loads(done.stdout)
+
+
+@unittest.skipIf(NODE is None, "node is not installed on this machine")
+class ScenePartTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.parts = build_parts()
+        cls.ids = {p["id"] for p in cls.parts}
+
+    def test_the_scene_builds(self):
+        self.assertGreater(len(self.parts), 150)
+
+    def test_no_part_has_a_non_finite_position_or_size(self):
+        """The bug this file exists for.
+
+        A NaN in a model matrix draws nothing and says nothing. Four parts --
+        bedlamp-l, bedlamp-r, cam-bed, cam-tailgate -- were built this way for
+        an entire evening because `bedRail` was used ninety lines above its
+        own `var`.
+        """
+        bad = [p["id"] for p in self.parts
+               if not all(isinstance(v, (int, float)) and v == v and abs(v) != float("inf")
+                          for v in list(p["t"]) + list(p["s"]))]
+        self.assertEqual(bad, [], f"parts positioned with NaN or infinity: {bad}")
+
+    def test_no_part_has_zero_extent(self):
+        """A zero-scale box is as invisible as a NaN one, and just as quiet.
+
+        Magnitude, not sign: the left-hand rims carry a deliberate negative Z
+        scale to mirror the wheel, which is a legitimate way to reuse one mesh
+        for both sides. The first version of this test rejected them and was
+        wrong to.
+        """
+        flat = [p["id"] for p in self.parts if any(abs(v) <= 0 for v in p["s"])]
+        self.assertEqual(flat, [], f"parts with no extent: {flat}")
+
+    def test_every_part_has_a_unique_id(self):
+        ids = [p["id"] for p in self.parts]
+        dupes = sorted({i for i in ids if ids.count(i) > 1})
+        self.assertEqual(dupes, [], f"duplicate part ids: {dupes}")
+
+    def test_the_lamps_gmc_publishes_are_all_present(self):
+        # GMC's brochure names four lighting features; all four must render.
+        for lamp in ("headlamp-l", "headlamp-r", "taillamp-l", "taillamp-r",
+                     "bedlamp-l", "bedlamp-r", "portlamp"):
+            with self.subTest(lamp=lamp):
+                self.assertIn(lamp, self.ids)
+
+    def test_all_eight_camera_positions_are_present(self):
+        for camera in ("cam-front", "cam-rear", "cam-mirror-l", "cam-mirror-r",
+                       "cam-under-f", "cam-under-r", "cam-bed", "cam-tailgate"):
+            with self.subTest(camera=camera):
+                self.assertIn(camera, self.ids)
+
+    def test_the_cab_has_a_rear_window(self):
+        # There was none. Which made "the bed rests below the rear window" a
+        # claim about a part that did not exist.
+        self.assertIn("glass-back", self.ids)
+
+    def test_the_bed_sits_entirely_below_the_glass_line(self):
+        """The complaint, asserted as geometry rather than trusted to a diff.
+
+        It was not satisfied after the first attempt: the pre-rework bed walls
+        were never deleted, and two of them stood 0.18 m and 0.24 m above the
+        bottom of the glass while the new box sat correctly below it.
+        """
+        glass = [p for p in self.parts if p["id"].startswith("glass")]
+        self.assertTrue(glass, "no glass to compare against")
+        glass_bottom = min(p["t"][1] - p["s"][1] / 2 for p in glass)
+        offenders = [
+            (p["id"], round(p["t"][1] + p["s"][1] / 2, 3))
+            for p in self.parts
+            if p["id"].startswith("bed") and p["t"][1] + p["s"][1] / 2 > glass_bottom + 1e-6
+        ]
+        self.assertEqual(offenders, [],
+                         f"bed parts above the glass bottom ({glass_bottom:.3f}): "
+                         f"{offenders}")
+
+    def test_the_light_bar_spells_six_letters(self):
+        letters = sorted(i for i in self.ids if i.startswith("lightbar-letter-"))
+        self.assertEqual(len(letters), 6, f"HUMMER is six letters: {letters}")
+
+
+if __name__ == "__main__":  # pragma: no cover
+    unittest.main()

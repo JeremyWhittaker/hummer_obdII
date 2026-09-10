@@ -411,12 +411,23 @@ which is not an invention — GMC builds it as a charge-status display. Lamps an
 cameras are where GMC's brochures and support pages put them, at eight camera
 positions rather than the eighteen *views* GMC advertises.
 
-Two absences are deliberate. **Underbody rock lights are not drawn**, because
-every source for them is an aftermarket retailer rather than GMC's catalogue.
-And **the thermal plumbing is not drawn**: what the underbody cylinders are,
-whether there is a front radiator, how many coolant loops there are and how
-they route through the 24 modules could not be sourced from anything reachable.
-A lamp or a pipe the vehicle does not have is worse than one it does.
+**Underbody rock lights are not drawn**, deliberately: every source for them is
+an aftermarket retailer rather than GMC's catalogue, and a lamp the vehicle does
+not have is worse than one it does.
+
+**The thermal plumbing IS drawn, and it is not sourced.** Twenty-eight parts on
+the `thermal` layer — pipes, manifolds, a chiller, an HVAC box — were placed
+before any of it could be verified, and the sourcing attempt that followed
+returned nothing: what the underbody cylinders actually are, whether there is a
+front radiator, how many coolant loops exist and how they route through the 24
+modules are all unanswered. The two long pipes terminate in mid-air at the
+front axle because there is no sourced component to terminate them into.
+
+An earlier version of this paragraph claimed the plumbing was *not* drawn. That
+was written to be honest about a gap and was simply false about the code — the
+worst combination, because it reads as a considered omission and is instead a
+description nobody checked. Treat every part on the `thermal` layer as
+unverified placement until a service manual or a teardown says otherwise.
 
 **Both screens work.** The 13.4-inch centre screen carries the session's own
 track, north up, with the vehicle at the newest fix. The real one runs a
