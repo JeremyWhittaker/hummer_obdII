@@ -701,6 +701,18 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         mm = Math.floor((t % 3600) / 60), ss = t % 60;
     return hh ? hh + "h " + mm + "m" : (mm ? mm + "m " + ss + "s" : ss + "s");
   }
+  /* The wall clock a sample was taken at, in the reader's own timezone.
+     A replay scrubber reading "8m 14s" tells you where you are in the file;
+     it does not tell you when you were there, which is the thing a person
+     actually wants when they are trying to remember a drive. */
+  function clockOf(utc) {
+    if (!utc) return null;
+    var at = new Date(utc);
+    if (isNaN(at.getTime())) return null;
+    return at.toLocaleTimeString(undefined,
+      { hour: "numeric", minute: "2-digit", second: "2-digit" });
+  }
+
   function sig(name) {
     var s = state.snapshot && state.snapshot.signals;
     return (s && s[name]) || null;
@@ -2821,7 +2833,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     state.frame = row;
     renderVehicle(viewState());
 
-    var speed = num(row.speed_kph), elapsed = num(row.elapsed_s), parts = [];
+    var speed = num(row.speed_kph), elapsed = num(row.elapsed_s), parts = [],
+        clock = clockOf(row.utc);
+    /* Clock first. The elapsed figure stays because it answers a different
+       question -- how far into the trip -- but it is no longer the only
+       thing on offer. */
+    if (clock) parts.push(clock);
     if (elapsed !== null) parts.push(duration(elapsed));
     if (speed !== null) parts.push(speed.toFixed(0) + " km/h");
     el["play-time"].textContent = parts.length ? parts.join(" · ")
@@ -3156,6 +3173,13 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       var b = h("b", null, value); w.appendChild(b);
       el["map-stats"].appendChild(w);
     }
+    /* When the trip ran, not just how long it lasted. A session listed as
+       "17m 34s" is a fact about the file; "7:39:12 PM to 7:56:46 PM" is the
+       drive you are trying to remember. Both are shown, in that order. */
+    var span = (state.snapshot && state.snapshot.history) || [],
+        began = span.length ? clockOf(span[0].utc) : null,
+        ended = span.length ? clockOf(span[span.length - 1].utc) : null;
+    if (began && ended && began !== ended) stat("ran", began + " → " + ended);
     stat("fixes", String(pts.length));
     if (stationary) {
       stat("parked", "wander " + extent.toFixed(0) + " m");
