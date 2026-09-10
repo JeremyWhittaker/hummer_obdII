@@ -331,6 +331,30 @@ class GpsReader:
 #: above it, and the cost of being wrong in this direction is one held fix.
 STATIONARY_MPS = 0.5
 
+# --- What this module does NOT fix ------------------------------------------
+#
+# Anchoring cures the parked wander it was written for and nothing else. On a
+# moving drive it correctly holds nothing, and the distance is still wrong.
+#
+# Measured 2026-09-10, home to work: 35 fixes, one of them stationary, against
+# an odometer delta of 3600 m.
+#
+#     raw fixes            3918 m   +8.83%
+#     anchored             3918 m   +8.83%
+#     anchored + veto      3918 m   +8.83%
+#
+# Identical, because there was nothing to anchor. The residual is a different
+# error: noise on each individual fix, which inflates every segment and never
+# shortens one, so it accumulates in one direction only. This receiver reported
+# a median gps_epx_m of 39.8 m on open highway, and 40 m of endpoint noise over
+# 91 m segments predicts roughly 4.7% by itself.
+#
+# Fixing it needs a track smoother, not a filter -- and the vehicle already
+# counts its own wheel revolutions, which is a better distance instrument than
+# a receiver with 40 m of error. So the page shows the odometer for trip
+# length and offers the GPS figure beside it, and this module stays in charge
+# of POSITION rather than distance.
+
 #: Road speed, in km/h, below which the VEHICLE says it is not moving.
 #:
 #: This is the veto, and it is the thing the first three versions of this

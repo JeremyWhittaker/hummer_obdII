@@ -4032,7 +4032,27 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       stat("parked", "wander " + extent.toFixed(0) + " m");
       stat("view", Math.round(W * mPerPx) + " m across");
     } else {
-      stat("track", (metres / 1000).toFixed(2) + " km");
+      /* THE ODOMETER WINS. Measured against it on the drive of 2026-09-10:
+         a 3600 m run summed to 3918 m from the fixes, over by 8.83%, on a
+         drive with one stationary sample in thirty-five -- so the anchoring
+         that fixes parked wander had nothing to hold and correctly did
+         nothing. That error is a different animal: noise on each individual
+         fix, which inflates every segment and never shortens one. This
+         receiver reported gps_epx_m of 39.8 m median on open highway, and
+         that much noise over 91 m segments predicts about 4.7% on its own.
+         
+         The vehicle counts its own wheel revolutions. It is simply a better
+         instrument for distance than a receiver with 40 m of error, so it is
+         what gets shown, and the GPS figure is offered beside it rather than
+         hidden -- the gap between them is the honest measure of how good the
+         fix quality was. */
+      var odoKm = num(derived("distance_km"));
+      if (odoKm !== null && odoKm > 0) {
+        stat("trip", odoKm.toFixed(2) + " km");
+        stat("by GPS", (metres / 1000).toFixed(2) + " km");
+      } else {
+        stat("track", (metres / 1000).toFixed(2) + " km");
+      }
     }
     var alt = sigValue("gps_alt_m"), sats = sigValue("gps_sats");
     if (alt !== null) stat("altitude", alt.toFixed(0) + " m");
