@@ -29,6 +29,25 @@ cell voltage -0.184. Every one of those is under 0.22 on samples of 130 to 255.
 What it does instead is take six values, ``0x91`` through ``0x96``, alternating
 between two of them on a timescale of tens of seconds while the pair itself
 drifts over the hour. A quantity does not do that. A state or a bitfield does.
+
+**And then a third regime appeared.** With the pack full at 91.331% and the
+truck still plugged in at essentially zero current, ``0x5401`` produced fifteen
+more values -- ``0x14``, ``0x17``, ``0x1A``, ``0x1E``, ``0x21``, ``0x24``,
+``0x28``, ``0x2B``, ``0x2E``, ``0x32``, ``0x35``, ``0x3C``, ``0x42``, ``0x49``,
+``0x4C`` -- none of them from the charging family. In time order it climbed
+from 36 to 76 in about fifty seconds and then declined steadily, and against
+elapsed time it correlates at **r = -0.880 over 37 samples**: the strongest
+association this field has shown against anything.
+
+Two cautions, both load-bearing. Correlating a quantity that happens to be
+declining against elapsed time is close to circular -- *any* monotonic decay
+scores well -- so this is one window, one session, and suggestive rather than
+decided. And it does not reconcile with the active-charge window, where the
+same field correlated with nothing at all (every |r| under 0.22 over 130
+samples). Whatever ``0x5401`` is, it is not one quantity behaving consistently
+across states; it now has at least three distinct regimes -- ``0x00``
+throughout driving, ``0x91``-``0x96`` while charging, and this descending
+``0x14``-``0x4C`` family once the charge finishes.
 The comment in ``live.py`` saying this field is "kept unscaled until a charge
 session calibrates it" has now had its charge session, and the answer is that
 it did not calibrate as a quantity at all -- which is an answer, and a more
