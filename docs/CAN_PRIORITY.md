@@ -14,15 +14,50 @@ Every module this vehicle names for itself, asked at both priorities with
 identifiers already proven at it where any existed, and with ISO 14229-1
 standard identification identifiers where none did:
 
-| Module | Name | `0x14` | `0x18` |
-|---|---|---|---|
-| `17` | DMCM-DriveMotorCtrl | answers | **answers** |
-| `1D` | DMC2-DriveMotorCtrl2 | answers | **answers** |
-| `1E` | DMC3-DriveMotorCtrl3 | answers | **answers** |
-| `28` | BSCM-BrakeSystem | answers | **`7F 22 11`** |
-| `40` | BCM-BodyControl | **`NO DATA`** | answers |
-| `45` | Gateway Module - GWM | not tried | `7F 22 31` |
-| `CB` | BSM-BatterySysMngr | answers | **answers** |
+| Module | Name | `0x14` | `0x18` | Service 01 support bitmap |
+|---|---|---|---|---|
+| `17` | DMCM-DriveMotorCtrl | answers | **answers** | `01 0D 1C 1F 20 21 30 31 40 42 60 80 A0 A6` |
+| `1D` | DMC2-DriveMotorCtrl2 | answers | **answers** | `01 20 40 42` |
+| `1E` | DMC3-DriveMotorCtrl3 | answers | **answers** | `01 20 40 42` |
+| `28` | BSCM-BrakeSystem | answers | **`7F 22 11`** | `01 20 40 42` |
+| `40` | BCM-BodyControl | **`NO DATA`** | answers | `01 20 40 42` |
+| `45` | Gateway Module - GWM | not tried | `7F 22 31` | `01 20 40 42` |
+| `CB` | BSM-BatterySysMngr | answers | **answers** | `01 20 40 42` |
+| `CD` | BSM, second address | — | — | `01 20 40 42` |
+
+## Only one module serves legislated data
+
+The last column is the measured part that had not been written down. The
+census of 2026-09-03 asked all eight modules what service 01 they support,
+using the standard's own bitmaps rather than any vendor identifier, and the
+answer is lopsided enough to settle a question the project keeps re-asking.
+
+Read `20`, `40`, `60`, `80` and `A0` out of those rows first: they are not
+measurements, they are the "PIDs supported in the next twenty" continuation
+bitmaps. Read `01` out too -- monitor status since codes cleared, a bitfield
+about readiness rather than a quantity. What is left of every module except
+`17` is **`42` alone**: its own control-module supply voltage.
+
+So seven of the eight modules on this vehicle serve no legislated vehicle data
+whatsoever. Module `17` serves fourteen, and it is where every legislated
+reading this project records already comes from.
+
+This matters most for the drive motor controllers, which are the project's
+largest remaining gap: motor speed, torque, inverter and stator temperature.
+`1D` and `1E` are named for those signals -- DMC2 and DMC3 -- and their support
+bitmaps say they will hand over their own supply voltage and nothing else.
+Whatever route eventually reaches motor data, **it is not service 01**, and no
+amount of asking those modules more politely changes that. Combined with
+`SOURCING_2026-09-04.md`, which found no enhanced identifier for any of those
+signals on any public platform, both routes currently available to this project
+are closed.
+
+The raw census is `evidence/census.json`, which is deliberately not committed
+-- `evidence/` is deny-by-default because it holds vehicle data. That is the
+right rule and it had a cost: this result existed only in an ignored file for
+six days, so a measurement the project had already paid for was one `rm` away
+from having to be taken again. The conclusion belongs in a tracked document
+even when the recording cannot be.
 | `CD` | BSM-BatterySysMngr | `7F 22 31` | `7F 22 31` |
 
 Read the three failure shapes carefully, because they are not

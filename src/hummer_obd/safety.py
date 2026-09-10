@@ -468,7 +468,11 @@ ENHANCED_READ_DIDS: Final[dict[str, str]] = {
     "33E5": (
         "drive motor control module battery voltage -- "
         "OBDb/Chevrolet-Equinox-EV signalsets/v3/default.json, hdr DA1D "
-        "(this vehicle names 1D as DMC2-DriveMotorCtrl2), byte / 10, volts"
+        "(this vehicle names 1D as DMC2-DriveMotorCtrl2), byte / 10, volts. "
+        "MERGED, and re-verified against main on 2026-09-09: len 8, div 10, "
+        "unit volts, which is the decoder this project arrived at separately. "
+        "It is one of only four identifiers in that merged signalset, and the "
+        "only one there on a drive motor controller"
     ),
 }
 
