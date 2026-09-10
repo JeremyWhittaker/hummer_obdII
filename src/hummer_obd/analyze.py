@@ -943,6 +943,22 @@ def is_charging(rows: list[dict]) -> bool:
     return len(charging_rows(rows)) >= MIN_CHARGE_ROWS
 
 
+#: The step this vehicle actually reports state of charge in, measured
+#: 2026-09-10: every change in a 227-row session was 0.500 or 0.502.
+#:
+#: The field's nominal resolution is far finer -- 0x27C6 is 16 bits scaled to
+#: 100%, so 0.0015% -- and it prints three decimals, which makes 84.555 look
+#: like a measurement to the thousandth. It is not. The BMS moves it half a
+#: percent at a time, and the decimals are an offset carried along unchanged
+#: between steps.
+#:
+#: This matters most for short charges. 0.5% of this pack is about 0.96 kWh, so
+#: any charge below that reports zero SoC gained no matter how much energy went
+#: in -- which looked, before it was measured, exactly like SoC being frozen
+#: during charging. It is not: the same steps appear while driving.
+SOC_QUANTUM_PCT = 0.5
+
+
 def _charge_report(rows: list[dict]) -> dict:
     """What a charge session shows, which is not what a drive shows.
 
@@ -976,6 +992,34 @@ def _charge_report(rows: list[dict]) -> dict:
         "cell_spread_start_mv": spread[0] if spread else None,
         "cell_spread_end_mv": spread[-1] if spread else None,
     }
+    # A charge smaller than the SoC step reports zero gained, which reads as a
+    # measurement of no progress rather than as the absence of one.  Say which
+    # it is, because "soc gained 0.0" beside "energy added 0.69 kWh" otherwise
+    # looks like the two fields disagree.
+    gained, added = report["soc_gained_pct"], report["energy_added_kwh"]
+    if (gained is not None and added is not None
+            and abs(gained) < SOC_QUANTUM_PCT and abs(added) > 0):
+        # Say it in the units of the comparison.  The first version of this
+        # line read "charge of 1.07 kWh is under the 0.5% step", which is a
+        # kWh figure asserted against a percentage and was false the moment
+        # the charge passed 0.96 kWh -- a report stating something untrue
+        # about its own numbers, which is worse than staying quiet.
+        implied = abs(added) / EXPECTED_PACK_KWH * 100
+        if implied < SOC_QUANTUM_PCT:
+            report["soc_below_quantum"] = (
+                f"{abs(added):.2f} kWh is {implied:.2f}% of the pack, under the "
+                f"{SOC_QUANTUM_PCT}% step this vehicle reports SoC in; zero "
+                f"gained is the field not having moved yet, not the pack not "
+                f"having taken energy"
+            )
+        else:
+            report["soc_below_quantum"] = (
+                f"{abs(added):.2f} kWh is {implied:.2f}% of the pack, MORE than "
+                f"the {SOC_QUANTUM_PCT}% step SoC moves in, and SoC still has "
+                f"not moved -- so the field lags the energy count rather than "
+                f"merely being coarse"
+            )
+
     # The independent second route, normalised to positive-is-charging.
     slope = [v for v in _series(rows, "power_kw") if v > 0]
     if slope:
@@ -1155,6 +1199,11 @@ def format_report(report: dict) -> str:
                     "cell_spread_start_mv", "cell_spread_end_mv"):
             if key in charge:
                 out.append(_line(key.replace("_", " "), charge[key]))
+        # Printed rather than left in the dict: "soc gained 0.0" sitting under
+        # "energy added 0.92 kWh" is the exact pair a reader would take as the
+        # two fields contradicting each other.
+        if "soc_below_quantum" in charge:
+            out.append(f"    -> {charge['soc_below_quantum']}")
 
     moved = report.get("unproven_field_ranges")
     if moved:

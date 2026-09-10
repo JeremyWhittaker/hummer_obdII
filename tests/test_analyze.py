@@ -902,3 +902,75 @@ class ChargeDetectionTests(unittest.TestCase):
         rows = ([{"pack_a": 120.0, "charger_5401_raw": "00"} for _ in range(50)]
                 + [{"pack_a": -15.5, "charger_5401_raw": "94"}])
         self.assertFalse(analyze.is_charging(rows))
+
+
+class SocQuantumTests(unittest.TestCase):
+    """SoC moves half a percent at a time, whatever its decimals suggest."""
+
+    def test_the_quantum_is_far_coarser_than_the_field_resolution(self):
+        # 0x27C6 is 16 bits scaled to 100%, so 0.0015% nominal. Measured
+        # behaviour is 0.5% -- coarser by a factor of over three hundred.
+        self.assertGreater(analyze.SOC_QUANTUM_PCT, 100 / 65535 * 100)
+
+    def test_a_sub_quantum_charge_says_why_soc_did_not_move(self):
+        # The real shape: 0.69 kWh in, SoC unchanged at 84.555 across 72 rows.
+        rows = [{"pack_a": -15.0, "charger_5401_raw": "94", "pack_v": 389.0,
+                 "soc_pct": 84.555, "energy_kwh": 161.12 + i * 0.01,
+                 "elapsed_s": float(i * 15)} for i in range(70)]
+        report = analyze._charge_report(rows)
+        self.assertEqual(report["soc_gained_pct"], 0.0)
+        self.assertIn("soc_below_quantum", report)
+        self.assertIn("not the pack not having taken energy",
+                      report["soc_below_quantum"])
+
+    def test_a_charge_that_crosses_the_step_does_not_explain_itself(self):
+        rows = [{"pack_a": -15.0, "charger_5401_raw": "94", "pack_v": 389.0,
+                 "soc_pct": 84.555 + (2.0 if i > 35 else 0.0),
+                 "energy_kwh": 161.12 + i * 0.06,
+                 "elapsed_s": float(i * 15)} for i in range(70)]
+        report = analyze._charge_report(rows)
+        self.assertNotIn("soc_below_quantum", report)
+
+    def test_the_message_never_asserts_kwh_against_a_percentage(self):
+        """A charge past the step must not be described as under it.
+
+        The first version compared SoC in percent and then reported the
+        energy in kWh as though the two were the same quantity: "charge of
+        1.07 kWh is under the 0.5% step". It was false as soon as the charge
+        passed 0.96 kWh, and a report that states something untrue about its
+        own numbers is worse than one that says nothing.
+        """
+        big = [{"pack_a": -15.0, "charger_5401_raw": "94", "pack_v": 389.0,
+                "soc_pct": 84.555, "energy_kwh": 161.12 + i * 0.05,
+                "elapsed_s": float(i * 15)} for i in range(70)]
+        report = analyze._charge_report(big)
+        added = report["energy_added_kwh"]
+        self.assertGreater(added / analyze.EXPECTED_PACK_KWH * 100,
+                           analyze.SOC_QUANTUM_PCT, "test needs a big charge")
+        self.assertIn("MORE than", report["soc_below_quantum"])
+        self.assertNotIn("under the", report["soc_below_quantum"])
+
+    def test_a_small_charge_is_described_as_under_the_step(self):
+        small = [{"pack_a": -15.0, "charger_5401_raw": "94", "pack_v": 389.0,
+                  "soc_pct": 84.555, "energy_kwh": 161.12 + i * 0.002,
+                  "elapsed_s": float(i * 15)} for i in range(70)]
+        report = analyze._charge_report(small)
+        self.assertIn("under the", report["soc_below_quantum"])
+        self.assertNotIn("MORE than", report["soc_below_quantum"])
+
+    def test_the_explanation_is_printed_not_merely_stored(self):
+        # It lived in the report dict and never reached the page, which is the
+        # same as not having it: the reader sees 0.0 beside 0.92 kWh and draws
+        # the wrong conclusion from a report that knew better.
+        rows = [{"pack_a": -15.0, "charger_5401_raw": "94", "pack_v": 389.0,
+                 "soc_pct": 84.555, "energy_kwh": 161.12 + i * 0.01,
+                 "elapsed_s": float(i * 15)} for i in range(70)]
+        text = analyze.format_report({"charge": analyze._charge_report(rows)})
+        self.assertIn("step this vehicle reports SoC in", text)
+
+    def test_no_energy_no_explanation(self):
+        # Nothing went in, so there is nothing to explain away.
+        rows = [{"pack_a": -15.0, "charger_5401_raw": "94", "pack_v": 389.0,
+                 "soc_pct": 84.555, "energy_kwh": 161.12,
+                 "elapsed_s": float(i * 15)} for i in range(70)]
+        self.assertNotIn("soc_below_quantum", analyze._charge_report(rows))
