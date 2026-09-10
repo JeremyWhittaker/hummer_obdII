@@ -151,6 +151,14 @@ seven thousand, and indistinguishable from unity at this resolution. Fit an
 offset and it is 0.0405 V, four counts of a field whose step is 0.01 V, and
 0.01% of a working reading.
 
+A small second benefit, noted rather than claimed: across 200 samples module
+`1D` answered once when module `17` did not -- at t=1220 s, mid sleep-settle,
+where `pack_v` and `pack_a` were both empty and `pack_v_1d` read 1.13 V -- and
+there was no sample the other way round. One row out of two hundred proves
+nothing about relative reliability, but it does show the redundancy covering a
+dropout as well as checking a decode, which was not part of the argument for
+adding it.
+
 So the two modules do not merely agree at one operating point. They return the
 same number across essentially the entire dynamic range of the field, in both
 the state where the pack is connected and the state where it is not.
