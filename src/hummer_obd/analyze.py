@@ -963,6 +963,24 @@ def is_charging(rows: list[dict]) -> bool:
 #: +/-0.002 and is worth something.  The discharging set is two samples and is
 #: not; it is recorded to be checked, not relied on.
 #:
+#: One consequence, measured on the complete charge of 2026-09-10 and worth
+#: knowing before anyone estimates pack capacity from a charge.  8.51 kWh went
+#: in for 4.001% of SoC, which implies a 212.7 kWh pack -- 10.8% above the
+#: 191.9 kWh this project expects, and enough to look like a real finding.
+#:
+#: It is not.  BOTH endpoints of that 4.001% are quantised, so the difference
+#: carries up to two steps of uncertainty, and the honest band is 177.3 to
+#: 265.9 kWh.  The expected figure sits comfortably inside it.  Treating only
+#: one endpoint as uncertain gives 193.4 to 236.3 and excludes 191.9 by 0.8%,
+#: which is the near miss that makes this worth spelling out: the wrong
+#: uncertainty treatment here produces a false anomaly rather than an obviously
+#: silly answer.
+#:
+#: So a differential capacity estimate from a four-percent charge is worth
+#: nothing on this vehicle.  The per-row ratio the cross-checks already compute
+#: -- energy over SoC, 190.66 with sd 0.30 across 170 samples -- is the one to
+#: trust, because it does not difference two quantised numbers.
+#:
 #: What has survived every revision, and is the only thing this file acts on:
 #: the field is far coarser and slower than it looks.  Seven changes in a
 #: 4200-second session where energy_kwh took 59 distinct values, and the
