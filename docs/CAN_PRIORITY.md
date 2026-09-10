@@ -67,6 +67,29 @@ steepest slew a drivetrain produces. Two ECUs sampling the same busbar
 milliseconds apart during a 350 A swing will not return the same number, and
 the size of the gap tracks how fast the busbar is moving.
 
+**The extreme case, caught on 2026-09-10.** At the instant the contactors
+opened, module `17` read 67.45 V and module `1D` read 17.32 V -- a 50.13 V
+disagreement, 13% of reading, nineteen times the worst case above. One sample
+either side of it the two agree to 0.4 V:
+
+    t = 833.7    389.55    389.93
+    t = 843.3     67.45     17.32     <-- contactors open
+    t = 853.2     11.38     11.05
+
+Nothing is wrong. The DC link is falling 378 V inside one sample interval and
+a bleed-down is steepest at its start, so the few hundred milliseconds between
+two sequential module reads is worth tens of volts there. It is the same
+mechanism as the 0.644 V against 0.311 V above, at the steepest slew this
+vehicle produces, and it is the strongest confirmation of the explanation --
+the disagreement does not merely correlate with rate of change, it tracks it
+across three orders of magnitude.
+
+The practical consequence is for anything watching this pair: a cross-check
+must exclude the contactor transition, because two instruments sampling a
+collapsing voltage milliseconds apart will always disagree and it means
+nothing. Requiring both readings above 300 V is enough -- the pack is 380-395
+when it is actually connected.
+
 That is the signature of sampling skew, and it is *not* the signature of a bad
 decode. A wrong scaling is systematic: it biases the mean, and it grows with
 the reading rather than with its derivative. This bias is +0.032 V on 386 V,
