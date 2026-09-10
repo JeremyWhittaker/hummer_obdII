@@ -132,6 +132,37 @@ key-on, before drive. The recorder already crosses that boundary on every
 session it opens; nothing new needs to be asked of the vehicle. It is a matter
 of accumulating the transitions rather than of instrumenting anything.
 
+### The predicted swing arrived, and so did the predicted catch
+
+Written above, before it happened: the models separate only if the rail swings
+wide, and the catch is that the swinging state is the one where service 01 goes
+quiet. Both halves came true in the same session, about nine minutes apart.
+
+The truck parked at roughly t=460 s and settled toward sleep. `0x33E5` at
+module `17` fell 13.20 -> 12.1 V, and the adapter at the connector fell
+13.9 -> 12.8 V. That is a swing of 1.1 V, three times the 0.37 V offset --
+comfortably enough to tell a constant from a factor, which is exactly the
+measurement this was waiting for.
+
+PID `0142` answered for the last time at t=520.4 s, reading 13.313 V. Every row
+from t=1075 s on carries `module_voltage` empty. **The legislated route went
+silent before the swing began and stayed silent through all of it.** The
+window closed before the useful part started.
+
+So the pairing window is narrower than "parked and awake", which is what this
+document guessed at. Key-off does not work: service 01 stops answering long
+before the DC-DC finishes disengaging. What is left is **key-on** -- the
+vehicle coming awake, service 01 alive again, DC-DC not yet settled. That is a
+transition the recorder already opens a session for; it is a matter of catching
+one, not of asking the vehicle for anything new.
+
+One thing the swing did settle. Through that entire 1.1 V descent, `0x33E5` at
+module `17` and at module `1D` tracked each other to within 0.1 V -- 12.6/12.5,
+12.3/12.3, 12.2/12.1, 12.1/12.1. The enhanced route is internally consistent
+across two modules across a rail change eight times wider than anything the
+driving data contained. Whatever the disagreement with PID `0142` turns out to
+be, it is not `0x33E5` being unstable.
+
 What it is remains open, and is recorded as open. Three readings of one rail
 now sit in a consistent order -- the adapter at the connector highest near
 13.9 V, then PID `0142`, then `0x33E5` at `17`, then `0x33E5` at `1D` lowest --
