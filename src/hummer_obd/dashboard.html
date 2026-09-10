@@ -1328,12 +1328,44 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     }
 
     /* --- drive units --- */
-    add({ id: "motor-front", mesh: "cyl", layer: "drive", colour: [0.26, 0.30, 0.33],
-          t: [AXLE, 0.50, 0], s: [0.46, 0.46, 0.70], rot: "z" });
-    add({ id: "motor-rear-a", mesh: "cyl", layer: "drive", colour: [0.26, 0.30, 0.33],
-          t: [-AXLE, 0.50, -0.27], s: [0.46, 0.46, 0.44], rot: "z" });
-    add({ id: "motor-rear-b", mesh: "cyl", layer: "drive", colour: [0.26, 0.30, 0.33],
-          t: [-AXLE, 0.50, 0.27], s: [0.46, 0.46, 0.44], rot: "z" });
+    /* --- the drive units, opened up -------------------------------------
+       Three motors: one at the front axle, two at the rear. Each is drawn as
+       a translucent housing with its stator inside, because the interesting
+       part of an Ultium drive unit is what the case hides.
+
+       The windings are HAIRPIN, which is sourced rather than styled: GM's
+       own description of this motor family is copper hairpin stator windings
+       "cooled with what's essentially transmission fluid, tweaked in design
+       to prevent oil foaming". So the copper is oil-cooled, not
+       water-jacketed, and it is drawn as discrete bars around the bore
+       rather than a smooth ring -- hairpins are rectangular conductors bent
+       and welded, and that is why they look like bars.
+
+       Sixteen per motor is a drawing choice and says so; the real count is
+       not published. What is published is the reduction: 13.3:1 at the front
+       and 10.5:1 at the rear, which is why the front unit is the longer of
+       the two -- more gear to fit.
+
+       The rotor is the darker core. The housing goes to 0.45 alpha so the
+       whole assembly reads as a cutaway rather than a can. */
+    function driveUnit(id, x, z, length) {
+      add({ id: id, mesh: "cyl", layer: "drive", colour: [0.26, 0.30, 0.33],
+            t: [x, 0.50, z], s: [0.46, 0.46, length], rot: "z", alpha: 0.45 });
+      var BARS = 16, bore = 0.150;
+      for (var b = 0; b < BARS; b++) {
+        var ang = b / BARS * Math.PI * 2;
+        add({ id: id + "-hairpin-" + b, mesh: "bev", layer: "drive",
+              colour: [0.72, 0.42, 0.17],
+              t: [x + Math.cos(ang) * bore, 0.50 + Math.sin(ang) * bore, z],
+              s: [0.036, 0.036, length * 0.82], hairpin: true });
+      }
+      add({ id: id + "-rotor", mesh: "cyl", layer: "drive",
+            colour: [0.14, 0.15, 0.17],
+            t: [x, 0.50, z], s: [0.19, 0.19, length * 0.92], rot: "z" });
+    }
+    driveUnit("motor-front", AXLE, 0, 0.70);
+    driveUnit("motor-rear-a", -AXLE, -0.27, 0.44);
+    driveUnit("motor-rear-b", -AXLE, 0.27, 0.44);
     [["f", AXLE], ["r", -AXLE]].forEach(function (a) {
       add({ id: "shaft-" + a[0], mesh: "cyl", layer: "drive", colour: [0.32, 0.35, 0.37],
             t: [a[1], 0.50, 0], s: [0.10, 0.10, VEH.width - 0.34], rot: "z" });
@@ -2208,6 +2240,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         if (p.id && p.id.indexOf("motor") === 0) {
           var m = Math.min(1, Math.abs(live.kw) / 180);
           emissive = live.kw < 0 ? [0, m * 0.55, m * 0.18] : [m * 0.62, m * 0.20, 0];
+        }
+        if (p.hairpin) {
+          /* Copper carrying current glows; copper sitting idle is just
+             copper. Driving and regenerating both heat the windings, so this
+             follows the MAGNITUDE of pack power rather than its sign -- a
+             motor working hard as a generator is not cold. */
+          var load = Math.min(1, Math.abs(live.kw) / 180);
+          emissive = [0.30 * load + 0.04, 0.13 * load + 0.015, 0.02 * load];
         }
         if (p.letter !== undefined) {
           /* The bar reports charge, which is what GMC built it to do. Letters
