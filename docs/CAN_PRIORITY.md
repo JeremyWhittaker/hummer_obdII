@@ -132,6 +132,37 @@ key-on, before drive. The recorder already crosses that boundary on every
 session it opens; nothing new needs to be asked of the vehicle. It is a matter
 of accumulating the transitions rather than of instrumenting anything.
 
+### 0x2885 is settled: no scale error, no meaningful offset
+
+The truck opened its HV contactors on the way to sleep, and pack voltage
+collapsed from 394 V to under 1 V. That is the measurement the 12 V rail could
+not provide: a span of **393.66 V against a 0.0405 V offset**, separable by a
+factor of nine thousand seven hundred.
+
+| State | module `17` | module `1D` | delta |
+|---|---|---|---|
+| contactors open (n=10) | 4.678 V | 4.532 V | -0.146 V |
+| contactors closed (n=117) | 388.464 V | 388.520 V | **+0.056 V** |
+
+**The delta does not scale with the reading**, which is the whole test. A scale
+error of the size seen at 4.6 V would put the 388 V delta at roughly -12 V. It
+is +0.056 V. Fit a factor and it comes out at **1.000147** -- one part in
+seven thousand, and indistinguishable from unity at this resolution. Fit an
+offset and it is 0.0405 V, four counts of a field whose step is 0.01 V, and
+0.01% of a working reading.
+
+So the two modules do not merely agree at one operating point. They return the
+same number across essentially the entire dynamic range of the field, in both
+the state where the pack is connected and the state where it is not.
+`0x2885` is confirmed.
+
+Worth noting against the section below it: this is the same analysis that
+could *not* be done on the 12 V rail, and the difference is entirely dynamic
+range. Pack voltage moved 393 V against an 0.04 V offset. The 12 V rail moved
+0.30 V against a 0.37 V offset. Identical method, opposite outcomes, decided by
+how far the quantity being measured was willing to travel -- which is why the
+span belongs beside every one of these numbers.
+
 ### The predicted swing arrived, and so did the predicted catch
 
 Written above, before it happened: the models separate only if the rail swings
