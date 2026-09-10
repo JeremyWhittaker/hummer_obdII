@@ -907,10 +907,13 @@ class ChargeDetectionTests(unittest.TestCase):
 class SocQuantumTests(unittest.TestCase):
     """SoC moves half a percent at a time, whatever its decimals suggest."""
 
-    def test_the_quantum_is_far_coarser_than_the_field_resolution(self):
-        # 0x27C6 is 16 bits scaled to 100%, so 0.0015% nominal. Measured
-        # behaviour is 0.5% -- coarser by a factor of over three hundred.
-        self.assertGreater(analyze.SOC_QUANTUM_PCT, 100 / 65535 * 100)
+    def test_the_observed_steps_dwarf_the_field_resolution(self):
+        # 0x27C6 is 16 bits scaled to 100%, so 0.0015% nominal, and the
+        # smallest jump seen is 0.400 -- coarser by a factor of over two
+        # hundred. That gap is the point; the exact step size is not fixed.
+        nominal_pct_per_count = 100 / 65535        # 0.001526 %
+        self.assertGreater(analyze.SOC_STEP_SEEN_PCT / nominal_pct_per_count,
+                           200)
 
     def test_a_sub_quantum_charge_says_why_soc_did_not_move(self):
         # The real shape: 0.69 kWh in, SoC unchanged at 84.555 across 72 rows.
@@ -931,32 +934,34 @@ class SocQuantumTests(unittest.TestCase):
         report = analyze._charge_report(rows)
         self.assertNotIn("soc_below_quantum", report)
 
-    def test_the_message_never_asserts_kwh_against_a_percentage(self):
-        """A charge past the step must not be described as under it.
+    def test_the_message_claims_no_fixed_step(self):
+        """It must not name a step size, because there is not one.
 
-        The first version compared SoC in percent and then reported the
-        energy in kWh as though the two were the same quantity: "charge of
-        1.07 kWh is under the 0.5% step". It was false as soon as the charge
-        passed 0.96 kWh, and a report that states something untrue about its
-        own numbers is worse than one that says nothing.
+        Two earlier versions of this message were wrong in turn. The first
+        asserted a kWh figure against a percentage -- "charge of 1.07 kWh is
+        under the 0.5% step" -- false the moment the charge passed 0.96 kWh.
+        The second fixed the units but kept the premise, calling 0.5% "the
+        step SoC moves in", on the strength of two transitions that happened
+        to match. A third transition of +0.400 refuted it hours later.
         """
-        big = [{"pack_a": -15.0, "charger_5401_raw": "94", "pack_v": 389.0,
-                "soc_pct": 84.555, "energy_kwh": 161.12 + i * 0.05,
-                "elapsed_s": float(i * 15)} for i in range(70)]
-        report = analyze._charge_report(big)
-        added = report["energy_added_kwh"]
-        self.assertGreater(added / analyze.EXPECTED_PACK_KWH * 100,
-                           analyze.SOC_QUANTUM_PCT, "test needs a big charge")
-        self.assertIn("MORE than", report["soc_below_quantum"])
-        self.assertNotIn("under the", report["soc_below_quantum"])
+        rows = [{"pack_a": -15.0, "charger_5401_raw": "94", "pack_v": 389.0,
+                 "soc_pct": 84.555, "energy_kwh": 161.12 + i * 0.05,
+                 "elapsed_s": float(i * 15)} for i in range(70)]
+        message = analyze._charge_report(rows)["soc_below_quantum"]
+        for claim in ("the 0.5% step this vehicle reports SoC in",
+                      "the 0.5% step SoC moves in"):
+            self.assertNotIn(claim, message)
+        self.assertIn("irregular intervals", message)
+        self.assertIn("energy added", message)
 
-    def test_a_small_charge_is_described_as_under_the_step(self):
-        small = [{"pack_a": -15.0, "charger_5401_raw": "94", "pack_v": 389.0,
-                  "soc_pct": 84.555, "energy_kwh": 161.12 + i * 0.002,
-                  "elapsed_s": float(i * 15)} for i in range(70)]
-        report = analyze._charge_report(small)
-        self.assertIn("under the", report["soc_below_quantum"])
-        self.assertNotIn("MORE than", report["soc_below_quantum"])
+    def test_the_message_reports_both_quantities_it_compares(self):
+        rows = [{"pack_a": -15.0, "charger_5401_raw": "94", "pack_v": 389.0,
+                 "soc_pct": 84.555, "energy_kwh": 161.12 + i * 0.01,
+                 "elapsed_s": float(i * 15)} for i in range(70)]
+        message = analyze._charge_report(rows)["soc_below_quantum"]
+        self.assertIn("kWh is", message)
+        self.assertIn("% of the pack", message)
+        self.assertIn("SoC has moved", message)
 
     def test_the_explanation_is_printed_not_merely_stored(self):
         # It lived in the report dict and never reached the page, which is the
@@ -966,7 +971,7 @@ class SocQuantumTests(unittest.TestCase):
                  "soc_pct": 84.555, "energy_kwh": 161.12 + i * 0.01,
                  "elapsed_s": float(i * 15)} for i in range(70)]
         text = analyze.format_report({"charge": analyze._charge_report(rows)})
-        self.assertIn("step this vehicle reports SoC in", text)
+        self.assertIn("SoC updates in jumps", text)
 
     def test_no_energy_no_explanation(self):
         # Nothing went in, so there is nothing to explain away.

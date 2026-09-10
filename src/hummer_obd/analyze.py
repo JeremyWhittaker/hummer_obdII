@@ -943,20 +943,27 @@ def is_charging(rows: list[dict]) -> bool:
     return len(charging_rows(rows)) >= MIN_CHARGE_ROWS
 
 
-#: The step this vehicle actually reports state of charge in, measured
-#: 2026-09-10: every change in a 227-row session was 0.500 or 0.502.
+#: The largest state-of-charge step this vehicle has been seen to take, which
+#: is NOT the same as the step it moves in.  An earlier version of this
+#: constant claimed it was, on the strength of two transitions that happened to
+#: be the same size, and a third arrived hours later and refuted it.
 #:
-#: The field's nominal resolution is far finer -- 0x27C6 is 16 bits scaled to
-#: 100%, so 0.0015% -- and it prints three decimals, which makes 84.555 look
-#: like a measurement to the thousandth. It is not. The BMS moves it half a
-#: percent at a time, and the decimals are an offset carried along unchanged
-#: between steps.
+#: Every SoC change observed on 2026-09-10, in one 2900-second session:
 #:
-#: This matters most for short charges. 0.5% of this pack is about 0.96 kWh, so
-#: any charge below that reports zero SoC gained no matter how much energy went
-#: in -- which looked, before it was measured, exactly like SoC being frozen
-#: during charging. It is not: the same steps appear while driving.
-SOC_QUANTUM_PCT = 0.5
+#:     t=  38.9   85.557 -> 85.055   -0.502
+#:     t= 181.9   85.055 -> 84.555   -0.500     143 s later
+#:     t=2869.6   84.555 -> 84.955   +0.400    2688 s later
+#:
+#: Neither the step nor the interval is fixed.  What is consistent is that the
+#: field is far coarser and far slower than it looks: 0x27C6 is 16 bits scaled
+#: to 100%, a nominal 0.0015%, and prints three decimals -- while moving three
+#: times in a session where energy_kwh took 59 distinct values.  The decimals
+#: are an offset carried between jumps, not resolution.
+#:
+#: This value is therefore used only as a threshold for deciding when a zero
+#: SoC reading is uninformative rather than meaningful.  It is not a physical
+#: constant and no arithmetic should treat it as one.
+SOC_STEP_SEEN_PCT = 0.5
 
 
 def _charge_report(rows: list[dict]) -> dict:
@@ -998,27 +1005,22 @@ def _charge_report(rows: list[dict]) -> dict:
     # looks like the two fields disagree.
     gained, added = report["soc_gained_pct"], report["energy_added_kwh"]
     if (gained is not None and added is not None
-            and abs(gained) < SOC_QUANTUM_PCT and abs(added) > 0):
+            and abs(gained) < SOC_STEP_SEEN_PCT and abs(added) > 0):
         # Say it in the units of the comparison.  The first version of this
         # line read "charge of 1.07 kWh is under the 0.5% step", which is a
         # kWh figure asserted against a percentage and was false the moment
         # the charge passed 0.96 kWh -- a report stating something untrue
         # about its own numbers, which is worse than staying quiet.
         implied = abs(added) / EXPECTED_PACK_KWH * 100
-        if implied < SOC_QUANTUM_PCT:
-            report["soc_below_quantum"] = (
-                f"{abs(added):.2f} kWh is {implied:.2f}% of the pack, under the "
-                f"{SOC_QUANTUM_PCT}% step this vehicle reports SoC in; zero "
-                f"gained is the field not having moved yet, not the pack not "
-                f"having taken energy"
-            )
-        else:
-            report["soc_below_quantum"] = (
-                f"{abs(added):.2f} kWh is {implied:.2f}% of the pack, MORE than "
-                f"the {SOC_QUANTUM_PCT}% step SoC moves in, and SoC still has "
-                f"not moved -- so the field lags the energy count rather than "
-                f"merely being coarse"
-            )
+        report["soc_below_quantum"] = (
+            f"{abs(added):.2f} kWh is {implied:.2f}% of the pack, and SoC has "
+            f"moved {abs(gained):.3f}%. SoC updates in jumps of a few tenths of "
+            f"a percent at irregular intervals -- three changes in a 2900 s "
+            f"session, of -0.502, -0.500 and +0.400 -- so a small or zero "
+            f"figure here is the field not having jumped yet, not the pack "
+            f"not having taken energy. Use energy added, which moves "
+            f"continuously"
+        )
 
     # The independent second route, normalised to positive-is-charging.
     slope = [v for v in _series(rows, "power_kw") if v > 0]
