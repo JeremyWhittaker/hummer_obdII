@@ -1201,6 +1201,79 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       letterZ += letterW + letterGap;
     }
 
+    /* --- the rest of the lighting, from GMC's own list -------------------
+       The 2022 and 2024 brochures name exactly these: "LED headlamps with LED
+       daytime running lamps", "LED signature taillamps with LED stop and
+       reverse lights", "LED bed area lighting", and "rear charge port
+       lighting with charge status". Reverse is INSIDE the taillamp housing on
+       this truck, not a separate lens, so it is not drawn as one.
+
+       Trade press quoting a GM lighting engineer describes both lamps around
+       an "H" motif -- horizontal at the front, vertically elongated at the
+       rear -- which is why the taillamps are tall and narrow rather than the
+       wide blocks a generic pickup would get.
+
+       NOT DRAWN, deliberately: underbody rock lights. Every source for them
+       is an aftermarket retailer; they are not in GMC's catalogue, and a
+       lamp this truck does not have is worse than one it does. */
+    [-1, 1].forEach(function (side) {
+      add({ id: "headlamp-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "shell",
+            colour: [0.70, 0.73, 0.76], alpha: 1,
+            t: [noseX - 0.01, beltline - 0.20, side * (W - 0.30)],
+            s: [0.06, 0.16, 0.34], emissiveTag: "lights", lamp: "head" });
+      /* Tall and narrow: the rear "H" is the elongated one. */
+      add({ id: "taillamp-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "shell",
+            colour: [0.42, 0.10, 0.10], alpha: 1,
+            t: [tailX + 0.02, beltline - 0.20, side * (W - 0.16)],
+            s: [0.06, 0.42, 0.16], emissiveTag: "lights", lamp: "tail" });
+      /* Roof markers: amber at the front, red at the rear. Dealer-sourced
+         rather than brochure-sourced, so smaller and dimmer than the lamps
+         above -- the confidence is lower and the drawing says so. */
+      add({ id: "marker-f-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "shell",
+            colour: [0.70, 0.45, 0.10], alpha: 1,
+            t: [cowlX - 0.10, roof + 0.01, side * 0.34],
+            s: [0.07, 0.03, 0.08], lamp: "marker-amber" });
+      add({ id: "marker-r-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "shell",
+            colour: [0.55, 0.10, 0.10], alpha: 1,
+            t: [bulkX + 0.05, roof + 0.01, side * 0.34],
+            s: [0.07, 0.03, 0.08], lamp: "marker-red" });
+    });
+    /* Bed lighting, under the rails, pointing in. */
+    [-1, 1].forEach(function (side) {
+      add({ id: "bedlamp-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "shell",
+            colour: [0.75, 0.76, 0.72], alpha: 1,
+            t: [(tailX + bulkX) / 2, bedRail - 0.05, side * (bedInner - 0.02)],
+            s: [0.90, 0.03, 0.03], lamp: "bed" });
+    });
+    /* The charge port lamp, which GMC lists as reporting charge status. */
+    add({ id: "portlamp", mesh: "bev", layer: "shell",
+          colour: [0.30, 0.70, 0.80], alpha: 1,
+          t: [-2.24, 1.06, -(W - 0.02)], s: [0.16, 0.03, 0.03], lamp: "port" });
+
+    /* --- UltraVision cameras --------------------------------------------
+       GMC publishes "up to 18 available camera VIEWS", not eighteen cameras,
+       and gives no physical module count -- so these are the positions named
+       in GMC support material and press coverage, and there are eight of
+       them, not eighteen. Drawn small and dark, because that is what they
+       are; the point is that they are in the right places.
+
+       The two underbody cameras are the ones worth having: one faces forward
+       toward the front wheels and one rearward, and they are what the
+       "washable underbody cameras" of the Extreme Off-Road package refers
+       to. */
+    [["cam-front", noseX - 0.02, beltline - 0.02, 0],
+     ["cam-rear", tailX + 0.01, beltline + 0.30, 0],
+     ["cam-mirror-l", cowlX - 0.02, beltline + 0.30, -(W + 0.05)],
+     ["cam-mirror-r", cowlX - 0.02, beltline + 0.30, W + 0.05],
+     ["cam-under-f", AXLE + 0.30, rocker - 0.12, 0],
+     ["cam-under-r", -AXLE - 0.20, rocker - 0.12, 0],
+     ["cam-bed", bulkX - 0.04, bedRail - 0.02, 0],
+     ["cam-tailgate", tailX + 0.05, bedRail - 0.10, 0]
+    ].forEach(function (c) {
+      add({ id: c[0], mesh: "bev", layer: "shell", colour: [0.05, 0.05, 0.06],
+            alpha: 1, t: [c[1], c[2], c[3]], s: [0.04, 0.035, 0.035] });
+    });
+
     /* --- grille: horizontal bars across the fascia. Cheap in geometry and
        it is the feature a front three-quarter view looks for first. --- */
     for (var g = 0; g < 4; g++) {
@@ -2240,6 +2313,25 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         if (p.id && p.id.indexOf("motor") === 0) {
           var m = Math.min(1, Math.abs(live.kw) / 180);
           emissive = live.kw < 0 ? [0, m * 0.55, m * 0.18] : [m * 0.62, m * 0.20, 0];
+        }
+        if (p.lamp) {
+          /* Lamps that report something report it; the rest are lamps.
+             Brake pressure lights the tail lamps because that is a
+             measurement this vehicle actually publishes, and the charge port
+             follows the charge state the same way the light bar does. */
+          if (p.lamp === "tail") {
+            emissive = [0.30 + live.brake * 0.62, 0.02, 0.02];
+          } else if (p.lamp === "port") {
+            emissive = live.charging ? [0.05, 0.62, 0.30] : [0.06, 0.14, 0.18];
+          } else if (p.lamp === "marker-amber") {
+            emissive = [0.50, 0.30, 0.04];
+          } else if (p.lamp === "marker-red") {
+            emissive = [0.42, 0.04, 0.04];
+          } else if (p.lamp === "bed") {
+            emissive = [0.28, 0.29, 0.26];
+          } else {
+            emissive = [0.52, 0.54, 0.58];
+          }
         }
         if (p.hairpin) {
           /* Copper carrying current glows; copper sitting idle is just
