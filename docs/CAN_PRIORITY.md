@@ -187,6 +187,27 @@ vehicle coming awake, service 01 alive again, DC-DC not yet settled. That is a
 transition the recorder already opens a session for; it is a matter of catching
 one, not of asking the vehicle for anything new.
 
+**First attempt at that window, and what it actually caught.** The truck woke
+again at t=1310 s of the same session: contactors closed, pack voltage back to
+389 V from 1.13 V, and the 12 V rail climbed 12.1 -> 12.8 V. PID `0142` stayed
+empty through all of it.
+
+That is not yet a test of the key-on hypothesis, because it was not a key-on.
+`charger_5401_raw` went `00` -> `94` and pack current went negative at
+-15.55 A: the truck had started **charging**. So what this observed is a
+different and also useful thing -- charging brings the HV bus and the 12 V rail
+up without waking service 01 at all. The set of states where `0142` answers is
+narrower than "the vehicle is awake" and narrower than "the HV bus is live".
+On the evidence so far it wants the driveline, and the driveline being up is
+also what pins the rail near 13.5 V. Those two conditions may simply not
+overlap, which would mean this pairing is not obtainable by this route. One
+wake is not enough to say that, and it is written here so the next few wakes
+are read against it rather than for it.
+
+Recorded in passing, not analysed: `0x5401` took the values `0x94` and `0x91`
+during this charge. Neither is among the states this project has previously
+seen (`00`, `14`, `24`, `27`, `2A`, `2B`, `54`).
+
 One thing the swing did settle. Through that entire 1.1 V descent, `0x33E5` at
 module `17` and at module `1D` tracked each other to within 0.1 V -- 12.6/12.5,
 12.3/12.3, 12.2/12.1, 12.1/12.1. The enhanced route is internally consistent
