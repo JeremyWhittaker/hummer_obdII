@@ -1170,14 +1170,25 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     slab("shell-lightbar", noseX - 0.04, noseX + 0.02, barY0, barY1,
          -W + 0.07, W - 0.07, [0.10, 0.11, 0.12]);
     var LETTERS = ["H", "U", "M", "M", "E", "R"],
-        letterW = 0.11, letterGap = 0.035,
+        /* Wider gaps than the letters are tall. At 0.035 m the pairs merged
+           into single blocks as soon as the nose was viewed off-axis -- six
+           letters read as three, which is how this was first mistaken for
+           half of them failing to draw. Real badging is spaced to stay
+           legible at an angle, and so is this. */
+        letterW = 0.10, letterGap = 0.075,
         letterSpan = LETTERS.length * letterW + (LETTERS.length - 1) * letterGap,
         letterZ = -letterSpan / 2;
     for (var li = 0; li < LETTERS.length; li++) {
       slab("lightbar-letter-" + li, noseX - 0.02, noseX + 0.035,
            barY0 + 0.025, barY1 - 0.025,
            letterZ, letterZ + letterW, [0.62, 0.66, 0.70],
-           { emissiveTag: "lights", letter: li, letters: LETTERS.length });
+           { emissiveTag: "lights", letter: li, letters: LETTERS.length,
+             /* Opaque. They inherit the shell layer otherwise, and a lit
+                letter at 0.82 blends with the dark bar behind it -- which
+                washed out whichever letters sat over darker geometry and
+                left three of the six looking absent. A lamp is not a
+                window. */
+             alpha: 1 });
       letterZ += letterW + letterGap;
     }
 
