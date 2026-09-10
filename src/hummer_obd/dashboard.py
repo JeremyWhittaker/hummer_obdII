@@ -21,7 +21,7 @@ from importlib.resources import files
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from . import analyze, gps, live, r8, tiles
+from . import analyze, gps, live, places as places_mod, r8, tiles
 from .confidence import CONFIDENCE, LEVEL_NAMES
 
 SESSION_NAME = re.compile(r"drive-\d{8}T\d{6}Z\.csv\Z")
@@ -303,9 +303,13 @@ class SessionStore:
 
     def __init__(self, directory: str | Path, stale_after: float = 45.0,
                  *, expose_location: bool = False, tile_cache: str | Path | None = None,
-                 allow_origins: tuple[str, ...] = (), api_only: bool = False):
+                 allow_origins: tuple[str, ...] = (), api_only: bool = False,
+                 places_file: str | Path | None = None):
         if not math.isfinite(stale_after) or stale_after <= 0:
             raise ValueError("stale-after must be positive and finite")
+        self._places_path = Path(places_file or places_mod.DEFAULT_PATH)
+        self._places = places_mod.Places()
+        self._places_stamp: int | None = -1
         self.directory = Path(directory).resolve()
         self.stale_after = stale_after
         self.expose_location = bool(expose_location)
@@ -393,6 +397,24 @@ class SessionStore:
         while len(self._distance) > MAX_SESSIONS * 2:
             self._distance.pop(next(iter(self._distance)))
         return answer
+
+    def places(self):
+        """The named places, re-read when the file changes.
+
+        Cached on mtime rather than held forever: the list is edited with a
+        CLI while the server is running, and a place added at the kerbside is
+        no use if the reader has to be restarted to see it. Cached at all
+        because this is read on every snapshot and the file is tiny but the
+        poll is not rare.
+        """
+        try:
+            stamp = self._places_path.stat().st_mtime_ns
+        except OSError:
+            stamp = None
+        if stamp != self._places_stamp:
+            self._places = places_mod.Places.load(self._places_path)
+            self._places_stamp = stamp
+        return self._places
 
     def sessions(self) -> dict:
         sessions = []
@@ -547,11 +569,30 @@ class SessionStore:
             if resistance is None or resistance <= 0 or correlation is None or correlation > -0.5:
                 derived["resistance"] = None
                 warnings.append("The current-step fit does not support a reliable resistance estimate.")
+        # Where this session began and ended, by name. Computed from the
+        # already-anchored history rather than the raw fixes: a jittering
+        # parked truck can wander out of its own fence and back, and a trip
+        # that reported "nowhere to home" because of that would be worse than
+        # one with no label at all.
+        journey = None
+        if history:
+            named = self.places()
+            if len(named):
+                first = next((r for r in history
+                              if r.get("gps_lat") is not None), None)
+                last = next((r for r in reversed(history)
+                             if r.get("gps_lat") is not None), None)
+                start = named.label(first.get("gps_lat"), first.get("gps_lon")) if first else None
+                end = named.label(last.get("gps_lat"), last.get("gps_lon")) if last else None
+                if start or end:
+                    journey = {"from": start, "to": end,
+                               "same": bool(start and start == end)}
         return _clean({"schema": 1,
                        "session": {"id": path.name, "rows": len(rows), "newest_utc": newest,
                                    "elapsed_s": snap.get("elapsed_s"), "age_s": age,
                                    "period_s": snap.get("period_s"), "status": status},
                        "signals": signals, "derived": derived, "report": report,
+                       "journey": journey,
                        "history": history, "energy_budget": budget,
                        "warnings": list(dict.fromkeys(warnings + report.get("warnings", []))),
                        "insights": _insights(report, derived, signals)})
@@ -631,6 +672,7 @@ def make_server(store: SessionStore, host: str = "127.0.0.1", port: int = 8765) 
                     if store.api_only:
                         self._reply(200, {"service": "hummer-obd", "schema": 1,
                                           "endpoints": ["/api/sessions", "/api/snapshot",
+                                                        "/api/places", "/api/stops",
                                                         "/api/r8", "/api/tile/{z}/{x}/{y}.png"],
                                           "note": "data only; the interface is hosted elsewhere"})
                         return
@@ -678,6 +720,30 @@ def make_server(store: SessionStore, host: str = "127.0.0.1", port: int = 8765) 
                     self.send_header("X-Content-Type-Options", "nosniff")
                     self.end_headers()
                     self.wfile.write(body)
+                elif url.path == "/api/stops":
+                    # Where the vehicle stopped for long enough to matter,
+                    # with the name of the fence each falls in if any. The
+                    # UNNAMED ones are the point: that is the list an owner is
+                    # shown so they can say what the address was.
+                    query = parse_qs(url.query, max_num_fields=4)
+                    if set(query) - {"session"} or len(query.get("session", [])) > 1:
+                        raise ValueError("expected one session parameter")
+                    snap = store.snapshot(query.get("session", ["latest"])[0])
+                    named = store.places()
+                    found = places_mod.stops(snap.get("history") or [])
+                    for stop in found:
+                        stop["place"] = named.label(stop["lat"], stop["lon"])
+                    self._reply(200, {"stops": found})
+                elif url.path == "/api/places":
+                    # Read-only, like every other route here. Places are
+                    # created on the node with `hummer-obd-places`, because
+                    # accepting writes from the network is a different posture
+                    # for a machine that sits on a vehicle's diagnostic port.
+                    self._reply(200, {"places": [
+                        {"name": place.name, "lat": place.lat,
+                         "lon": place.lon, "radius_m": place.radius_m,
+                         "note": place.note}
+                        for place in store.places()]})
                 elif url.path == "/api/sessions":
                     self._reply(200, store.sessions())
                 elif url.path == "/api/snapshot":

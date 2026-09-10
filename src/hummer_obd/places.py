@@ -192,3 +192,162 @@ class Places:
             except OSError:
                 pass
             raise
+
+
+#: Two fixes further apart than this are different stops.  Set from the
+#: measured parked spread on this vehicle -- clusters of 24 m and 49 m across
+#: -- with room above it, so one stop does not split into several.
+STOP_RADIUS_M = 150.0
+
+#: A pause shorter than this is a traffic light, not a place.
+MIN_STOP_S = 300.0
+
+
+def stops(rows: Iterable[dict], *, radius_m: float = STOP_RADIUS_M,
+          min_seconds: float = MIN_STOP_S) -> list[dict]:
+    """Where the vehicle actually stopped, from a session's own fixes.
+
+    Returns the clusters, newest first, each with a centre, how long it was
+    there, how many fixes, and the name of the place it falls in if any. The
+    unnamed ones are the point: they are the list an owner is shown so they
+    can say what that address was.
+
+    Greedy clustering rather than anything cleverer, because the question is
+    not hard: fixes that are already anchored sit almost exactly on top of
+    each other, and the clusters this separates are kilometres apart. What
+    matters is the *radius*, and 150 m comes from the measured parked spread
+    on this vehicle -- 24 m and 49 m across two real driveways -- with room
+    above it so one stop does not split into several.
+
+    A global median over the whole session would be worse than useless when
+    the truck visited two places: it lands between them, in a field neither
+    stop is in.
+    """
+    clusters: list[dict] = []
+    for row in rows:
+        lat, lon = row.get("gps_lat"), row.get("gps_lon")
+        if lat is None or lon is None:
+            continue
+        speed = row.get("gps_speed_mps")
+        if speed is not None and speed >= 0.3:
+            continue
+        stamp = row.get("utc")
+        for cluster in clusters:
+            if _distance_m(cluster["lat"], cluster["lon"], lat, lon) <= radius_m:
+                cluster["lats"].append(lat)
+                cluster["lons"].append(lon)
+                cluster["last"] = stamp or cluster["last"]
+                cluster["first"] = cluster["first"] or stamp
+                break
+        else:
+            clusters.append({"lat": lat, "lon": lon, "lats": [lat], "lons": [lon],
+                             "first": stamp, "last": stamp})
+
+    out = []
+    for cluster in clusters:
+        lats, lons = sorted(cluster["lats"]), sorted(cluster["lons"])
+        mid = len(lats) // 2
+        # Median rather than mean: one wild fix drags a mean across the road.
+        lat = lats[mid] if len(lats) % 2 else (lats[mid - 1] + lats[mid]) / 2
+        lon = lons[mid] if len(lons) % 2 else (lons[mid - 1] + lons[mid]) / 2
+        seconds = _span_seconds(cluster["first"], cluster["last"])
+        if seconds is not None and seconds < min_seconds:
+            continue
+        out.append({"lat": round(lat, 6), "lon": round(lon, 6),
+                    "fixes": len(cluster["lats"]),
+                    "first_utc": cluster["first"], "last_utc": cluster["last"],
+                    "seconds": None if seconds is None else round(seconds)})
+    out.sort(key=lambda c: c["fixes"], reverse=True)
+    return out
+
+
+def _span_seconds(first: Optional[str], last: Optional[str]) -> Optional[float]:
+    if not first or not last:
+        return None
+    from datetime import datetime
+    try:
+        a = datetime.fromisoformat(first.replace("Z", "+00:00"))
+        b = datetime.fromisoformat(last.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+    return max(0.0, (b - a).total_seconds())
+
+
+#: Where the list lives on the node. Outside the repository, because a home
+#: address is not telemetry and this project does not commit one.
+DEFAULT_PATH = Path.home() / "hummer-obd" / "config" / "places.json"
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    """Add, list and remove places from the node's own command line.
+
+    Reading places over HTTP is safe; writing them over HTTP is a different
+    decision. This API is GET-only by design -- the node sits on a vehicle and
+    the surface it exposes to the network is deliberately small -- so the way
+    a place gets created is here, on the machine, by whoever is logged into
+    it. Home Assistant can call this through a shell command if the owner
+    wants a button for it.
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Named places the recorder labels trips with.")
+    parser.add_argument("--file", type=Path, default=DEFAULT_PATH,
+                        help=f"place list (default {DEFAULT_PATH})")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("list", help="show every place")
+
+    add = sub.add_parser("add", help="add or edit a place")
+    add.add_argument("name")
+    add.add_argument("--lat", type=float, required=True)
+    add.add_argument("--lon", type=float, required=True)
+    add.add_argument("--radius-m", type=float, default=DEFAULT_RADIUS_M)
+    add.add_argument("--note", default="")
+
+    drop = sub.add_parser("remove", help="remove a place by name")
+    drop.add_argument("name")
+
+    where = sub.add_parser("at", help="which place a coordinate falls in")
+    where.add_argument("--lat", type=float, required=True)
+    where.add_argument("--lon", type=float, required=True)
+
+    args = parser.parse_args(argv)
+    places = Places.load(args.file)
+
+    if args.command == "list":
+        if not len(places):
+            print(f"no places in {args.file}")
+            return 0
+        for place in sorted(places, key=lambda p: p.name):
+            note = f"  -- {place.note}" if place.note else ""
+            print(f"{place.name:<20} {place.lat:>10.6f} {place.lon:>12.6f}  "
+                  f"r={place.radius_m:.0f} m{note}")
+        return 0
+
+    if args.command == "add":
+        try:
+            places.add(Place(args.name, args.lat, args.lon,
+                             args.radius_m, args.note))
+        except ValueError as error:
+            print(f"error: {error}")
+            return 2
+        places.save(args.file)
+        print(f"{args.name} saved to {args.file}")
+        return 0
+
+    if args.command == "remove":
+        if not places.remove(args.name):
+            print(f"no place named {args.name!r}")
+            return 1
+        places.save(args.file)
+        print(f"{args.name} removed")
+        return 0
+
+    found = places.at(args.lat, args.lon)
+    print(found.name if found else "(nowhere named)")
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

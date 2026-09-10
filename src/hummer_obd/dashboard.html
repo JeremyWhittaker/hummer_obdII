@@ -3180,6 +3180,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         began = span.length ? clockOf(span[0].utc) : null,
         ended = span.length ? clockOf(span[span.length - 1].utc) : null;
     if (began && ended && began !== ended) stat("ran", began + " → " + ended);
+    /* "home → work" is a thing a person remembers; a pair of coordinates is
+       not. Only shown when a fence actually matched -- an unnamed trip says
+       nothing rather than guessing. */
+    var trip = state.snapshot && state.snapshot.journey;
+    if (trip) {
+      stat("trip", trip.same ? "around " + trip.from
+                             : (trip.from || "?") + " → " + (trip.to || "?"));
+    }
     stat("fixes", String(pts.length));
     if (stationary) {
       stat("parked", "wander " + extent.toFixed(0) + " m");

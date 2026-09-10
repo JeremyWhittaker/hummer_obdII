@@ -175,6 +175,21 @@ The right-hand column is the one that matters operationally.
 | Command | What it does | Touches the vehicle? |
 |---|---|---|
 | `hummer-obd-capabilities` | Sanitized report of a node's live state | **no** |
+**Trips are named, not numbered.** A journey between two coordinates is
+something nobody remembers; "home → work" is. `hummer-obd-places` keeps a list
+of named circles on the node, `/api/places` serves them, and each session
+reports the place it started and ended in. `/api/stops` finds where the vehicle
+actually stopped — clustered at 150 m, ignoring pauses under five minutes — so
+the unnamed ones can be shown and named. Nothing geocodes: the truck has been
+saying where home is every night for weeks, and the driveway it parks in is a
+better fence than a rooftop pin from a postal address. The list lives outside
+the repository, because a home address is not telemetry.
+
+Reading places is a GET like everything else here. **Writing them is not
+exposed to the network at all** — a place is created on the machine with
+`hummer-obd-places add`, because this node sits on a vehicle's diagnostic port
+and a place list is not a good enough reason to give it a write surface.
+
 **GPS jitter is filtered before anything reads a position.** A parked truck's
 receiver does not sit still: measured on 2026-09-10, two sessions where the
 truck never left the driveway recorded 114 m of "travel" out of 187 m and 51 m

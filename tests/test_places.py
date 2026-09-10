@@ -144,3 +144,75 @@ class PersistenceTests(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class StopTests(unittest.TestCase):
+    """Where the vehicle stopped, which is not the same as where it was."""
+
+    WORK = (33.42000, -111.93000)
+
+    def fixes(self, at, count, start_min=0):
+        return [{"gps_lat": at[0] + (i % 3 - 1) * 0.00009,
+                 "gps_lon": at[1] + (i % 2 - 1) * 0.00009,
+                 "gps_speed_mps": 0.0,
+                 "utc": f"2026-09-10T0{start_min // 60}:{start_min % 60:02d}:{i % 60:02d}Z"}
+                for i in range(count)]
+
+    def long_stay(self, at, minutes, start_hour=1):
+        return [{"gps_lat": at[0], "gps_lon": at[1], "gps_speed_mps": 0.0,
+                 "utc": f"2026-09-10T{start_hour:02d}:{m:02d}:00Z"}
+                for m in range(minutes)]
+
+    def test_two_places_do_not_average_into_one(self):
+        """The failure this exists to prevent.
+
+        A median over a whole session that visited two places lands between
+        them -- in a field neither stop is in. Measured on this vehicle: two
+        parked clusters 5.2 km apart, and the global median sat between them.
+        """
+        from hummer_obd.places import stops
+        found = stops(self.long_stay(HOME, 20) + self.long_stay(self.WORK, 20, 3))
+        self.assertEqual(len(found), 2)
+        centres = sorted(round(s["lat"], 3) for s in found)
+        self.assertEqual(centres, sorted([round(HOME[0], 3),
+                                          round(self.WORK[0], 3)]))
+
+    def test_a_traffic_light_is_not_a_place(self):
+        from hummer_obd.places import stops
+        brief = [{"gps_lat": HOME[0], "gps_lon": HOME[1], "gps_speed_mps": 0.0,
+                  "utc": f"2026-09-10T01:00:{s:02d}Z"} for s in range(0, 40, 10)]
+        self.assertEqual(stops(brief), [])
+
+    def test_moving_fixes_are_not_stops(self):
+        from hummer_obd.places import stops
+        driving = [{"gps_lat": HOME[0] + i * 0.001, "gps_lon": HOME[1],
+                    "gps_speed_mps": 15.0,
+                    "utc": f"2026-09-10T01:{i:02d}:00Z"} for i in range(30)]
+        self.assertEqual(stops(driving), [])
+
+    def test_jitter_inside_one_driveway_stays_one_stop(self):
+        from hummer_obd.places import stops
+        found = stops(self.long_stay(HOME, 20))
+        self.assertEqual(len(found), 1)
+        self.assertGreaterEqual(found[0]["fixes"], 20)
+
+    def test_a_stop_reports_how_long_it_lasted(self):
+        from hummer_obd.places import stops
+        found = stops(self.long_stay(HOME, 30))
+        self.assertEqual(len(found), 1)
+        self.assertAlmostEqual(found[0]["seconds"], 29 * 60, delta=61)
+
+    def test_stops_carry_no_names_of_their_own(self):
+        # Naming is the owner's job; this only says where they stopped.
+        from hummer_obd.places import stops
+        found = stops(self.long_stay(HOME, 20))
+        self.assertNotIn("name", found[0])
+
+    def test_rows_without_fixes_are_skipped(self):
+        from hummer_obd.places import stops
+        rows = self.long_stay(HOME, 20) + [{"gps_lat": None, "gps_lon": None}]
+        self.assertEqual(len(stops(rows)), 1)
+
+    def test_an_empty_session_has_no_stops(self):
+        from hummer_obd.places import stops
+        self.assertEqual(stops([]), [])
