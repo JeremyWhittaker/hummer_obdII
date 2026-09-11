@@ -1341,7 +1341,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        description of this vehicle names. */
     var barY0 = beltline - 0.02, barY1 = beltline + 0.14;
     slab("shell-lightbar", noseX - 0.04, noseX + 0.02, barY0, barY1,
-         -W + 0.07, W - 0.07, [0.10, 0.11, 0.12]);
+         -W + 0.07, W - 0.07, [0.10, 0.11, 0.12], { layer: "lights" });
     var LETTERS = ["H", "U", "M", "M", "E", "R"],
         /* Wider gaps than the letters are tall. At 0.035 m the pairs merged
            into single blocks as soon as the nose was viewed off-axis -- six
@@ -1356,6 +1356,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            barY0 + 0.025, barY1 - 0.025,
            letterZ, letterZ + letterW, [0.62, 0.66, 0.70],
            { emissiveTag: "lights", letter: li, letters: LETTERS.length,
+             /* Lighting is its own layer, so the bar that spells the name
+                and reports the charge is there with the body off -- it is
+                a display, not a panel. */
+             layer: "lights",
              /* Opaque. They inherit the shell layer otherwise, and a lit
                 letter at 0.82 blends with the dark bar behind it -- which
                 washed out whichever letters sat over darker geometry and
@@ -1381,36 +1385,36 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        is an aftermarket retailer; they are not in GMC's catalogue, and a
        lamp this truck does not have is worse than one it does. */
     [-1, 1].forEach(function (side) {
-      add({ id: "headlamp-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "shell",
+      add({ id: "headlamp-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "lights",
             colour: [0.70, 0.73, 0.76], alpha: 1,
             t: [noseX - 0.01, beltline - 0.20, side * (W - 0.30)],
             s: [0.06, 0.16, 0.34], emissiveTag: "lights", lamp: "head" });
       /* Tall and narrow: the rear "H" is the elongated one. */
-      add({ id: "taillamp-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "shell",
+      add({ id: "taillamp-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "lights",
             colour: [0.42, 0.10, 0.10], alpha: 1,
             t: [tailX + 0.02, beltline - 0.20, side * (W - 0.16)],
             s: [0.06, 0.42, 0.16], emissiveTag: "lights", lamp: "tail" });
       /* Roof markers: amber at the front, red at the rear. Dealer-sourced
          rather than brochure-sourced, so smaller and dimmer than the lamps
          above -- the confidence is lower and the drawing says so. */
-      add({ id: "marker-f-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "shell",
+      add({ id: "marker-f-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "lights",
             colour: [0.70, 0.45, 0.10], alpha: 1,
             t: [cowlX - 0.10, roof + 0.01, side * 0.34],
             s: [0.07, 0.03, 0.08], lamp: "marker-amber" });
-      add({ id: "marker-r-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "shell",
+      add({ id: "marker-r-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "lights",
             colour: [0.55, 0.10, 0.10], alpha: 1,
             t: [bulkX + 0.05, roof + 0.01, side * 0.34],
             s: [0.07, 0.03, 0.08], lamp: "marker-red" });
     });
     /* Bed lighting, under the rails, pointing in. */
     [-1, 1].forEach(function (side) {
-      add({ id: "bedlamp-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "shell",
+      add({ id: "bedlamp-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "lights",
             colour: [0.75, 0.76, 0.72], alpha: 1,
             t: [(tailX + bulkX) / 2, bedRail - 0.05, side * (bedInner - 0.02)],
             s: [0.90, 0.03, 0.03], lamp: "bed" });
     });
     /* The charge port lamp, which GMC lists as reporting charge status. */
-    add({ id: "portlamp", mesh: "bev", layer: "shell",
+    add({ id: "portlamp", mesh: "bev", layer: "lights",
           colour: [0.30, 0.70, 0.80], alpha: 1,
           /* It was at x -2.32..-2.16, inside flare-rl, reporting on a port
              0.29 m away from it. Moved aft of the flare's rear edge so the
@@ -1461,10 +1465,34 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
          -W + 0.10, W - 0.10, GLASS, { alpha: 0.42, layer: "shell" });
     /* Inboard of the pillars rather than outboard of the roof. Glass sits in
        an aperture; it does not stand proud of the bodywork around it. */
-    slab("glass-side-l", bulkX + 0.06, cowlX - 0.04, beltline + 0.16, roof - 0.10,
-         -(W - 0.035), -(W - 0.085), GLASS, { alpha: 0.42, layer: "shell" });
-    slab("glass-side-r", bulkX + 0.06, cowlX - 0.04, beltline + 0.16, roof - 0.10,
-         W - 0.085, W - 0.035, GLASS, { alpha: 0.42, layer: "shell" });
+    /* TWO PANES A SIDE, split at the B-pillar. The side glass was one sheet
+       the length of the cab with the B-pillar drawn across it at x 0.30 --
+       beside the front seat CUSHION, 0.2 m ahead of the driver's shoulder --
+       so what read as the front window was 0.78 m and the rear 1.62 m, and
+       the owner said the rear windows were twice the length of the front.
+       They were. On a crew cab the front door is the longer one.
+
+       Door lengths are NOT PUBLISHED for this truck. What is published is
+       the cab: the A-pillar stands at the cowl and the C-pillar at the bed
+       bulkhead, 2.50 m apart along the beltline. Across every side
+       elevation of the Pickup the front door glass runs about 1.3 times
+       the rear's, with the B-pillar just behind the front seatback -- so
+       the 2.40 m of glass between the pillars is split 1.36 to 1.04 and the
+       pillar lands at x -0.29, 0.42 m aft of the driver's eye point, which
+       is where a shoulder-line pillar sits. That ratio is a measurement off
+       photographs against the 3.444 m wheelbase, not a figure GM gives, and
+       carries perhaps 10%. */
+    var pillarBX = -0.29,
+        frontGlassX0 = pillarBX + 0.05, frontGlassX1 = cowlX - 0.04,
+        rearGlassX0 = bulkX + 0.06, rearGlassX1 = pillarBX - 0.05;
+    [[-1, "l"], [1, "r"]].forEach(function (side) {
+      var z0 = side[0] < 0 ? -(W - 0.035) : W - 0.085,
+          z1 = side[0] < 0 ? -(W - 0.085) : W - 0.035;
+      slab("glass-door-f-" + side[1], frontGlassX0, frontGlassX1,
+           beltline + 0.16, roof - 0.10, z0, z1, GLASS, { alpha: 0.42, layer: "shell" });
+      slab("glass-door-r-" + side[1], rearGlassX0, rearGlassX1,
+           beltline + 0.16, roof - 0.10, z0, z1, GLASS, { alpha: 0.42, layer: "shell" });
+    });
     slab("glass-wind", cowlX - 0.06, cowlX + 0.02, beltline + 0.16, roof - 0.10,
          -W + 0.06, W - 0.06, GLASS, { alpha: 0.42, layer: "shell" });
     slab("shell-cabbase", bulkX, cowlX, beltline, beltline + 0.20, -W + 0.02, W - 0.02, BODY);
@@ -1491,7 +1519,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       var pz0 = side[0] < 0 ? -(W - 0.03) : W - 0.10,
           pz1 = side[0] < 0 ? -(W - 0.10) : W - 0.03;
       slab("pillar-a-" + side[1], cowlX - 0.10, cowlX, beltline + 0.14, roof - 0.06, pz0, pz1, BODY);
-      slab("pillar-b-" + side[1], 0.30, 0.40, beltline + 0.14, roof - 0.06, pz0, pz1, BODY);
+      slab("pillar-b-" + side[1], pillarBX - 0.05, pillarBX + 0.05,
+           beltline + 0.14, roof - 0.06, pz0, pz1, BODY);
       slab("pillar-c-" + side[1], bulkX, bulkX + 0.10, beltline + 0.14, roof - 0.06, pz0, pz1, BODY);
       /* mirrors */
       /* The file's own VEH note says width across the mirrors is 2.380 m and
@@ -1614,7 +1643,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        rather than a cube. So the assumption is replaced by what GM draws.
 
        Each module is then 1.42 m long and 0.178 m wide, which is a module,
-       where 2 x 6 made them 0.71 x 0.36 -- a shape Ultium does not build. */
+       where 2 x 6 made them 0.71 x 0.36 -- a shape Ultium does not build.
+
+       What IS published about the module is its cells: 24 large-format
+       pouch cells of about 580 x 115 mm and 10 mm thick. Twenty-four cells
+       in eight series groups of three is exactly the eight-in-series this
+       project measured per module, so the published cell count and the
+       measured series count agree. The module's outer case is not
+       published, and neither is the pack's, so the envelope stays derived
+       from the span between the drive units. */
     var cols = 12, rows = 1, mL = VEH.packLength / cols, mW = VEH.packWidth / rows,
         layerH = (VEH.packTop - VEH.packBottom) / 2;
     add({ id: "pack-case", mesh: "bev", layer: "pack", colour: [0.09, 0.11, 0.12],
@@ -1656,16 +1693,19 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
        The rotor is the darker core. The housing goes to 0.45 alpha so the
        whole assembly reads as a cutaway rather than a can. */
-    function driveUnit(id, x, z, length) {
+    function driveUnit(id, x, z, length, opts) {
+      opts = opts || {};
       /* On the wheel centre, not 53 mm above it. Every drive part sat at
          y=0.50 while the hub faces are at VEH.wheelRadius = 0.4471, so the
          halfshafts ran past the hubs they drive and the whole driveline
          floated above its own axle line. The housing also drops 0.46 -> 0.38:
          at 0.46 it stood 0.23 m above the axis, higher than the 0.4471 wheel
          centre it sits beside. */
-      add({ id: id, mesh: "cyl", layer: "drive", colour: [0.26, 0.30, 0.33],
-            t: [x, VEH.wheelRadius, z], s: [0.38, 0.38, length], rot: "z",
-            alpha: 0.45 });
+      if (!opts.noHousing) {
+        add({ id: id, mesh: "cyl", layer: "drive", colour: [0.26, 0.30, 0.33],
+              t: [x, VEH.wheelRadius, z], s: [0.38, 0.38, length], rot: "z",
+              alpha: 0.45 });
+      }
       var BARS = 16, bore = 0.150;
       for (var b = 0; b < BARS; b++) {
         var ang = b / BARS * Math.PI * 2;
@@ -1681,8 +1721,18 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
             rot: "z" });
     }
     driveUnit("motor-front", AXLE, 0, 0.70);
-    driveUnit("motor-rear-a", -AXLE, -0.27, 0.44);
-    driveUnit("motor-rear-b", -AXLE, 0.27, 0.44);
+    /* ONE CASING AT THE REAR, TWO MOTORS INSIDE IT. GM's description of the
+       Edition 1 driveline: the "two rear motors are housed within the same
+       casing", each driving its own wheel, with the locking effect done in
+       software rather than by a differential. Two separate cans side by side
+       was two drive units, which this truck does not have. The casing's
+       length and diameter are NOT PUBLISHED; it spans the two stators it
+       holds and no more. */
+    add({ id: "motor-rear", mesh: "cyl", layer: "drive", colour: [0.26, 0.30, 0.33],
+          t: [-AXLE, VEH.wheelRadius, 0], s: [0.38, 0.38, 1.00], rot: "z",
+          alpha: 0.45 });
+    driveUnit("motor-rear-a", -AXLE, -0.27, 0.44, { noHousing: true });
+    driveUnit("motor-rear-b", -AXLE, 0.27, 0.44, { noHousing: true });
     [["f", AXLE], ["r", -AXLE]].forEach(function (a) {
       add({ id: "shaft-" + a[0], mesh: "cyl", layer: "drive", colour: [0.32, 0.35, 0.37],
             t: [a[1], VEH.wheelRadius, 0], s: [0.10, 0.10, VEH.width - 0.34],
@@ -1739,19 +1789,19 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            resolves it and the factory wheels are too closed to read it off a
            photograph. */
         var inboard = z - w[2] * 0.10;
-        add({ id: "brake-rotor-" + w[0], mesh: "cyl", layer: "wheels",
+        add({ id: "brake-rotor-" + w[0], mesh: "cyl", layer: "brakes",
               colour: [0.52, 0.55, 0.58], brake: true,
               t: [w[1], VEH.wheelRadius, inboard],
               s: [0.37, 0.37, 0.028], rot: "z" });
-        add({ id: "brake-hat-" + w[0], mesh: "cyl", layer: "wheels",
+        add({ id: "brake-hat-" + w[0], mesh: "cyl", layer: "brakes",
               colour: [0.13, 0.14, 0.15],
               t: [w[1], VEH.wheelRadius, inboard],
               s: [0.16, 0.16, 0.07], rot: "z" });
-        add({ id: "brake-caliper-" + w[0], mesh: "bev", layer: "wheels",
+        add({ id: "brake-caliper-" + w[0], mesh: "bev", layer: "brakes",
               colour: [0.21, 0.18, 0.16], brake: true,
               t: [w[1] - 0.115, VEH.wheelRadius + 0.115, inboard],
               s: [0.11, 0.15, 0.115] });
-        add({ id: "brake-bracket-" + w[0], mesh: "bev", layer: "wheels",
+        add({ id: "brake-bracket-" + w[0], mesh: "bev", layer: "brakes",
               colour: [0.17, 0.15, 0.14],
               t: [w[1] - 0.115, VEH.wheelRadius + 0.115, inboard + w[2] * 0.055],
               s: [0.13, 0.17, 0.03] });
@@ -1869,7 +1919,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        1.06 x 0.86 x 0.35 is 0.319. Where its walls actually sit is not
        published, so the volume is the claim and the proportions are not. */
     slab("etrunk", cowlX + 0.16, cowlX + 1.22, beltline - 0.30, beltline + 0.05,
-         -0.43, 0.43, [0.13, 0.14, 0.15], { layer: "aux" });
+         -0.43, 0.43, [0.13, 0.14, 0.15], { layer: "shell" });
 
     /* --- the cabin ----------------------------------------------------
        Built so the driver's seat has something to look at. What is here is
@@ -1951,8 +2001,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
     /* Door handles, two a side at the beltline. Small, and the thing a
        three-quarter view looks for to know it is looking at a door. */
+    /* At the trailing edge of each door, which is where a handle is: the
+       front one just ahead of the B-pillar, the rear one just ahead of the
+       C-pillar. They were at 0.62 and -0.42 -- mid-door and, for the second,
+       on the B-pillar itself once the pillar was put where it belongs. */
     [-1, 1].forEach(function (side) {
-      [0.62, -0.42].forEach(function (x, i) {
+      [pillarBX + 0.24, bulkX + 0.30].forEach(function (x, i) {
         slab("handle-" + (side < 0 ? "l" : "r") + i,
              x - 0.11, x + 0.11, beltline + 0.05, beltline + 0.11,
              /* Flush to the widest plane rather than 5 mm past it. Nothing
@@ -2016,7 +2070,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       .forEach(function (w) {
         /* The black bellows standing inboard of each wheel is the most
            recognisable thing under this truck after the pack. */
-        add({ id: "airspring-" + w[0], mesh: "cyl", layer: "underbody",
+        add({ id: "airspring-" + w[0], mesh: "cyl", layer: "suspension",
               colour: [0.07, 0.07, 0.08],
               /* Moved off the halfshaft plane and slimmed. Each bellows was
                  0.30 m across and 0.54 m tall -- 81% of the brake rotor
@@ -2034,14 +2088,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        that hides the pack defeats the point of being able to look up at it. */
     [[1.88, 0.92], [0.60, 1.28], [-0.62, 1.28], [-1.90, 0.88]]
       .forEach(function (plate, i) {
-        add({ id: "skid-" + i, mesh: "bev", layer: "underbody",
+        add({ id: "skid-" + i, mesh: "bev", layer: "armour",
               colour: [0.17, 0.18, 0.19], alpha: 0.42,
               t: [plate[0], VEH.groundClearance + 0.025, 0],
               s: [plate[1], 0.05, VEH.packWidth + 0.12] });
       });
 
     [-1, 1].forEach(function (side) {
-      add({ id: "rocker-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "underbody",
+      add({ id: "rocker-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "armour",
             colour: [0.13, 0.14, 0.15],
             /* The rock rail was the WIDEST object on the model -- outer face
                at |z| 1.196 against the flares' 1.186 and the published
@@ -2053,17 +2107,17 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
             t: [0, 0.47, side * 0.975], s: [2.34, 0.13, 0.15] });
       /* Rear tie rod: drawn because four-wheel steer is real on this truck,
          static because nothing here measures the angle. */
-      add({ id: "tierod-" + (side < 0 ? "l" : "r"), mesh: "cyl", layer: "underbody",
+      add({ id: "tierod-" + (side < 0 ? "l" : "r"), mesh: "cyl", layer: "suspension",
             colour: [0.31, 0.33, 0.35],
             t: [-AXLE - 0.26, 0.45, side * (W - 0.34) / 2],
             s: [0.06, 0.06, W - 0.34], rot: "z" });
-      add({ id: "towloop-" + (side < 0 ? "l" : "r"), mesh: "cyl", layer: "underbody",
+      add({ id: "towloop-" + (side < 0 ? "l" : "r"), mesh: "cyl", layer: "armour",
             colour: [0.06, 0.06, 0.07],
             t: [2.55, 0.66, side * 0.40], s: [0.17, 0.17, 0.09], rot: "z" });
     });
-    add({ id: "steer-rear", mesh: "bev", layer: "underbody", colour: [0.22, 0.24, 0.26],
+    add({ id: "steer-rear", mesh: "bev", layer: "suspension", colour: [0.22, 0.24, 0.26],
           t: [-AXLE - 0.26, 0.45, 0], s: [0.16, 0.14, 0.46] });
-    add({ id: "bumper-beam", mesh: "bev", layer: "underbody", colour: [0.19, 0.20, 0.21],
+    add({ id: "bumper-beam", mesh: "bev", layer: "armour", colour: [0.19, 0.20, 0.21],
           t: [2.50, 0.70, 0], s: [0.15, 0.22, 1.72] });
 
     /* --- 12 V and charge port --- */
@@ -2319,8 +2373,20 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            pack and the cooling -- "did you remove the battery pack and cooling
            stuff?" is what that looks like from outside. 0.46 shows them
            through the flank while the panels still read as bodywork. */
-        layers = { shell: 0.46, pack: 1, drive: 1, wheels: 1, thermal: 1,
-                   aux: 1, underbody: 1, radar: 1, cabin: 1 },
+        /* The body is OFF by default and off means gone. It used to sit at
+           0.46 -- drawn, but under the 0.5 the button called "on" -- so the
+           Body button read as unselected while most of a truck was still in
+           the way of everything the model exists to show. A toggle that
+           leaves the thing it toggles half there is not a toggle. On is 1.
+           Every other layer is a group a viewer can take away one at a time,
+           which is why brakes, suspension and armour are no longer folded
+           into the wheels and a single "underbody". */
+        layers = { shell: 0, lights: 1, pack: 1, drive: 1, wheels: 1, brakes: 1,
+                   suspension: 1, armour: 1, thermal: 1, aux: 1, cabin: 1,
+                   radar: 1 },
+        /* What the Body button last asked for, kept apart from what is drawn
+           because the driver's seat overrides the drawn value. */
+        shellWanted = layers.shell,
         /* Every field the draw loop reads has to exist before the first
            snapshot arrives, or a frame renders NaN into the shader and the
            part disappears without an error anywhere. */
@@ -2406,13 +2472,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                   ? live.corners[corner] : live.speed;
         angle[corner] += (kph / 3.6) / VEH.wheelRadius * dt;
       });
-      /* The idle orbit is what made the cutaway look like it never happened.
-         The preset puts the eye on the section plane and zeroes the spin --
-         and this line then walked it round the truck at about 4.5 degrees a
-         second, so within a few seconds the view was a three-quarter angle
-         on the outside of the surviving half, which is the one thing a
-         section exists not to show. A section is a fixed drawing. */
-      if (!drag && cam.mode === "orbit" && state.view !== "cutaway") cam.spin += 0.0013;
+      if (!drag && cam.mode === "orbit") cam.spin += 0.0013;
       var eye, proj, view;
       if (cam.mode === "driver") {
         var cy = Math.cos(cam.dyaw), sy = Math.sin(cam.dyaw),
@@ -2612,62 +2672,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            the "eliminating some of the unnecessary stuff around" part of the
            ask. Faded rather than removed, so the windscreen aperture and the
            A-pillars still frame the view the way they do from a seat. */
-        var pt = p.t, ps = p.s, cutHere = false;
-        if (state.view === "cutaway") {
-          /* A LONGITUDINAL SECTION, which is what a cutaway drawing is and
-             what fading the body could never be. Fading leaves every panel in
-             front of every part, so the internals are always seen THROUGH
-             something -- and at any alpha low enough to see past, the truck
-             stops reading as a truck. Removing half of it instead leaves the
-             far side intact as a silhouette and takes the near side away
-             completely, which is how a cutaway works on paper.
-
-             Cut on the centreline, driver's half removed, because the driver's
-             side is the one an owner recognises and the one whose seat, cluster
-             and charge port sit on it.
-
-             Anything whose near face is on the removed side goes; a part that
-             merely straddles the plane stays, because a pack cut in half at
-             the centreline is still the pack and deleting it would leave the
-             floor empty. */
-          if (p.t[2] < -0.02) return;
-          /* AND CLIP WHAT STRADDLES THE PLANE. Culling by centre alone is not
-             a section: 154 of 379 parts -- the pack, the drive units, the
-             cabin, the roof, the bed, every crossmember -- sit ON the
-             centreline, so they survived the cull at full width and their
-             driver-side faces pointed straight at the eye. The result was a
-             side elevation of a whole truck with two wheels missing, which is
-             what the owner saw and rightly said was not cut in half.
-
-             A part that straddles z=0 is drawn from the plane outward: its
-             extent along world Z becomes [0, +half] and its centre moves to
-             the middle of that. For an unrotated box or a Z-axis cylinder
-             that is s[2]; a cylinder laid along X or Y was a Z-cylinder
-             turned by a quarter, so the local axis that now lies along world
-             Z is the one to shorten. The translate is applied before the
-             rotation, so t[2] is world Z in every case. */
-          var hzAxis = p.rot === "x" ? 0 : p.rot === "y" ? 1 : 2,
-              hz = p.s[hzAxis] / 2;
-          if (p.t[2] - hz < 0 && p.t[2] + hz > 0) {
-            var top = p.t[2] + hz;
-            ps = p.s.slice(); ps[hzAxis] = top;
-            pt = p.t.slice(); pt[2] = top / 2;
-            cutHere = true;
-          }
-          /* THE BODY BECOMES CONTEXT, THE PARTS BECOME THE SUBJECT.
-          
-             Drawing everything solid was the first attempt and it does not
-             read as a cutaway: the surviving body half is the largest object
-             in frame, so at full opacity it competes with the very parts the
-             section exists to expose, and the whole thing goes grey on grey.
-             A draughtsman ghosts the shell and inks the mechanism.
-          
-             The far half is behind everything now, so dimming it costs
-             nothing in depth terms -- there is no bodywork between the eye and
-             the parts any more, which is the difference between this and every
-             alpha compromise that came before it. */
-          alpha = (p.layer === "shell" || p.layer === "cabin") ? 0.22 : 1;
-        }
+        var pt = p.t, ps = p.s;
         if (cam.mode === "driver" && p.layer !== "cabin" && p.layer !== "radar") {
           /* Everything outside the cabin, not just the body. Fading only
              shell and wheels left the pack, the drive units, the thermal
@@ -2781,17 +2786,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           emissive = [0.06 + 0.20 * live.compressor, 0.24 * live.compressor + 0.08,
                       0.34 * live.compressor + 0.10];
         }
-        if (state.view === "cutaway" && p.layer !== "shell" && p.layer !== "cabin"
+        if (layers.shell <= 0 && p.layer !== "shell" && p.layer !== "cabin"
             && emissive[0] + emissive[1] + emissive[2] < 0.06) {
-          /* A floor under the internals so a part with nothing to report is
-             still legible against the ghosted body. Only where the part is not
-             already lit by a measurement -- a glowing motor or a warm pipe
-             keeps its own colour, because that is information and this is
-             only contrast. */
-          /* A part that was actually sectioned gets a brighter floor than one
-             merely exposed: a draughtsman inks the cut faces, and without it
-             the halved pack was the same grey as the intact wheel beside it. */
-          emissive = cutHere ? [0.17, 0.18, 0.20] : [0.10, 0.11, 0.12];
+          /* A floor under the internals once the body is gone, so a part
+             with nothing to report is still legible against the void. Only
+             where the part is not already lit by a measurement -- a glowing
+             motor or a warm pipe keeps its own colour, because that is
+             information and this is only contrast. */
+          emissive = [0.10, 0.11, 0.12];
         }
         if (p.hairpin) {
           /* Copper carrying current glows; copper sitting idle is just
@@ -2969,8 +2971,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     }
     requestAnimationFrame(draw);
     return {
-      setLayer: function (name, value) { layers[name] = value; },
+      setLayer: function (name, value) {
+        layers[name] = value;
+        if (name === "shell") {
+          shellWanted = value;
+          if (cam.mode === "driver") layers.shell = value > 0 ? 0.14 : 0;
+        }
+      },
       layers: layers,
+      shellWanted: function () { return shellWanted; },
       setView: function (key) {
         if (key === "driver") {
           /* Pitched up so the detector at the top of the windshield is in
@@ -2981,46 +2990,20 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
              detector between and above. Looking dead ahead put the centre
              screen past the edge. */
           cam.mode = "driver"; cam.dyaw = 0.02; cam.dpitch = -0.055;
-          /* Dimmed harder than the cutaway default: at 0.40 the windshield
-             and the door card sit between the eye and everything worth
-             looking at. */
-          layers.shell = 0.14;
+          /* From the seat the body is drawn faint whatever the button says:
+             at full opacity the windshield and the door card sit between the
+             eye and everything worth looking at, and at zero there is no
+             windscreen aperture to frame the view. What the button asked for
+             is remembered and comes back with the exterior view. */
+          layers.shell = shellWanted > 0 ? 0.14 : 0;
           return "driver";
         }
         cam.mode = "orbit";
-        layers.shell = 0.40;
-        if (key === "underside") {
-          /* A preset for a place the camera can already reach by dragging,
-             which is exactly why it deserves a button: nobody discovers it
-             by accident. */
-          cam.pitch = -0.95; cam.yaw = -0.55; cam.dist = 7.4; cam.spin = 0;
-        } else if (key === "cutaway") {
-          /* THREE-QUARTER FROM THE CUT SIDE, NOT PERPENDICULAR TO IT.
-
-             The first preset put the eye dead side-on to the section plane,
-             on the argument that any other angle shows the outside of the
-             surviving half. That argument is wrong in the way that matters: a
-             longitudinal section viewed exactly perpendicular to its plane
-             is a SILHOUETTE. Every cut face -- pack, cab, bed, frame -- is a
-             flat rectangle at z=0 facing the eye, and flat rectangles stacked
-             along a truck's length look precisely like the side of a truck.
-             Depth is the one thing a perpendicular view cannot show, and depth
-             is what a section is for. Measured, not argued: the clipped model
-             from -pi/2 was indistinguishable from an intact one; rotated
-             0.55 rad toward the nose, the drive unit, the open arch and the
-             pack's cut face all read at once.
-
-             So the eye stays on the cut side (-Z, sin(yaw) < 0) and swings
-             about thirty degrees toward the front, slightly above the
-             centreline so the pack floor is visible -- which is how every
-             engineering cutaway has been drawn since there were engineering
-             cutaways. The idle orbit is held off in this view, because a
-             section is a fixed drawing and the orbit walks the eye round to
-             the outside of the surviving half within seconds. */
-          cam.pitch = 0.26; cam.yaw = -Math.PI / 2 + 0.55; cam.dist = 7.6; cam.spin = 0;
-        } else {
-          cam.pitch = 0.34; cam.yaw = -0.72; cam.dist = 8.2; cam.spin = 0;
-        }
+        /* Leaving the seat restores whatever the Body button says, rather
+           than a dim compromise of its own. The button is the one place the
+           body's opacity is decided. */
+        layers.shell = shellWanted;
+        cam.pitch = 0.34; cam.yaw = -0.72; cam.dist = 8.2; cam.spin = 0;
         return cam.mode;
       },
       camera: function () { return cam.mode; },
@@ -3198,9 +3181,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   var viewer = null;
 
   var LAYER_LABELS = [
-    ["shell", "Body"], ["pack", "Battery"], ["drive", "Drive units"],
-    ["wheels", "Wheels & brakes"], ["thermal", "Thermal"], ["aux", "12 V & charge"],
-    ["underbody", "Underbody"], ["radar", "Radar"], ["cabin", "Cabin"],
+    ["shell", "Body"], ["lights", "Lighting"], ["pack", "Battery"],
+    ["drive", "Drive units"], ["wheels", "Wheels"], ["brakes", "Brakes"],
+    ["suspension", "Suspension & steering"], ["armour", "Frame & armour"],
+    ["thermal", "Thermal"], ["aux", "12 V & charging"], ["cabin", "Cabin"],
+    ["radar", "Radar"]
     ];
   /* Where the camera stands. Separate from the layer buttons because it is a
      different question: layers are what is drawn, views are where you are
@@ -3209,22 +3194,19 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
      control means. */
   var VIEWS = [
     { key: "exterior", label: "Exterior",
-      sub: "Drag to orbit, scroll to zoom." },
+      sub: "Drag to orbit, scroll to zoom. With Body off you are looking at "
+         + "the hardware with nothing in front of it." },
     { key: "driver", label: "Driver's seat",
       sub: "Framed on the instruments: the 12.3-inch cluster, the 13.4-inch "
          + "centre screen and the detector on the glass. Drag to look around "
          + "if you want to. The eye point is placed from the model's cabin, "
          + "not from a published H-point \u2014 GM does not publish one for "
-         + "this truck." },
-    { key: "underside", label: "Underside",
-      sub: "Looking up from below. There is no ground plane, so the pack, the "
-         + "skid plates and the coolant runs are all visible." },
-    { key: "cutaway", label: "Cutaway",
-      sub: "The truck sectioned down its centreline, driver's half removed. "
-         + "Everything inboard is drawn solid at full opacity — no glass, "
-         + "no fade, nothing between you and the part. The bodywork that "
-         + "survives is the far half, so the section reads as a section "
-         + "rather than as a truck with a hole in it." }
+         + "this truck." }
+    /* There were two more -- Underside and Cutaway. Both went at the owner's
+       request. The underside is one drag away in the exterior view, which is
+       why it never needed a button; and the cutaway was a section drawing of
+       a body that the layer toggle now removes outright, which does the same
+       job with nothing left in the way. */
   ];
 
   /* Which half of the page is showing. The live view is the default because
@@ -3285,16 +3267,17 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   function buildLayerControls() {
     clear(el.layers);
     LAYER_LABELS.forEach(function (pair) {
-      var name = pair[0], on = viewer ? viewer.layers[name] > 0.5 : true,
+      var name = pair[0],
+          on = viewer ? (name === "shell" ? viewer.shellWanted() : viewer.layers[name]) > 0.5 : true,
           b = h("button", null, pair[1]);
       b.setAttribute("aria-pressed", String(on));
       b.addEventListener("click", function () {
         if (!viewer) return;
-        /* The body is dimmed rather than removed: at 0.16 it still reads as
-           a vehicle around the hardware, which is the whole reason to draw
-           a shell over a cutaway at all. */
-        var current = viewer.layers[name],
-            next = current > 0.5 ? (name === "shell" ? 0.40 : 0) : 1;
+        /* Off is zero for every layer, the body included. Dimming it
+           instead left "a ton of body" over the hardware with the button
+           saying it was off. */
+        var current = name === "shell" ? viewer.shellWanted() : viewer.layers[name],
+            next = current > 0.5 ? 0 : 1;
         viewer.setLayer(name, next);
         b.setAttribute("aria-pressed", String(next > 0.5));
       });

@@ -570,36 +570,66 @@ moves is the view. The jolt there is the *rate of change* of those readings,
 because a steady 0.3 g through a long bend is a lean and the same 0.3 g in one
 sample is a pothole.
 
-**Cutaway is a section, not a fade.** The truck is cut on its centreline with
-the driver's half removed, and everything inboard is drawn solid at full
-opacity. A translucent body cannot achieve this: it leaves every panel in front
-of every part, so the internals are always seen *through* something, and at any
-opacity low enough to see past, the truck stops reading as a truck. A section
-has no such trade — the far half stays intact as a silhouette and the near half
-is simply gone. The camera stands on the side that was removed; put it on the
-surviving side and the view shows the outside of an ordinary truck.
+**Body off means gone.** The Body button used to leave the shell drawn at
+46 % opacity — below the 0.5 the button called "on", so it read as unselected
+while most of a truck was still drawn over the hardware. The owner's words:
+"with it unselected there is a ton of body left." Off is now zero and on is
+solid; the body is off by default, so the page opens on the pack, the drive
+units, the wheels, the brakes and the plumbing with nothing in front of them.
+From the driver's seat the body is drawn faint whatever the button says, since
+at full opacity the windshield sits between the eye and the instruments and at
+zero there is no aperture to frame the view; what the button asked for is
+remembered and comes back with the exterior view.
 
-It became one on 2026-09-11. The first version culled parts whose *centre* lay on the
-driver's side and kept everything else whole — and 154 of 379 parts sit on the
-centreline: the pack, the drive units, the cabin, the roof, the bed, every
-crossmember. Those survived at full width with their driver-side faces toward
-the eye, so the view was a side elevation of an entire truck with two wheels
-missing, which the owner correctly said was not cut in half. Anything that
-straddles the plane is now clipped at it and drawn from the plane outward; a
-cylinder laid along X or Y has the local axis that maps to Z shortened, since
-the translate is applied before the rotation. `CutawayIsASection` in
-`tests/test_scene_geometry.py` mirrors the rule over `buildScene()`'s own output
-and asserts no drawn geometry crosses the plane.
+The Underside and Cutaway views went the same day (2026-09-11), at the owner's
+request. The underside is one drag away in the exterior view, which is why it
+never needed a button. The cutaway was a centreline section — built, fixed
+twice, and correct — but a section exists to get the body out of the way, and
+a Body button that removes the body outright does that with no half-truck
+left in the frame. `LayerControlTests` pins the default, the zero, and the
+two remaining views.
 
-The clip alone was not enough to see. The first preset put the eye dead
-perpendicular to the plane, and a section viewed square-on is a silhouette:
-every cut face is a flat rectangle facing the eye, and stacked along the truck
-they look exactly like the side of a truck. The working clip was invisible. The
-eye now sits on the cut side and thirty degrees toward the nose, slightly
-above the centreline — the angle every engineering cutaway uses — and the idle
-orbit is held off in this view, since it walked the camera round to the outside
-of the surviving half within seconds. `CutawayCameraIsThreeQuarterFromTheCutSide`
-pins both properties.
+**The layers are the groups a viewer would name.** Body, Lighting, Battery,
+Drive units, Wheels, Brakes, Suspension & steering, Frame & armour, Thermal,
+12 V & charging, Cabin, Radar. Brakes were folded into the wheels and the air
+springs, tie rods, skid plates, rock rails and bumper beam into one
+"Underbody"; they are separate now because they are separate things. Lighting
+is its own layer so the light bar that spells the name and reports the charge
+is there with the body off — it is a display, not a panel. The eTrunk moved
+the other way, into Body, because it is a cavity in the bodywork and a tub
+floating in space says nothing.
+
+**The side glass is two panes a side, and the front one is longer.** It was
+one sheet the length of the cab with the B-pillar drawn across it beside the
+front seat *cushion*, so the pane behind the pillar was 1.62 m and the pane
+ahead of it 0.78 m — "rear side windows are twice the length of front side
+windows", which they were. Door lengths are not published for this truck. The
+cab is: A-pillar at the cowl, C-pillar at the bed bulkhead, 2.50 m apart, and
+across every side elevation of the Pickup the front door glass runs about 1.3
+times the rear's with the B-pillar just behind the front seatback. So the
+glass is split 1.36 to 1.04 m and the pillar stands 0.42 m aft of the driver's
+eye point. That ratio is measured off photographs against the published
+wheelbase and carries perhaps 10 %; `GreenhouseTests` pins the ordering, the
+band, and that the pillar is behind the seat. The door handles moved to the
+trailing edge of the doors they open — the rear one had been sitting on the
+B-pillar.
+
+**The rear motors share one casing.** GM's description of the Edition 1
+driveline is that the two rear motors "are housed within the same casing",
+each driving its own wheel with the locking effect done in software. Two
+separate cans side by side was two drive units, which this truck does not
+have. The casing's dimensions are not published; it spans the two stators it
+holds and no more.
+
+**What research did not find, on 2026-09-11.** Drive-unit envelope and mass,
+pack outer dimensions, module case dimensions, brake rotor diameter and
+caliper type, door and glass lengths, windshield rake, air-spring positions
+and the rear-steer actuator's station are published nowhere that could be
+located. What is published about the module is its cells — 24 large-format
+pouch cells of about 580 × 115 mm — and twenty-four in eight series groups of
+three is exactly the eight-in-series this project measured per module, so the
+published cell count and the measured series count agree. Everything else in
+those categories is drawn as the plain shape it is and says so in the source.
 
 **The parts are sourced, and the gaps are named.** The drive units open up to
 copper hairpin stator windings, because GM describes this motor family as
@@ -662,10 +692,11 @@ inferring it from speed would be inventing the one number on that screen a
 driver would most reasonably trust.
 
 **Views and layers are separate controls.** Views are where the camera
-stands — Exterior, Driver's seat, Underside, Cutaway — and sit above the render because
-choosing one changes what every layer button means: from outside they strip a
-cutaway, from the seat they are the difference between seeing the dashboard
-and seeing through it. Layers stay below, as the parts you can take away.
+stands — Exterior or Driver's seat — and sit above the render because choosing
+one changes what every layer button means: from outside they strip the truck
+to its hardware, from the seat they are the difference between seeing the
+dashboard and seeing through it. Layers stay below, as the parts you can take
+away.
 
 **The coolant flows.** The pipes carried a pulse before, which says "thermal
 system" rather than "flow". They now carry slugs running their length, the two
