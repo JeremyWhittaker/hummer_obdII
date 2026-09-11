@@ -126,6 +126,37 @@ class CutawayIsASection(unittest.TestCase):
                             f"no {concept} part survives the cutaway")
 
 
+@unittest.skipIf(NODE is None, "node is not installed on this machine")
+class CutawayCameraIsThreeQuarterFromTheCutSide(unittest.TestCase):
+    """The eye must sit on the removed side and must NOT be perpendicular.
+
+    A section viewed exactly perpendicular to its plane is a silhouette --
+    every cut face is a flat rectangle facing the eye, and stacked along the
+    truck they look like the side of a truck. The first preset did exactly
+    that, and the (working) clip was invisible. This pins the two properties
+    that make the view legible: sin(yaw) < 0 so the eye is on -Z, the cut
+    side; and |yaw + pi/2| well above zero so it is a three-quarter view.
+    """
+
+    def _cutaway_yaw(self):
+        m = re.search(r'key === "cutaway"[\s\S]*?cam\.yaw = ([^;]+);', _script())
+        self.assertIsNotNone(m, "cutaway preset not found")
+        expr = m.group(1).replace("Math.PI", "3.141592653589793")
+        return eval(expr)  # a numeric literal built from Math.PI only
+
+    def test_the_eye_is_on_the_cut_side(self):
+        import math
+        self.assertLess(math.sin(self._cutaway_yaw()), 0.0,
+                        "cutaway eye is on the surviving side; it would see the outside")
+
+    def test_the_view_is_not_perpendicular_to_the_section(self):
+        import math
+        off = abs(self._cutaway_yaw() + math.pi / 2)
+        self.assertGreater(off, 0.35,
+                           f"cutaway eye is {off:.2f} rad from perpendicular; a section "
+                           f"viewed square-on collapses to a silhouette")
+
+
 def build_parts_with_rot() -> list[dict]:
     """build_parts(), plus the rotation the clip rule depends on."""
     source = _script()

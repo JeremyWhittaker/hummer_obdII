@@ -591,6 +591,16 @@ the translate is applied before the rotation. `CutawayIsASection` in
 `tests/test_scene_geometry.py` mirrors the rule over `buildScene()`'s own output
 and asserts no drawn geometry crosses the plane.
 
+The clip alone was not enough to see. The first preset put the eye dead
+perpendicular to the plane, and a section viewed square-on is a silhouette:
+every cut face is a flat rectangle facing the eye, and stacked along the truck
+they look exactly like the side of a truck. The working clip was invisible. The
+eye now sits on the cut side and thirty degrees toward the nose, slightly
+above the centreline — the angle every engineering cutaway uses — and the idle
+orbit is held off in this view, since it walked the camera round to the outside
+of the surviving half within seconds. `CutawayCameraIsThreeQuarterFromTheCutSide`
+pins both properties.
+
 **The parts are sourced, and the gaps are named.** The drive units open up to
 copper hairpin stator windings, because GM describes this motor family as
 hairpin-wound and oil-cooled "with what's essentially transmission fluid"; the

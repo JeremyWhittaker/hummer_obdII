@@ -2406,7 +2406,13 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                   ? live.corners[corner] : live.speed;
         angle[corner] += (kph / 3.6) / VEH.wheelRadius * dt;
       });
-      if (!drag && cam.mode === "orbit") cam.spin += 0.0013;   /* slow idle orbit */
+      /* The idle orbit is what made the cutaway look like it never happened.
+         The preset puts the eye on the section plane and zeroes the spin --
+         and this line then walked it round the truck at about 4.5 degrees a
+         second, so within a few seconds the view was a three-quarter angle
+         on the outside of the surviving half, which is the one thing a
+         section exists not to show. A section is a fixed drawing. */
+      if (!drag && cam.mode === "orbit" && state.view !== "cutaway") cam.spin += 0.0013;
       var eye, proj, view;
       if (cam.mode === "driver") {
         var cy = Math.cos(cam.dyaw), sy = Math.sin(cam.dyaw),
@@ -2606,7 +2612,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            the "eliminating some of the unnecessary stuff around" part of the
            ask. Faded rather than removed, so the windscreen aperture and the
            A-pillars still frame the view the way they do from a seat. */
-        var pt = p.t, ps = p.s;
+        var pt = p.t, ps = p.s, cutHere = false;
         if (state.view === "cutaway") {
           /* A LONGITUDINAL SECTION, which is what a cutaway drawing is and
              what fading the body could never be. Fading leaves every panel in
@@ -2646,6 +2652,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
             var top = p.t[2] + hz;
             ps = p.s.slice(); ps[hzAxis] = top;
             pt = p.t.slice(); pt[2] = top / 2;
+            cutHere = true;
           }
           /* THE BODY BECOMES CONTEXT, THE PARTS BECOME THE SUBJECT.
           
@@ -2781,7 +2788,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
              already lit by a measurement -- a glowing motor or a warm pipe
              keeps its own colour, because that is information and this is
              only contrast. */
-          emissive = [0.10, 0.11, 0.12];
+          /* A part that was actually sectioned gets a brighter floor than one
+             merely exposed: a draughtsman inks the cut faces, and without it
+             the halved pack was the same grey as the intact wheel beside it. */
+          emissive = cutHere ? [0.17, 0.18, 0.20] : [0.10, 0.11, 0.12];
         }
         if (p.hairpin) {
           /* Copper carrying current glows; copper sitting idle is just
@@ -2985,18 +2995,29 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
              by accident. */
           cam.pitch = -0.95; cam.yaw = -0.55; cam.dist = 7.4; cam.spin = 0;
         } else if (key === "cutaway") {
-          /* Square onto the cut face, from the surviving side. Looking at a
-             section from any other angle shows you the outside of the half
-             that is left, which is the one thing the view exists not to show.
-             Slightly above the centreline because the pack floor and the
-             drive units are the subject and they sit low. */
-          /* The eye must stand on the side that was REMOVED, or the section
-             shows you the outside of the half that is left -- which is the one
-             thing this view exists not to show. Driver's half is cut, so the
-             camera goes to -Z and looks across the empty space at the cut
-             face. Getting this backwards renders a perfectly ordinary truck
-             and looks like the cut never happened. */
-          cam.pitch = 0.16; cam.yaw = -Math.PI / 2; cam.dist = 7.6; cam.spin = 0;
+          /* THREE-QUARTER FROM THE CUT SIDE, NOT PERPENDICULAR TO IT.
+
+             The first preset put the eye dead side-on to the section plane,
+             on the argument that any other angle shows the outside of the
+             surviving half. That argument is wrong in the way that matters: a
+             longitudinal section viewed exactly perpendicular to its plane
+             is a SILHOUETTE. Every cut face -- pack, cab, bed, frame -- is a
+             flat rectangle at z=0 facing the eye, and flat rectangles stacked
+             along a truck's length look precisely like the side of a truck.
+             Depth is the one thing a perpendicular view cannot show, and depth
+             is what a section is for. Measured, not argued: the clipped model
+             from -pi/2 was indistinguishable from an intact one; rotated
+             0.55 rad toward the nose, the drive unit, the open arch and the
+             pack's cut face all read at once.
+
+             So the eye stays on the cut side (-Z, sin(yaw) < 0) and swings
+             about thirty degrees toward the front, slightly above the
+             centreline so the pack floor is visible -- which is how every
+             engineering cutaway has been drawn since there were engineering
+             cutaways. The idle orbit is held off in this view, because a
+             section is a fixed drawing and the orbit walks the eye round to
+             the outside of the surviving half within seconds. */
+          cam.pitch = 0.26; cam.yaw = -Math.PI / 2 + 0.55; cam.dist = 7.6; cam.spin = 0;
         } else {
           cam.pitch = 0.34; cam.yaw = -0.72; cam.dist = 8.2; cam.spin = 0;
         }
