@@ -43,6 +43,7 @@ MUST_GUARD = {
 #: would refuse the only correct way to use them.
 SSH_TARGETED = {
     "allow-places-write.sh",
+    "catch-up-the-node.sh",
     "deploy.sh",
     "deploy-panel.sh",
     "enable-remote-dashboard.sh",
