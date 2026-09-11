@@ -166,12 +166,46 @@ high-rate state. Same confound, same result: the charger ramps throughout, and
 −21.55…−20.05 A (mean −20.43) and `0x95` spans −22.15…−20.05 A (mean −20.93) —
 overlapping ranges and a difference of half an amp on four samples.
 
-So the low nibble of `0x5401` has **no correlate in any column this project
-records**. Whatever it distinguishes — a contactor phase, a handshake bit, a
-converter state — is not visible from the outside at this sampling rate. That
-is a negative result, not a null one: it says stop looking for the answer in
-the recorded columns, and that a correlation found by grouping over a whole
-session must be re-checked against time before it is believed.
+Both refutations were then published as "the low nibble has no correlate in any
+column this project records". **That conclusion was wrong, and the test behind
+it could not have found the answer.**
+
+Comparing the states only where they coexist means comparing them at a phase
+*boundary* — and at a boundary the physical conditions are identical by
+construction, because the boundary is the moment the state is oscillating
+between two values under conditions that have barely changed. Finding no
+difference there is guaranteed, whatever the states mean.
+
+Ordered by time rather than grouped, the low nibble is plainly structured. The
+dominant transition is "unchanged" (79 of 118), and the sequence walks
+`4 → 1 → 5 → 2` with oscillation only at the joins:
+
+    4444444444444444444444444444444444444444444444
+    11414411141411111144111414141414144441445155
+    51151555555555552252222525255
+
+Taken as phases rather than as a pool, the mean charge current rises
+monotonically through that walk:
+
+| state | row range | SoC | mean pack current | coolant_1 |
+|---|---|---|---|---|
+| `0x94` | 0–85 | 74.540–74.940 | **−9.7 A** | 980–1120 |
+| `0x91` | 46–94 | 74.540–75.340 | **−14.2 A** | 995–1120 |
+| `0x95` | 86–121 | 74.940–76.539 | **−21.0 A** | 960–1035 |
+| `0x92` | 106–120 | 76.139–76.539 | **−21.0 A** | 960–965 |
+
+So the low nibble tracks the charger's ramp stage. This is not yet a decode —
+current and elapsed time are still confounded, since the charge ramps
+throughout, and one AC session at one power level cannot separate them. What it
+does establish is the shape: sequential phases, not a counter, not noise, and
+not independent of charge rate.
+
+The mistake worth keeping is the methodological one. Controlling for a
+confound by narrowing the window is right when the effect is instantaneous and
+wrong when the effect *is* the passage of time — there, narrowing the window
+removes the signal along with the confound. The first version of this section
+tested for an effect at precisely the place the effect could not appear, found
+nothing, and wrote it down as a property of the vehicle.
 
 ### What a charge does to state of charge, range and energy
 
