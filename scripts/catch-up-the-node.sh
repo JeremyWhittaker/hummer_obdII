@@ -42,10 +42,17 @@ DROPIN=/etc/systemd/system/hummer-dashboard.service.d
 say() { printf '\n== %s\n' "$*"; }
 
 say "0/5  checking the node is reachable and is the node"
-ssh -o BatchMode=yes -o ConnectTimeout=8 "$NODE" \
-    'systemctl cat hummer-drive >/dev/null 2>&1' \
-  || { echo "error: $NODE has no hummer-drive service. Wrong host?" >&2; exit 1; }
-echo "   ok"
+# Two separate questions, because the first version asked them as one and
+# blamed the host for its own mistake: it used `systemctl cat`, which needs
+# read permission on the unit FILE and is refused for a non-root user, then
+# reported "has no hummer-drive service" -- on a node where the service was
+# running. `systemctl show -p LoadState` asks the manager, not the file.
+ssh -o BatchMode=yes -o ConnectTimeout=8 "$NODE" true 2>/dev/null \
+  || { echo "error: cannot ssh to $NODE (unreachable, or no key for it)." >&2; exit 1; }
+state=$(ssh -o BatchMode=yes "$NODE" 'systemctl show hummer-drive -p LoadState --value' 2>/dev/null)
+[ "$state" = "loaded" ] \
+  || { echo "error: $NODE reports hummer-drive LoadState='$state', not 'loaded'. Wrong host?" >&2; exit 1; }
+echo "   ok -- reachable, hummer-drive is loaded"
 
 say "1/5  what is about to change on the node"
 rsync -a --dry-run --itemize-changes --delete \

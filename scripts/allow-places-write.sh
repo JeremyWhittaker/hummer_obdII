@@ -28,9 +28,14 @@ echo "# target: $NODE  (override with NODE=user@host)"
 
 # Refuse before writing rather than after. The failure this replaces left a
 # file behind on the wrong machine and fixed nothing on the right one.
-if ! ssh -o BatchMode=yes -o ConnectTimeout=8 "$NODE" \
-        'systemctl cat hummer-dashboard >/dev/null 2>&1'; then
-    echo "error: $NODE has no hummer-dashboard.service." >&2
+# `show -p LoadState`, not `cat`: cat needs read permission on the unit file
+# and is refused for a non-root user, which made this check fail on a node
+# where the service was running.
+ssh -o BatchMode=yes -o ConnectTimeout=8 "$NODE" true 2>/dev/null \
+  || { echo "error: cannot ssh to $NODE (unreachable, or no key for it)." >&2; exit 1; }
+state=$(ssh -o BatchMode=yes "$NODE" 'systemctl show hummer-dashboard -p LoadState --value' 2>/dev/null)
+if [ "$state" != "loaded" ]; then
+    echo "error: $NODE reports hummer-dashboard LoadState='$state', not 'loaded'." >&2
     echo "Nothing has been written. Check NODE, or deploy the unit first." >&2
     exit 1
 fi
