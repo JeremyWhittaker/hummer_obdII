@@ -274,12 +274,19 @@ class HonestyTests(unittest.TestCase):
 
 @unittest.skipIf(NODE is None, "node is not installed on this machine")
 class GreenhouseTests(unittest.TestCase):
-    """The side glass, asserted as the proportions of a crew cab.
+    """The side glass, asserted as GM's own rescue sheet draws it.
 
     The side glass was one pane the length of the cab with the B-pillar drawn
     across it beside the front seat cushion, so the pane behind the pillar
     was 1.62 m and the pane ahead of it 0.78 m. The owner said the rear
     windows were twice the length of the front. They were.
+
+    The second attempt guessed 1.3:1 from photographs. The rescue sheet
+    (1GT-21101), scaled on the wheelbase, has the pillar 0.13 m behind the
+    wheelbase midpoint and the two panes within about 20 % of each other at
+    the beltline -- the front reads longer mostly because its top corner is
+    cut by the raked A-pillar. So the band here is tight around equal, with
+    the front never the shorter.
     """
 
     @classmethod
@@ -289,23 +296,24 @@ class GreenhouseTests(unittest.TestCase):
     def _length(self, pid):
         return self.parts[pid]["s"][0]
 
-    def test_the_front_door_glass_is_longer_than_the_rear(self):
+    def test_the_front_door_glass_is_not_shorter_than_the_rear(self):
         for side in "lr":
             with self.subTest(side=side):
                 front = self._length(f"glass-door-f-{side}")
                 rear = self._length(f"glass-door-r-{side}")
-                self.assertGreater(front, rear,
-                                   f"front {front:.2f} m, rear {rear:.2f} m")
-                # Photographs put it near 1.3:1; well inside the band either way.
-                self.assertLess(front / rear, 1.6)
-                self.assertGreater(front / rear, 1.15)
+                self.assertGreaterEqual(front, rear,
+                                        f"front {front:.2f} m, rear {rear:.2f} m")
+                self.assertLess(front / rear, 1.3)
 
-    def test_the_b_pillar_stands_behind_the_front_seatback(self):
+    def test_the_b_pillar_is_at_the_front_seatback_not_the_cushion(self):
         pillar = self.parts["pillar-b-l"]
-        seatback = self.parts["seat-back-driver"]
-        self.assertLess(pillar["t"][0] + pillar["s"][0] / 2,
-                        seatback["t"][0] - seatback["s"][0] / 2,
-                        "the B-pillar is beside or ahead of the front seat")
+        back = self.parts["seat-back-driver"]
+        cushion = self.parts["seat-base-driver"]
+        # Behind the cushion's centre, and no further aft than the seatback's
+        # rear face plus a hand's width: the sheet draws them side by side.
+        self.assertLess(pillar["t"][0], cushion["t"][0])
+        self.assertGreater(pillar["t"][0] + pillar["s"][0] / 2,
+                           back["t"][0] - back["s"][0] / 2 - 0.15)
 
     def test_the_glass_panes_do_not_overlap_the_pillar_between_them(self):
         front = self.parts["glass-door-f-l"]
@@ -323,8 +331,28 @@ class GreenhouseTests(unittest.TestCase):
         self.assertTrue(front["t"][0] - front["s"][0] / 2 < h0["t"][0] < front["t"][0] + front["s"][0] / 2)
         self.assertTrue(rear["t"][0] - rear["s"][0] / 2 < h1["t"][0] < rear["t"][0] + rear["s"][0] / 2)
 
+    def test_the_windshield_is_raked_not_vertical(self):
+        panes = sorted((p for i, p in self.parts.items() if i.startswith("glass-wind-")),
+                       key=lambda p: p["t"][1])
+        self.assertGreaterEqual(len(panes), 2)
+        self.assertLess(panes[-1]["t"][0], panes[0]["t"][0] - 0.10,
+                        "the top of the windshield is not behind its base")
 
-@unittest.skipIf(NODE is None, "node is not installed on this machine")
+    def test_the_pack_is_where_the_rescue_sheet_draws_it(self):
+        case = self.parts["pack-case"]
+        # 2.09 m long centred 0.13 m ahead of the wheelbase midpoint, bottom at
+        # 0.43 m; the case carries a small margin around the modules.
+        self.assertAlmostEqual(case["t"][0], 0.13, places=2)
+        self.assertLess(case["s"][0], 2.30)
+        self.assertGreater(case["t"][1] - case["s"][1] / 2, 0.38)
+
+    def test_every_corner_has_a_spring_and_a_damper(self):
+        for corner in ("fl", "fr", "rl", "rr"):
+            with self.subTest(corner=corner):
+                self.assertIn(f"airspring-{corner}", self.parts)
+                self.assertIn(f"damper-{corner}", self.parts)
+
+
 class DrivelineTests(unittest.TestCase):
     def test_the_rear_motors_share_one_casing(self):
         # GM: the two rear motors "are housed within the same casing".

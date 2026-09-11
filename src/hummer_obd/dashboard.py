@@ -202,7 +202,28 @@ def _history(rows: list[dict], *, location: bool = False) -> list[dict]:
             "coolant_1_raw": raw("coolant_1_raw"),
             "coolant_2_raw": raw("coolant_2_raw"),
             "compressor_temp_raw": raw("compressor_temp_raw"),
+            # What a replay needs to tell a drive from a charge AT THAT
+            # MOMENT. Without these the page took charging, plugged and
+            # coolant flow from the session's final state, so a trip that
+            # ended on the charger replayed with the cord animating at
+            # 90 km/h -- which is what the owner saw. The state byte says
+            # whether the port is connected; pack current with it says
+            # whether energy is going in; the thermal accumulator's advance
+            # between frames is what the coolant animation follows.
+            "charger_5401_raw": raw("charger_5401_raw"),
+            "thermal_energy_raw": raw("thermal_energy_raw"),
+            "group_v1_raw": raw("group_v1_raw"),
+            "pack_a": a,
         }
+        # The vehicle's own witness, and the wheels the 3D view spins. They
+        # used to travel only with the location fields, so a node not exposing
+        # its position replayed with the wheels frozen at the session's last
+        # sample. speed_kph goes quiet long before the wheel sensors do -- it
+        # answered in none of 261 rows on a parked session where all four
+        # wheels answered -- so all four always travel.
+        for wheel in ("wheel_fl_kph", "wheel_fr_kph",
+                      "wheel_rl_kph", "wheel_rr_kph"):
+            point[wheel] = reading(wheel)
         if location:
             # Only when the operator asked for it. The trail is what a map is
             # drawn from, so it carries the same decision as the coordinates.
@@ -214,12 +235,6 @@ def _history(rows: list[dict], *, location: bool = False) -> list[dict]:
             # from raw fixes and a stationary vehicle wanders a house-sized box.
             point["gps_speed_mps"] = reading("gps_speed_mps")
             point["gps_epx_m"] = reading("gps_epx_m")
-            # The vehicle's own witness. speed_kph goes quiet long before the
-            # wheel sensors do -- it answered in none of 261 rows on a parked
-            # session where all four wheels answered -- so all five travel.
-            for wheel in ("wheel_fl_kph", "wheel_fr_kph",
-                          "wheel_rl_kph", "wheel_rr_kph"):
-                point[wheel] = reading(wheel)
             # The odometer outranks all of them: cumulative, monotonic and
             # noiseless, where speed is an instantaneous reading with error
             # bars. Without it here the anchoring falls back to the noisy

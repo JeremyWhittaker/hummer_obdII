@@ -599,37 +599,110 @@ is there with the body off — it is a display, not a panel. The eTrunk moved
 the other way, into Body, because it is a cavity in the bodywork and a tub
 floating in space says nothing.
 
-**The side glass is two panes a side, and the front one is longer.** It was
-one sheet the length of the cab with the B-pillar drawn across it beside the
-front seat *cushion*, so the pane behind the pillar was 1.62 m and the pane
-ahead of it 0.78 m — "rear side windows are twice the length of front side
-windows", which they were. Door lengths are not published for this truck. The
-cab is: A-pillar at the cowl, C-pillar at the bed bulkhead, 2.50 m apart, and
-across every side elevation of the Pickup the front door glass runs about 1.3
-times the rear's with the B-pillar just behind the front seatback. So the
-glass is split 1.36 to 1.04 m and the pillar stands 0.42 m aft of the driver's
-eye point. That ratio is measured off photographs against the published
-wheelbase and carries perhaps 10 %; `GreenhouseTests` pins the ordering, the
-band, and that the pillar is behind the seat. The door handles moved to the
-trailing edge of the doors they open — the rear one had been sitting on the
-B-pillar.
+**The cab is laid out from GM's rescue sheet.** The first-responder drawing
+for this truck (GM document 1GT-21101) carries a scaled side elevation and
+plan with the HV pack in orange. Scaled on the wheelbase it gives 3.145 mm per
+pixel, and at that scale the drawn tyre measures 0.896 m against the 0.894 m
+the LT305/55R22 actually is, so the scale is good to about 1 % with overall
+length coming out 3 % short — which is the error bar on everything taken
+from it. What it fixed, on 2026-09-11:
 
-**The rear motors share one casing.** GM's description of the Edition 1
-driveline is that the two rear motors "are housed within the same casing",
-each driving its own wheel with the locking effect done in software. Two
-separate cans side by side was two drive units, which this truck does not
-have. The casing's dimensions are not published; it spans the two stators it
-holds and no more.
+- **The cowl is at +0.95 m, not +1.22.** The cab started 0.27 m too far
+  forward, the hood was 1.3 m instead of 1.6, and both door windows were long.
+  The instrument panel, wheel and paddle came back with it; the seats and the
+  eye point came back 0.10 m.
+- **The windshield is raked.** Its base is at the cowl and its top 0.22 m
+  behind it, drawn in three steps with the A-pillars stepped the same way. The
+  roof, rails, sky panels, front markers and the radar detector all start
+  where the glass ends.
+- **The B-pillar is at −0.13 m and the C-pillar is 0.32 m thick.** The side
+  glass had been one pane with the B-pillar drawn across it beside the front
+  seat cushion, so the rear pane was 1.62 m and the front 0.78 m — "rear side
+  windows are twice the length of front side windows", which they were. A
+  second attempt guessed 1.3:1 from photographs. The sheet has the pillar
+  0.20 m wide at −0.13 and the two panes within about 20 % of each other at
+  the beltline, the front reading longer mostly because its top corner is cut
+  by the raked A-pillar. The rear door glass ends at the C-pillar's front edge
+  at −1.06; the published bed length puts the bulkhead at −1.377; the sail
+  between them is the buttress every side view of this truck shows.
+  `GreenhouseTests` pins the ordering, the band, the pillar position and the
+  rake. The door handles are at 790 and 1085 px on the sheet, which is the
+  trailing edge of each door.
+- **The pack is 2.09 × 1.42 m, centred 0.13 m ahead of the wheelbase
+  midpoint, bottom at 0.43 m.** That is what this file's original 2.135 m was
+  measured from; the 2.780 m that replaced it, on the argument that the
+  battery "fills the floor", was wrong — the sheet shows 0.8 m of nothing
+  between the pack's rear wall and the rear drive unit. The two pack skid
+  plates hang on the pack; the front and rear underbody plates sit at the
+  published ground clearance ahead of and behind the drive units rather than
+  through them, and the drive-unit housings' undersides at 0.257 m are now
+  what the 10.1 in of ground clearance refers to.
+- **The charge port is 1.18 m up**, where the sheet's cable reaches the
+  bodyside, and the 12 V battery is 0.12 m ahead of the front axle and 0.80 m
+  off centre on the passenger side, which agrees with the manual.
+- **An HV component the sheet draws and does not name** sits behind the rear
+  axle on the centreline, about 0.5 m across, in both views; the port's cable
+  runs to it before running forward to the pack. It is drawn because the
+  sheet draws it, and it is not called an on-board charger because the sheet
+  does not.
 
-**What research did not find, on 2026-09-11.** Drive-unit envelope and mass,
-pack outer dimensions, module case dimensions, brake rotor diameter and
-caliper type, door and glass lengths, windshield rake, air-spring positions
-and the rear-steer actuator's station are published nowhere that could be
-located. What is published about the module is its cells — 24 large-format
-pouch cells of about 580 × 115 mm — and twenty-four in eight series groups of
-three is exactly the eight-in-series this project measured per module, so the
-published cell count and the measured series count agree. Everything else in
-those categories is drawn as the plain shape it is and says so in the source.
+**The rear motors share one casing, and the rotors turn.** GM's description
+of the Edition 1 driveline is that the two rear motors "are housed within the
+same casing", each driving its own wheel with the locking effect done in
+software, and that all three motors are identical. So the stator is the same
+length in every unit and the front housing's extra length is its 13.3:1
+reduction. Six bars ride each rotor's surface, the way magnet slots read in a
+cutaway, and turn at wheel speed times the published reduction — 13.3 front,
+10.5 rear. Nothing in this project measures motor speed; the caption says so.
+
+**Brakes are to the catalogue.** Raybestos lists its OE-replacement rotors
+for the 2022–2025 Hummer EV Pickup at 355 mm front and rear, 40 mm thick at
+the front and 20 mm at the rear, and that is what is drawn. Caliper piston
+count is still unpublished.
+
+**Every corner has a spring and a damper.** GM's feature is "Air Ride
+Adaptive Suspension" — air springs *and* adaptive dampers — and the model had
+only the springs, drawn near-black on a black background, which is why the
+owner said the entire shock system was missing. The bellows are lighter now
+and a damper stands inboard of each one. Their stations are not published and
+nothing in the telemetry reports ride height, so they do not move.
+
+**A replay is judged frame by frame.** Charging, plugged, coolant flow and
+the four wheel speeds were read from the session's final state, so a trip
+that ended on the charger replayed with the cord animating at 90 km/h and the
+port lit the whole way home, and the wheels spun at whatever speed the file
+ended on. The charge-state byte, pack current, the thermal accumulator and
+the HVAC field now travel in the history, and each frame is judged on its
+own: plugged is the state byte, charging is plugged with energy going in and
+no wheel turning, flow is the accumulator advancing between neighbouring
+frames. The wheel speeds travel whether or not the node exposes its position.
+
+**Miles, feet and mph on every reader-facing number.** The recorder, the API
+and the CSVs stay in the units the vehicle reports, because a stored number
+should mean what the instrument said; the page converts once, at the edge
+where a person reads it. The signals table still names the recorded field,
+whose suffix says what the vehicle actually sent.
+
+**Lamp status is not captured.** Nothing this vehicle answers carries
+headlamp or taillamp state — the catalogue records body signals as absent
+from every module that answers — so the taillamps light from brake pressure,
+which the vehicle does publish, and the port lamp and light bar follow the
+charge state.
+
+**What research did not find, on 2026-09-11.** A first pass through spec
+sheets and press found almost nothing; the owner rightly said that was hard
+to believe, and a second pass through the parts and glass trades and GM's
+own rescue sheet found most of what the model needed. What remains
+unpublished: drive-unit envelope and mass, the pack's height and module case
+dimensions (the teardown coverage gives 2,818 lb and "12 modules on top of
+12" and no envelope), caliper piston count, and the air springs' stations.
+The auto-glass trade has NAGS numbers for the windshield (DW02851), front
+door glass (DD13559/13560) and back glass (DB13563) but no dimensions behind
+them that could be reached. What is published about the module is its cells
+— 24 large-format pouch cells of about 580 × 115 mm — and twenty-four in
+eight series groups of three is exactly the eight-in-series this project
+measured per module. Everything still unsourced is drawn as the plain shape
+it is and says so in the source.
 
 **The parts are sourced, and the gaps are named.** The drive units open up to
 copper hairpin stator windings, because GM describes this motor family as

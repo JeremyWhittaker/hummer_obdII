@@ -692,6 +692,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     r8: null
   };
 
+  /* Miles, feet and mph on every reader-facing number. The recorder, the
+     API and the CSVs stay in the units the vehicle reports -- kilometres and
+     km/h -- because a stored number should mean what the instrument said.
+     The conversion happens once, here, at the edge where a person reads it. */
+  var MI_PER_KM = 0.621371, FT_PER_M = 3.28084;
+  function miles(km) { return km * MI_PER_KM; }
+  var IMPERIAL_UNITS = { "km/h": [MI_PER_KM, "mph"], "kph": [MI_PER_KM, "mph"],
+                         "km": [MI_PER_KM, "mi"], "m": [FT_PER_M, "ft"] };
   function byId(id) { return document.getElementById(id); }
   [ "status-primary","status-secondary","banner","session-select","f-samples",
     "f-duration","f-period","f-age","vehicle-sub","legend",
@@ -859,9 +867,28 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        
        packBottom was 0.28 with the skid plates hung 0.07 below it, putting
        the lowest non-wheel point at 0.185 -- BELOW the 0.2565 m ground
-       clearance the same table publishes. Raised so the plates sit exactly on
-       it and the 0.24 m module stack rides above. */
-    packLength: 2.780, packWidth: 1.420, packTop: 0.5865, packBottom: 0.3465,
+       clearance the same table publishes. That figure is now the drive-unit
+       housings' undersides: 0.4471 - 0.19 = 0.257, which is what sets a
+       truck's ground clearance when the pack is carried higher. */
+    /* FROM GM'S OWN RESCUE SHEET (1GT-21101, the first-responder drawing
+       for this exact truck), which carries a scaled side elevation and plan
+       with the HV pack drawn in orange. Scaled on the wheelbase: 1095 px for
+       3.444 m gives 3.145 mm/px, and at that scale the drawn tyre measures
+       0.896 m against the 0.894 m the LT305/55R22 actually is -- so the
+       scale is right to better than 1 %. Overall length comes out 3 % short,
+       which is the error bar on everything below.
+
+       The pack outline in plan runs 465..1130 px along the truck and
+       164..615 px across: 2.09 x 1.42 m, centred 0.13 m AHEAD of the
+       wheelbase midpoint. That is what the 2.135 m in this file's first
+       version was measured from, and the 2.780 m that replaced it -- on the
+       argument that the battery "fills the floor" -- was wrong: the sheet
+       shows 0.8 m of nothing between the pack's rear wall and the rear drive
+       unit. In side elevation the pack's bottom edge shows below the rocker
+       at 0.43 m above ground; its top is hidden behind the high-strength
+       zone, so 0.75 is the double-stack's height as drawn, not as measured. */
+    packLength: 2.090, packWidth: 1.420, packCentreX: 0.13,
+    packTop: 0.750, packBottom: 0.430,
     /* 10.1 in at standard ride height. GMC's website quotes only Terrain
        (11.9 in) and Extract (16.0 in); the standard figure is in the 2022
        brochure. The old 0.264 sat between standard and Terrain, which is a
@@ -1170,7 +1197,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
     var noseX = AXLE + VEH.frontOverhang, tailX = -(AXLE + VEH.rearOverhang),
         W = HALF_W, rocker = 0.46, beltline = 1.30, roof = VEH.height,
-        cowlX = 1.22,
+        /* 0.95, not 1.22. The rescue sheet's side elevation puts the base of
+           the windshield 545 px behind the drawing's left edge -- 0.80 m
+           behind the front axle -- and the A-pillar's top a further 0.22 m
+           back, which is the rake this truck's upright glass actually has.
+           At 1.22 the cab started 0.27 m too far forward, the hood was
+           1.3 m instead of 1.6, and both door windows were long. */
+        cowlX = 0.95,
+        WIND_TOP_X = 0.73,
         /* The cab's rear wall is the bed's front bulkhead, and GMC publishes
            where that is: the bed's inner length is 60.10 in from a tailgate
            at the tail plane, which puts the bulkhead at x = -1.3767. It was
@@ -1399,7 +1433,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
          above -- the confidence is lower and the drawing says so. */
       add({ id: "marker-f-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "lights",
             colour: [0.70, 0.45, 0.10], alpha: 1,
-            t: [cowlX - 0.10, roof + 0.01, side * 0.34],
+            t: [WIND_TOP_X - 0.06, roof + 0.01, side * 0.34],
             s: [0.07, 0.03, 0.08], lamp: "marker-amber" });
       add({ id: "marker-r-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "lights",
             colour: [0.55, 0.10, 0.10], alpha: 1,
@@ -1419,7 +1453,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           /* It was at x -2.32..-2.16, inside flare-rl, reporting on a port
              0.29 m away from it. Moved aft of the flare's rear edge so the
              strip is on the bedside where it can be seen. */
-          t: [-2.53, 0.80, -(W - 0.035)], s: [0.16, 0.03, 0.03], lamp: "port" });
+          t: [-2.53, 1.02, -(W - 0.035)], s: [0.16, 0.03, 0.03], lamp: "port" });
 
     /* --- UltraVision cameras --------------------------------------------
        GMC publishes "up to 18 available camera VIEWS", not eighteen cameras,
@@ -1482,19 +1516,44 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        is where a shoulder-line pillar sits. That ratio is a measurement off
        photographs against the 3.444 m wheelbase, not a figure GM gives, and
        carries perhaps 10%. */
-    var pillarBX = -0.29,
-        frontGlassX0 = pillarBX + 0.05, frontGlassX1 = cowlX - 0.04,
-        rearGlassX0 = bulkX + 0.06, rearGlassX1 = pillarBX - 0.05;
+    /* MEASURED OFF THE RESCUE SHEET, second attempt. The first split put the
+       B-pillar at -0.29 from a 1.3:1 guess at the door ratio. The sheet has
+       the pillar at 852..916 px -- centred 0.13 m behind the wheelbase
+       midpoint, 0.20 m wide -- and at the beltline the front door glass is
+       0.98 m to the rear's 0.82: a ratio of 1.2 at the sill, and nearer 1.0
+       at mid-height where the raked A-pillar has taken the front pane's top
+       corner. The doors are close to equal on this truck; what makes the
+       front read longer is the rake. */
+    var pillarBX = -0.13, PILLAR_B_HALF = 0.07,
+        PILLAR_C_FRONT = -1.06,
+        frontGlassX0 = pillarBX + PILLAR_B_HALF, frontGlassX1 = cowlX - 0.10,
+        rearGlassX0 = PILLAR_C_FRONT, rearGlassX1 = pillarBX - PILLAR_B_HALF;
     [[-1, "l"], [1, "r"]].forEach(function (side) {
       var z0 = side[0] < 0 ? -(W - 0.035) : W - 0.085,
-          z1 = side[0] < 0 ? -(W - 0.085) : W - 0.035;
+          z1 = side[0] < 0 ? -(W - 0.085) : W - 0.035,
+          gy0 = beltline + 0.16, gy1 = roof - 0.10, gym = (gy0 + gy1) / 2;
+      /* Two slabs so the pane's top follows the raked pillar rather than
+         poking through it. */
       slab("glass-door-f-" + side[1], frontGlassX0, frontGlassX1,
-           beltline + 0.16, roof - 0.10, z0, z1, GLASS, { alpha: 0.42, layer: "shell" });
+           gy0, gym, z0, z1, GLASS, { alpha: 0.42, layer: "shell" });
+      slab("glass-door-f-" + side[1] + "-top", frontGlassX0, frontGlassX1 - 0.14,
+           gym, gy1, z0, z1, GLASS, { alpha: 0.42, layer: "shell" });
       slab("glass-door-r-" + side[1], rearGlassX0, rearGlassX1,
-           beltline + 0.16, roof - 0.10, z0, z1, GLASS, { alpha: 0.42, layer: "shell" });
+           gy0, gy1, z0, z1, GLASS, { alpha: 0.42, layer: "shell" });
     });
-    slab("glass-wind", cowlX - 0.06, cowlX + 0.02, beltline + 0.16, roof - 0.10,
-         -W + 0.06, W - 0.06, GLASS, { alpha: 0.42, layer: "shell" });
+    /* Raked, in three steps, from the cowl back to WIND_TOP_X at the roof.
+       An upright pane was the one thing everybody notices about this truck
+       drawn as the one thing it is not -- vertical. */
+    (function () {
+      var y0 = beltline + 0.16, y1 = roof - 0.10, steps = 3;
+      for (var i = 0; i < steps; i++) {
+        var f0 = i / steps, f1 = (i + 1) / steps,
+            x = cowlX + (WIND_TOP_X - cowlX) * (f0 + f1) / 2;
+        slab("glass-wind-" + i, x - 0.05, x + 0.05,
+             y0 + (y1 - y0) * f0, y0 + (y1 - y0) * f1,
+             -W + 0.06, W - 0.06, GLASS, { alpha: 0.42, layer: "shell" });
+      }
+    })();
     slab("shell-cabbase", bulkX, cowlX, beltline, beltline + 0.20, -W + 0.02, W - 0.02, BODY);
     /* The roof was 2.002 m across while the pillars stand at 1.101 and the
        side glass at 1.091, so both hung 0.10 m OUTBOARD of the roof edge down
@@ -1502,11 +1561,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        glass as bolted to the outside of it. It now caps the greenhouse with a
        0.010 m overhang per side, and runs the full cab length rather than
        stopping short of the bulkhead and the cowl. */
-    slab("shell-roof", bulkX, cowlX, roof - 0.12, roof,
+    slab("shell-roof", bulkX, WIND_TOP_X, roof - 0.12, roof,
          -W + 0.02, W - 0.02, BODY);
     /* roof rails */
-    slab("rail-l", bulkX + 0.10, cowlX - 0.10, roof, roof + 0.06, -W + 0.16, -W + 0.28, TRIM);
-    slab("rail-r", bulkX + 0.10, cowlX - 0.10, roof, roof + 0.06, W - 0.28, W - 0.16, TRIM);
+    slab("rail-l", bulkX + 0.10, WIND_TOP_X - 0.06, roof, roof + 0.06, -W + 0.16, -W + 0.28, TRIM);
+    slab("rail-r", bulkX + 0.10, WIND_TOP_X - 0.06, roof, roof + 0.06, W - 0.28, W - 0.16, TRIM);
 
     /* --- pillars. A greenhouse without them is a glass box; with them it is
        a cab. Positions follow the cab's own front and rear edges rather than
@@ -1518,10 +1577,23 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
          that made the greenhouse look wrong from the side. */
       var pz0 = side[0] < 0 ? -(W - 0.03) : W - 0.10,
           pz1 = side[0] < 0 ? -(W - 0.10) : W - 0.03;
-      slab("pillar-a-" + side[1], cowlX - 0.10, cowlX, beltline + 0.14, roof - 0.06, pz0, pz1, BODY);
-      slab("pillar-b-" + side[1], pillarBX - 0.05, pillarBX + 0.05,
+      /* The A-pillar follows the windshield's rake, so it is stepped the
+         same way. */
+      for (var ai = 0; ai < 3; ai++) {
+        var af0 = ai / 3, af1 = (ai + 1) / 3,
+            ax = cowlX - 0.05 + (WIND_TOP_X - cowlX) * (af0 + af1) / 2,
+            ay0 = beltline + 0.14, ay1 = roof - 0.06;
+        slab("pillar-a-" + side[1] + "-" + ai, ax - 0.06, ax + 0.06,
+             ay0 + (ay1 - ay0) * af0, ay0 + (ay1 - ay0) * af1, pz0, pz1, BODY);
+      }
+      slab("pillar-b-" + side[1], pillarBX - PILLAR_B_HALF, pillarBX + PILLAR_B_HALF,
            beltline + 0.14, roof - 0.06, pz0, pz1, BODY);
-      slab("pillar-c-" + side[1], bulkX, bulkX + 0.10, beltline + 0.14, roof - 0.06, pz0, pz1, BODY);
+      /* THICK. The sheet's C-pillar runs 1161..1223 px at the beltline and
+         the rear door glass ends at its front edge, 1.06 m behind the
+         wheelbase midpoint -- while the bed bulkhead the published bed
+         length fixes is at -1.377. So the sail between them is 0.32 m of
+         body, which is the buttress every side view of this truck shows. */
+      slab("pillar-c-" + side[1], bulkX, PILLAR_C_FRONT, beltline + 0.14, roof - 0.06, pz0, pz1, BODY);
       /* mirrors */
       /* The file's own VEH note says width across the mirrors is 2.380 m and
          each mirror therefore stands 0.089 m proud of the 1.101 half-width.
@@ -1655,7 +1727,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     var cols = 12, rows = 1, mL = VEH.packLength / cols, mW = VEH.packWidth / rows,
         layerH = (VEH.packTop - VEH.packBottom) / 2;
     add({ id: "pack-case", mesh: "bev", layer: "pack", colour: [0.09, 0.11, 0.12],
-          t: [0, (VEH.packTop + VEH.packBottom) / 2, 0],
+          t: [VEH.packCentreX, (VEH.packTop + VEH.packBottom) / 2, 0],
           s: [VEH.packLength + 0.12, VEH.packTop - VEH.packBottom + 0.08,
               VEH.packWidth + 0.12], alpha: 0.28 });
     for (var layer = 0; layer < 2; layer++) {
@@ -1664,7 +1736,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           add({ id: "mod-" + (layer * 12 + r * cols + c),
                 index: layer * 12 + r * cols + c,
                 mesh: "bev", layer: "pack", colour: [0.30, 0.61, 0.41],
-                t: [VEH.packLength / 2 - mL * (c + 0.5),
+                t: [VEH.packCentreX + VEH.packLength / 2 - mL * (c + 0.5),
                     VEH.packBottom + layerH * (layer + 0.5),
                     VEH.packWidth / 2 - mW * (r + 0.5)],
                 s: [mL - 0.022, layerH - 0.03, mW - 0.05] });
@@ -1693,8 +1765,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
        The rotor is the darker core. The housing goes to 0.45 alpha so the
        whole assembly reads as a cutaway rather than a can. */
+    /* The three motors are identical -- GM says so outright -- so the
+       stator is the same length in every unit and the front housing's extra
+       length is its two-stage 13.3:1 reduction, drawn as housing beside the
+       stator rather than as a longer motor. */
+    var STATOR_LEN = 0.44;
     function driveUnit(id, x, z, length, opts) {
       opts = opts || {};
+      var sl = STATOR_LEN, sz = z + (opts.statorZ || 0), axle = x > 0 ? "f" : "r";
       /* On the wheel centre, not 53 mm above it. Every drive part sat at
          y=0.50 while the hub faces are at VEH.wheelRadius = 0.4471, so the
          halfshafts ran past the hubs they drive and the whole driveline
@@ -1712,15 +1790,29 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         add({ id: id + "-hairpin-" + b, mesh: "bev", layer: "drive",
               colour: [0.72, 0.42, 0.17],
               t: [x + Math.cos(ang) * bore,
-                  VEH.wheelRadius + Math.sin(ang) * bore, z],
-              s: [0.036, 0.036, length * 0.82], hairpin: true });
+                  VEH.wheelRadius + Math.sin(ang) * bore, sz],
+              s: [0.036, 0.036, sl * 0.82], hairpin: true });
       }
       add({ id: id + "-rotor", mesh: "cyl", layer: "drive",
             colour: [0.14, 0.15, 0.17],
-            t: [x, VEH.wheelRadius, z], s: [0.19, 0.19, length * 0.92],
+            t: [x, VEH.wheelRadius, sz], s: [0.19, 0.19, sl * 0.92],
             rot: "z" });
+      /* THE ROTOR TURNS. A smooth cylinder spinning on its own axis looks
+         exactly like one standing still, so six bars ride its surface --
+         the way the magnet slots of a permanent-magnet rotor read in a
+         cutaway -- and they turn at wheel speed times the published
+         reduction: 13.3 at the front, 10.5 at the rear. No signal in this
+         project reports motor speed; this is the wheel speed and the
+         gearing, and the caption says so. */
+      for (var pk = 0; pk < 6; pk++) {
+        var pang = pk / 6 * Math.PI * 2, pr = 0.078;
+        add({ id: id + "-pole-" + pk, mesh: "bev", layer: "drive",
+              colour: [0.46, 0.48, 0.52],
+              t: [x + Math.cos(pang) * pr, VEH.wheelRadius + Math.sin(pang) * pr, sz],
+              s: [0.026, 0.026, sl * 0.88], rotorOf: axle, axis: [x, VEH.wheelRadius] });
+      }
     }
-    driveUnit("motor-front", AXLE, 0, 0.70);
+    driveUnit("motor-front", AXLE, 0, 0.70, { statorZ: -0.12 });
     /* ONE CASING AT THE REAR, TWO MOTORS INSIDE IT. GM's description of the
        Edition 1 driveline: the "two rear motors are housed within the same
        casing", each driving its own wheel, with the locking effect done in
@@ -1776,10 +1868,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            coverage and contradicts GMC's spec sheet for this truck. Cast
            iron, unpainted: there is no painted-caliper option on it.
 
-           Rotor diameter is published nowhere -- every aftermarket catalogue
-           lists fitment and withholds the OD. It has to clear an 18x9J rim at
-           457 mm, which puts it in the 350-380 mm class, so 0.37 m here is
-           derived from that clearance and is not a measured figure.
+           Rotor diameter IS in the aftermarket catalogues after all --
+           Raybestos lists its OE-replacement rotors for the 2022-2025 Hummer
+           EV Pickup at 355 mm outside diameter front and rear, 40 mm thick
+           at the front and 20 mm at the rear. So the front disc is drawn
+           twice as thick as the rear, which is what a 4.4-tonne truck's
+           front axle asks of it.
 
            Duralife is ferritic nitro-carburised, which is why the hat and
            edges are dark and the swept band is bright, and why these rotors
@@ -1792,7 +1886,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         add({ id: "brake-rotor-" + w[0], mesh: "cyl", layer: "brakes",
               colour: [0.52, 0.55, 0.58], brake: true,
               t: [w[1], VEH.wheelRadius, inboard],
-              s: [0.37, 0.37, 0.028], rot: "z" });
+              s: [0.355, 0.355, front ? 0.040 : 0.020], rot: "z" });
         add({ id: "brake-hat-" + w[0], mesh: "cyl", layer: "brakes",
               colour: [0.13, 0.14, 0.15],
               t: [w[1], VEH.wheelRadius, inboard],
@@ -1851,13 +1945,13 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     [-1, 1].forEach(function (side) {
       add({ id: "coolant-manifold-" + (side < 0 ? "l" : "r"), mesh: "cyl",
             layer: "thermal", colour: [0.16, 0.52, 0.60], flow: true,
-            t: [0, manifoldY, side * manifoldZ],
+            t: [VEH.packCentreX, manifoldY, side * manifoldZ],
             s: [VEH.packLength, 0.055, 0.055], rot: "x" });
     });
     for (var mx = 0; mx < 12; mx++) {
       add({ id: "coolant-cross-" + mx, mesh: "cyl", layer: "thermal",
             colour: [0.16, 0.52, 0.60], flow: true,
-            t: [VEH.packLength / 2 - (VEH.packLength / 12) * (mx + 0.5),
+            t: [VEH.packCentreX + VEH.packLength / 2 - (VEH.packLength / 12) * (mx + 0.5),
                 manifoldY, 0],
             s: [0.035, 0.035, VEH.packWidth], rot: "z" });
     }
@@ -1899,7 +1993,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        states and no dimension it does not. Drawn as glass because they are
        transparent on Edition 1 ("Tinted Transparent Sky Panels are standard
        on Edition 1 Pickup and SUV") and opaque on 2X/3X. */
-    var roofFront = cowlX - 0.06, roofRear = bulkX + 0.06,
+    var roofFront = WIND_TOP_X - 0.02, roofRear = bulkX + 0.06,
         iBarX = (roofFront + roofRear) / 2;
     [[iBarX, roofFront], [roofRear, iBarX]].forEach(function (span, front) {
       [-1, 1].forEach(function (side) {
@@ -1944,10 +2038,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        no eyellipse, no screen coordinates and no windshield rake, so nothing
        here is placed from a measurement and the driver's-seat caption says
        so. What is measured is how big the screens are. */
-    var ipX = 1.00, seatZ = -0.40;
-    slab("dash-pad", 0.90, 1.20, 1.38, 1.52, -W + 0.06, W - 0.06,
+    /* Everything in here moved aft with the cowl. The instrument panel sits
+       against the windshield base, so it went back the full 0.27; the seats
+       and the eye point went back 0.10, which puts the B-pillar 0.28 m
+       behind the driver's eye -- a shoulder-line pillar -- and the cluster
+       0.67 m ahead of it. */
+    var ipX = 0.73, seatZ = -0.40;
+    slab("dash-pad", 0.63, 0.93, 1.38, 1.52, -W + 0.06, W - 0.06,
          [0.13, 0.14, 0.15], { layer: "cabin" });
-    slab("dash-defrost", 1.13, 1.21, 1.50, 1.55, -W + 0.10, W - 0.10,
+    slab("dash-defrost", 0.86, 0.94, 1.50, 1.55, -W + 0.10, W - 0.10,
          [0.09, 0.10, 0.11], { layer: "cabin" });
     [-1, 1].forEach(function (side) {
       add({ id: "vent-tower-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "cabin",
@@ -1977,27 +2076,27 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
              sits 0.40-0.50 m below it, and the rim top stood above the dash
              pad. Dropped 0.17 m so the wheel is in front of the driver rather
              than in front of their face. */
-          t: [0.79, 1.23, seatZ], s: [0.040, 0.370, 0.370], rot: "x" });
+          t: [0.52, 1.23, seatZ], s: [0.040, 0.370, 0.370], rot: "x" });
     add({ id: "wheel-hub", mesh: "bev", layer: "cabin", colour: [0.11, 0.12, 0.13],
-          t: [0.81, 1.23, seatZ], s: [0.055, 0.135, 0.135] });
+          t: [0.54, 1.23, seatZ], s: [0.055, 0.135, 0.135] });
     add({ id: "wheel-spoke-l", mesh: "bev", layer: "cabin", colour: [0.13, 0.14, 0.15],
-          t: [0.81, 1.23, seatZ - 0.115], s: [0.022, 0.048, 0.130] });
+          t: [0.54, 1.23, seatZ - 0.115], s: [0.022, 0.048, 0.130] });
     add({ id: "wheel-spoke-r", mesh: "bev", layer: "cabin", colour: [0.13, 0.14, 0.15],
-          t: [0.81, 1.23, seatZ + 0.115], s: [0.022, 0.048, 0.130] });
+          t: [0.54, 1.23, seatZ + 0.115], s: [0.022, 0.048, 0.130] });
     add({ id: "wheel-spoke-b", mesh: "bev", layer: "cabin", colour: [0.30, 0.28, 0.22],
-          t: [0.81, 1.115, seatZ], s: [0.022, 0.130, 0.080] });
+          t: [0.54, 1.115, seatZ], s: [0.022, 0.130, 0.080] });
     /* One paddle, on the left of the column, and it lights under regen. */
     add({ id: "regen-paddle", mesh: "bev", layer: "cabin", colour: [0.14, 0.15, 0.16],
-          regen: true, t: [0.86, 1.25, seatZ - 0.185], s: [0.020, 0.095, 0.014] });
+          regen: true, t: [0.59, 1.25, seatZ - 0.185], s: [0.020, 0.095, 0.014] });
 
     /* The second row. GMC publishes its dimensions -- 38.4 in of head room,
        39.0 in of leg room, 64.0 in of shoulder room, 60.2 in of hip room --
        which is what puts the bench behind the front seats rather than at a
        spacing chosen to look right. */
     add({ id: "seat-rear-back", mesh: "bev", layer: "cabin", colour: [0.09, 0.10, 0.11],
-          t: [-0.94, 1.275, 0], s: [0.15, 0.72, 1.62] });
+          t: [-1.04, 1.275, 0], s: [0.15, 0.72, 1.62] });
     add({ id: "seat-rear-base", mesh: "bev", layer: "cabin", colour: [0.09, 0.10, 0.11],
-          t: [-0.66, 0.845, 0], s: [0.50, 0.14, 1.62] });
+          t: [-0.76, 0.845, 0], s: [0.50, 0.14, 1.62] });
 
     /* Door handles, two a side at the beltline. Small, and the thing a
        three-quarter view looks for to know it is looking at a door. */
@@ -2006,7 +2105,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        C-pillar. They were at 0.62 and -0.42 -- mid-door and, for the second,
        on the B-pillar itself once the pillar was put where it belongs. */
     [-1, 1].forEach(function (side) {
-      [pillarBX + 0.24, bulkX + 0.30].forEach(function (x, i) {
+      [pillarBX + 0.28, PILLAR_C_FRONT + 0.24].forEach(function (x, i) {
         slab("handle-" + (side < 0 ? "l" : "r") + i,
              x - 0.11, x + 0.11, beltline + 0.05, beltline + 0.11,
              /* Flush to the widest plane rather than 5 mm past it. Nothing
@@ -2023,7 +2122,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
             /* Re-based on the lowered cushion and made taller: a backrest
                that starts at the seat and ends at a shoulder is 0.78 m, not
                0.66, and it used to start above the cushion it belongs to. */
-            t: [0.06, 1.305, seat[0]], s: [0.14, 0.78, 0.52] });
+            t: [-0.04, 1.305, seat[0]], s: [0.14, 0.78, 0.52] });
       add({ id: "seat-base-" + seat[1], mesh: "bev", layer: "cabin",
             colour: [0.10, 0.11, 0.12],
             /* Cushion top was y=1.130 with the headliner at 1.889, leaving
@@ -2033,7 +2132,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                which is what GMC's published 41.5 in of front head room asks
                for and what puts a 1.66 m eye point where the driver camera
                already assumes it is. */
-            t: [0.34, 0.845, seat[0]], s: [0.56, 0.14, 0.52] });
+            t: [0.24, 0.845, seat[0]], s: [0.56, 0.14, 0.52] });
     });
 
     /* --- the detector, where it actually sits --------------------------
@@ -2048,9 +2147,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        detector, and the panel below the render says the same thing. */
     add({ id: "r8-detector", mesh: "bev", layer: "radar", colour: [0.05, 0.05, 0.06],
           alpha: 0.62, radar: true,
-          t: [cowlX - 0.11, roof - 0.21, 0], s: [0.124, 0.039, 0.098] });
+          t: [WIND_TOP_X + 0.05, roof - 0.21, 0], s: [0.124, 0.039, 0.098] });
     add({ id: "r8-mount", mesh: "cyl", layer: "radar", colour: [0.10, 0.11, 0.12],
-          alpha: 0.5, t: [cowlX - 0.04, roof - 0.19, 0],
+          alpha: 0.5, t: [WIND_TOP_X + 0.11, roof - 0.19, 0],
           s: [0.09, 0.012, 0.012], rot: "x" });
 
     /* --- underbody ---------------------------------------------------
@@ -2071,7 +2170,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         /* The black bellows standing inboard of each wheel is the most
            recognisable thing under this truck after the pack. */
         add({ id: "airspring-" + w[0], mesh: "cyl", layer: "suspension",
-              colour: [0.07, 0.07, 0.08],
+              /* Lifted from near-black: a black bellows on a black background
+                 with the body off is a part that is not there. */
+              colour: [0.24, 0.24, 0.26],
               /* Moved off the halfshaft plane and slimmed. Each bellows was
                  0.30 m across and 0.54 m tall -- 81% of the brake rotor
                  beside it -- and sat centred on the axle line, so the 0.10 m
@@ -2081,16 +2182,39 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
               t: [w[1] - (w[1] > 0 ? 0.24 : -0.24), 0.66,
                   w[2] * (HALF_TRACK - 0.30)],
               s: [0.22, 0.42, 0.22], rot: "y" });
+        /* The adaptive damper beside each spring. GM's own list is "Air
+           Ride Adaptive Suspension" -- air springs AND continuously
+           variable dampers -- and the model had only the springs, which
+           is why the owner said the entire shock system was missing. The
+           parts catalogues list the rear as a combined air strut; the
+           exact station of any of them is not published, so each damper
+           stands inboard of its spring, clear of the halfshaft. Nothing in
+           the telemetry reports ride height or damper state, so they do
+           not move. */
+        var dx = w[1] - (w[1] > 0 ? 0.24 : -0.24), dz = w[2] * (HALF_TRACK - 0.48);
+        add({ id: "damper-" + w[0], mesh: "cyl", layer: "suspension",
+              colour: [0.50, 0.52, 0.55],
+              t: [dx, 0.62, dz], s: [0.07, 0.34, 0.07], rot: "y" });
+        add({ id: "damper-rod-" + w[0], mesh: "cyl", layer: "suspension",
+              colour: [0.72, 0.74, 0.76],
+              t: [dx, 0.88, dz], s: [0.028, 0.20, 0.028], rot: "y" });
       });
 
     /* Four plates: front underbody, front battery, rear battery, rear
        underbody. Translucent for the same reason the tyres are -- a plate
        that hides the pack defeats the point of being able to look up at it. */
-    [[1.88, 0.92], [0.60, 1.28], [-0.62, 1.28], [-1.90, 0.88]]
+    /* The pack plates hang on the pack, which the sheet puts 0.43 m up, and
+       the two underbody plates sit at the published ground clearance ahead
+       of and behind the drive units -- not through them, which is where a
+       plate at 0.2565 under an axle-mounted housing ends up. */
+    [[2.25, 0.50, VEH.groundClearance + 0.025],
+     [VEH.packCentreX + VEH.packLength / 4, VEH.packLength / 2 - 0.02, VEH.packBottom - 0.03],
+     [VEH.packCentreX - VEH.packLength / 4, VEH.packLength / 2 - 0.02, VEH.packBottom - 0.03],
+     [-2.25, 0.60, VEH.groundClearance + 0.025]]
       .forEach(function (plate, i) {
         add({ id: "skid-" + i, mesh: "bev", layer: "armour",
               colour: [0.17, 0.18, 0.19], alpha: 0.42,
-              t: [plate[0], VEH.groundClearance + 0.025, 0],
+              t: [plate[0], plate[2], 0],
               s: [plate[1], 0.05, VEH.packWidth + 0.12] });
       });
 
@@ -2128,7 +2252,19 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        sheet pictogram agree. It is not lithium; the manual says installing a
        standard battery shortens its life. */
     add({ id: "lv", mesh: "bev", layer: "aux", colour: [0.40, 0.33, 0.16],
-          t: [2.02, 1.10, 0.70], s: [0.32, 0.22, 0.28] });
+          /* The sheet's plan view puts the low-voltage battery symbol 0.12 m
+             ahead of the front axle and 0.80 m off the centreline on the
+             passenger side -- which agrees with the manual, and moves it
+             0.42 m aft of where it was. */
+          t: [1.60, 1.10, 0.80], s: [0.32, 0.22, 0.28] });
+    /* An HV component the rescue sheet draws and does not name: an orange
+       block behind the rear axle, on the centreline, in both views -- at
+       -2.17 m, 0.66 m up, about 0.5 m across. The charge port's cable runs
+       to it before running forward to the pack, which is what an on-board
+       charging module does, but the sheet does not say that and neither
+       does this. It is drawn because the sheet draws it. */
+    add({ id: "hv-rear-module", mesh: "bev", layer: "aux", colour: [0.36, 0.20, 0.08],
+          t: [-2.17, 0.66, 0], s: [0.25, 0.25, 0.50] });
     /* Rear driver's side, which GM's manual states outright -- "the charge
        port door is on the rear driver side" -- and the Emergency Response
        Guide fixes independently by putting the manual release loop in the
@@ -2144,7 +2280,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
              |z| 1.161 -- 0.060 m past the truck's own widest point. A charge
              door is flush with the panel it is cut into, not a box bolted to
              the outside of one. */
-          t: [-2.53, 0.95, -(W - 0.04)], s: [0.24, 0.24, 0.08] });
+          /* 1.18 m up, not 0.95: the sheet's cable reaches the bodyside at
+             y 350 px, which is 1.20 m above ground and just under the
+             beltline. */
+          t: [-2.53, 1.18, -(W - 0.04)], s: [0.24, 0.24, 0.08] });
 
     /* --- the HV run from the charge port ------------------------------
        GM's rescue sheet for this vehicle shows a pair of orange cables
@@ -2165,8 +2304,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
              the wheel. Inboard at -0.70 it clears the rim's inner face by
              0.054 m and lands on the pack's flank, which is where an HV run
              belongs anyway. */
-          hvflow: true, t: [-1.75, 0.56, -0.70],
-          s: [1.30, 0.045, 0.045], rot: "x" });
+          hvflow: true, t: [(-2.40 + (VEH.packCentreX - VEH.packLength / 2)) / 2, 0.60, -0.70],
+          s: [2.40 + (VEH.packCentreX - VEH.packLength / 2), 0.045, 0.045], rot: "x" });
 
     /* Energy arriving, drawn travelling the run it actually arrives on.
        From the port end toward the pack, at a speed taken from measured pack
@@ -2175,8 +2314,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     for (var cp = 0; cp < 4; cp++) {
       add({ id: "hv-charge-pulse-" + cp, mesh: "bev", layer: "aux",
             colour: [0.30, 0.80, 0.45], chargeOnly: true, pulse: true,
-            travel: { axis: 0, from: -2.40, to: -1.10, phase: cp / 4 },
-            t: [-2.40, 0.56, -(W - 0.10)], s: [0.10, 0.075, 0.075] });
+            travel: { axis: 0, from: -2.40, to: VEH.packCentreX - VEH.packLength / 2 - 0.05, phase: cp / 4 },
+            t: [-2.40, 0.60, -0.70], s: [0.10, 0.075, 0.075] });
     }
 
     /* --- regen, drawn where it comes from ------------------------------
@@ -2191,8 +2330,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        blends them "when regenerative braking is reduced", so glowing discs on
        every regen event would be wrong. They light from brake_kpa and
        nothing else. */
-    [[AXLE - 0.30, VEH.packLength / 2, "f"],
-     [-(AXLE - 0.30), -VEH.packLength / 2, "r"]].forEach(function (run) {
+    var packFront = VEH.packCentreX + VEH.packLength / 2,
+        packRear = VEH.packCentreX - VEH.packLength / 2;
+    [[AXLE - 0.30, packFront, "f"],
+     [-(AXLE - 0.30), packRear, "r"]].forEach(function (run) {
       for (var rp = 0; rp < 3; rp++) {
         add({ id: "regen-pulse-" + run[2] + rp, mesh: "bev", layer: "drive",
               colour: [0.25, 0.85, 0.45], regenflow: true, pulse: true,
@@ -2215,14 +2356,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        wheel-arch flare -- the truck was plugged into its own bodywork.
        Re-aimed at the port where it actually is. */
     add({ id: "evse-box", mesh: "bev", layer: "aux", colour: [0.16, 0.18, 0.20],
-          chargeOnly: true, t: [-2.53, 1.00, -2.34], s: [0.26, 0.44, 0.16] });
+          chargeOnly: true, t: [-2.53, 1.18, -2.34], s: [0.26, 0.44, 0.16] });
     add({ id: "evse-cord", mesh: "cyl", layer: "aux", colour: [0.12, 0.14, 0.15],
-          chargeOnly: true, t: [-2.53, 0.95, -1.75], s: [0.05, 0.05, 1.18] });
+          chargeOnly: true, t: [-2.53, 1.18, -1.75], s: [0.05, 0.05, 1.18] });
     for (var pulse = 0; pulse < 5; pulse++) {
       add({ id: "evse-pulse-" + pulse, mesh: "bev", layer: "aux",
             colour: [0.30, 0.70, 0.80], chargeOnly: true, pulse: true,
             travel: { from: -2.30, to: -1.16, phase: pulse / 5 },
-            t: [-2.53, 0.95, -2.30], s: [0.09, 0.09, 0.10] });
+            t: [-2.53, 1.18, -2.30], s: [0.09, 0.09, 0.10] });
     }
     /* Stamped once, and never written again. `home` is where the part was
        DEFINED; `t` is where it is this frame, which for a travelling pulse is
@@ -2341,7 +2482,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                    pitched UP, so the instruments sat low and half off the
                    left edge, which is what "the displays don't show that
                    well" was describing. */
-                mode: "orbit", dyaw: 0.02, dpitch: -0.055,
+                mode: "orbit", dyaw: 0.30, dpitch: -0.30,
                 /* Jolt state, kept on the camera so it survives between
                    frames -- a bump that lasted one sample should ring and
                    settle, not vanish on the next repaint. */
@@ -2357,7 +2498,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            is reading the instruments. From here the sight line to the cluster
            clears the rim by about three centimetres -- which is also what a
            driver does, rather than a compromise against realism. */
-        DRIVER_EYE = [0.15, 1.66, -0.33],
+        /* 0.15 m ahead of the seatback's face, which is where a head is.
+           With the cowl at 0.95 and the cluster 0.23 m behind it, the eye
+           is 0.54 m from the cluster -- closer than before, and what the
+           rescue sheet's seat and wheel positions give. */
+        DRIVER_EYE = [0.18, 1.66, -0.33],
         /* A layer missing from this map resolves to undefined, which becomes
            a NaN alpha and a part that silently does not draw. Every layer a
            part can name has to have a value here. */
@@ -2397,7 +2542,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                  fill: null, packTemp: null, lv: null, port: false,
                  fault: false, chargeKw: 0, regenKw: 0, radar: [0, 0, 0],
                  awake: false },
-        angle = { fl: 0, fr: 0, rl: 0, rr: 0 }, lastFrame = 0;
+        angle = { fl: 0, fr: 0, rl: 0, rr: 0 }, lastFrame = 0,
+        /* Rotor angles per axle, integrated the same way the wheels are. */
+        motorAngle = { f: 0, r: 0 }, MOTOR_RATIO = { f: 13.3, r: 10.5 };
 
     gl.enable(gl.DEPTH_TEST);
     /* NO BACK-FACE CULLING, and it is not an oversight.
@@ -2472,6 +2619,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                   ? live.corners[corner] : live.speed;
         angle[corner] += (kph / 3.6) / VEH.wheelRadius * dt;
       });
+      [["f", "fl", "fr"], ["r", "rl", "rr"]].forEach(function (ax) {
+        var a = live.corners && typeof live.corners[ax[1]] === "number" ? live.corners[ax[1]] : null,
+            b = live.corners && typeof live.corners[ax[2]] === "number" ? live.corners[ax[2]] : null,
+            kph = a !== null && b !== null ? (a + b) / 2 : a !== null ? a : b !== null ? b : live.speed;
+        motorAngle[ax[0]] += (kph / 3.6) / VEH.wheelRadius * MOTOR_RATIO[ax[0]] * dt;
+      });
       if (!drag && cam.mode === "orbit") cam.spin += 0.0013;
       var eye, proj, view;
       if (cam.mode === "driver") {
@@ -2523,7 +2676,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            in big enough characters to make it look like what the driver would
            see". Narrowing to 0.66 keeps both screens inside the frame and
            makes everything a quarter larger. */
-        proj = m4persp(0.66, w / h, 0.2, 40);
+        /* 1.0 rad -- about 57 degrees vertical -- from a seat 0.54 m off the
+           cluster. At 0.66 the two screens could not both be in frame from
+           where the rescue sheet puts the seat; a head does not see 38
+           degrees. */
+        proj = m4persp(1.0, w / h, 0.2, 40);
         /* The up-vector carries the roll -- but it has to be rolled ABOUT THE
            VIEW AXIS, which is what the previous version got wrong.
 
@@ -2739,6 +2896,16 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
               rot = m4();
           rot[0] = ca; rot[1] = sa; rot[4] = -sa; rot[5] = ca;
           model = m4mul(model, rot);
+        }
+        if (p.rotorOf) {
+          /* Turned about the motor's own axis, which runs across the truck
+             through (axis[0], axis[1]): translate to it, spin about Z,
+             translate back. */
+          var ma = motorAngle[p.rotorOf] || 0, mc = Math.cos(ma), ms = Math.sin(ma),
+              mrot = m4();
+          mrot[0] = mc; mrot[1] = ms; mrot[4] = -ms; mrot[5] = mc;
+          model = m4mul(m4trs(p.axis[0], p.axis[1], 0, 1, 1, 1),
+                        m4mul(mrot, m4mul(m4trs(-p.axis[0], -p.axis[1], 0, 1, 1, 1), model)));
         }
         gl.uniformMatrix4fv(loc.model, false, m4mul(attitude, model));
 
@@ -2989,7 +3156,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
              cluster falls left of centre, the centre screen right of it, the
              detector between and above. Looking dead ahead put the centre
              screen past the edge. */
-          cam.mode = "driver"; cam.dyaw = 0.02; cam.dpitch = -0.055;
+          /* Pitched further down since the cabin came back with the cowl:
+             the cluster is nearer and lower in the frame, and at -0.055 it
+             sat cut off along the bottom edge. */
+          cam.mode = "driver"; cam.dyaw = 0.30; cam.dpitch = -0.30;
           /* From the seat the body is drawn faint whatever the button says:
              at full opacity the windshield and the door card sit between the
              eye and everything worth looking at, and at zero there is no
@@ -3195,7 +3365,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   var VIEWS = [
     { key: "exterior", label: "Exterior",
       sub: "Drag to orbit, scroll to zoom. With Body off you are looking at "
-         + "the hardware with nothing in front of it." },
+         + "the hardware with nothing in front of it. The rotors turn at wheel "
+         + "speed times the published reduction (13.3 front, 10.5 rear); "
+         + "nothing here measures motor speed directly." },
     { key: "driver", label: "Driver's seat",
       sub: "Framed on the instruments: the 12.3-inch cluster, the 13.4-inch "
          + "centre screen and the detector on the glass. Drag to look around "
@@ -3392,14 +3564,108 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       var value = num(f[name]);
       return value === null ? null : value;
     }
+    function atFrameRaw(name, fallback) {
+      if (!f) return fallback;
+      var value = f[name];
+      return typeof value === "string" && value ? value : null;
+    }
     var kpa = atFrame("brake_kpa", sigValue("brake_kpa")),
         speed = atFrame("speed_kph", num(derived("speed_now_kph")));
+
+    /* CHARGING, PLUGGED AND FLOW AT THIS FRAME, not at the end of the file.
+       These three were read from the session's derived summary, which is one
+       answer for the whole session -- so a drive that finished on the
+       charger replayed with the cord animating at 90 km/h and the port lit
+       the whole way home. The state byte, pack current and the thermal
+       accumulator now travel in the history, and the frame is judged on its
+       own. Where there is no frame (the live view) the session's derived
+       values are what they always were. */
+    var cordHere = cordset((function () {
+          var bytes = hexBytes(atFrameRaw("charger_5401_raw",
+              sig("charger_5401_raw") ? sig("charger_5401_raw").value : null));
+          return bytes.length ? bytes[bytes.length - 1] : null;
+        })()),
+        pluggedHere = f ? cordHere.plugged === true : derived("plugged") === true,
+        /* Pack power at this frame, or the nearest earlier sample within a
+           poll or two of it. Standard OBD stops answering the moment a
+           charge begins and the pack fields drop out of some rows, so a
+           frame with no current is not a frame with no charging -- it is a
+           frame between samples. Six frames is about a minute. */
+        kwHere = (function () {
+          var v = atFrame("pack_kw", num(derived("pack_kw"))), kwFound = null;
+          if (v !== null || !f) return v;
+          /* Nearest pack sample in either direction, but never across a
+             change in the port's state: a sample from before the cord went
+             in says nothing about what is happening now. The pack modules
+             go quiet for many minutes at a time on a charge -- 23 minutes
+             in one session -- while the charger's state byte keeps
+             answering, so the window is generous and the boundary is the
+             state byte, not the clock. */
+          var hist = (state.snapshot && state.snapshot.history) || [], at = hist.indexOf(f),
+              pluggedNow = (f.charger_5401_raw || "00") !== "00",
+              open = [true, true];
+          for (var d = 1; d <= 60 && (open[0] || open[1]); d++) {
+            [at - d, at + d].forEach(function (i, side) {
+              if (!open[side] || i < 0 || i >= hist.length) { open[side] = false; return; }
+              if (((hist[i].charger_5401_raw || "00") !== "00") !== pluggedNow) {
+                open[side] = false; return;   /* the cord went in or came out here */
+              }
+              var pv = num(hist[i].pack_kw);
+              if (pv !== null && kwFound === null) kwFound = pv;
+            });
+            if (kwFound !== null) return kwFound;
+          }
+          return null;
+        })(),
+        wheelsHere = {
+          fl: atFrame("wheel_fl_kph", sigValue("wheel_fl_kph")),
+          fr: atFrame("wheel_fr_kph", sigValue("wheel_fr_kph")),
+          rl: atFrame("wheel_rl_kph", sigValue("wheel_rl_kph")),
+          rr: atFrame("wheel_rr_kph", sigValue("wheel_rr_kph"))
+        },
+        rolling = (speed !== null && speed > 0.5)
+          || ["fl", "fr", "rl", "rr"].some(function (c) {
+               return wheelsHere[c] !== null && wheelsHere[c] > 0.5; }),
+        /* Plugged, taking energy, and not moving. Regen is also energy into
+           the pack; the port state is what tells the two apart. */
+        chargingHere = f
+          ? (pluggedHere && kwHere !== null && kwHere < -0.2 && !rolling)
+          : derived("charging") === true;
+    /* Coolant flow in a replay follows the thermal accumulator between this
+       frame and the ones around it, the same rule the live view applies to
+       successive polls. A frame carries no clock of its own to diff against,
+       so the neighbour a few samples back stands in. */
+    var flowHere;
+    if (f) {
+      var hist = (state.snapshot && state.snapshot.history) || [],
+          at = hist.indexOf(f), advance = 0, hvacHere = false;
+      if (at > 0) {
+        var back = Math.max(0, at - 6), here = hexBytes(f.thermal_energy_raw || null),
+            prev = null;
+        for (var b = at - 1; b >= back && prev === null; b--) {
+          var pb = hexBytes(hist[b].thermal_energy_raw || null);
+          if (pb.length) prev = pb;
+        }
+        if (here.length && prev) {
+          advance = here.reduce(function (a, v) { return a * 256 + v; }, 0)
+                  - prev.reduce(function (a, v) { return a * 256 + v; }, 0);
+        }
+      }
+      var v1 = hexBytes(f.group_v1_raw || null);
+      if (v1.length) {
+        var v1n = v1.reduce(function (a, v) { return a * 256 + v; }, 0);
+        hvacHere = Math.abs(v1n - 999) > 150;
+      }
+      flowHere = (advance > 0 || hvacHere) ? 1 : 0;
+    } else {
+      flowHere = (state.thermal.rate > 0.5 || hvacActive) ? 1 : 0;
+    }
 
     viewer.update({
       modules: colours,
       kw: atFrame("pack_kw", num(derived("pack_kw"))) || 0,
       brake: kpa === null ? 0 : Math.min(1, kpa / 4000),
-      flow: (state.thermal.rate > 0.5 || hvacActive) ? 1 : 0,
+      flow: flowHere,
       speed: speed === null ? 0 : speed,
       steer: atFrame("steering_deg", sigValue("steering_deg")) || 0,
       roll: atFrame("lateral_g", sigValue("lateral_g")) || 0,
@@ -3416,7 +3682,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           : sigValue("volts"),
       /* Plugged and charging are separate facts now. The node works out the
          difference; the page just draws it. */
-      port: derived("plugged") === true,
+      port: pluggedHere,
       fault: sigValue("mil_on") === 1 || (sigValue("dtc_count") || 0) > 0,
       /* Lit whenever the session being shown has readings in it. The first
          rule here was "live or charging", which is a fair description of the
@@ -3457,8 +3723,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           /* Short: the housing crops the outer edges of the glass, so a
              long label loses its last words rather than wrapping. */
           label: extent < STATIONARY_M
-            ? "parked " + extent.toFixed(0) + " m"
-            : (extent / 1000).toFixed(1) + " km"
+            ? "parked " + (extent * FT_PER_M).toFixed(0) + " ft"
+            : miles(extent / 1000).toFixed(1) + " mi"
         };
       })(),
       cluster: {
@@ -3491,15 +3757,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                  X: [0.20, 0.55, 0.90], LASER: [0.80, 0.16, 0.75]
                }[alert.band] || [0.55, 0.55, 0.55];
       })(),
-      corners: {
-        fl: sigValue("wheel_fl_kph"), fr: sigValue("wheel_fr_kph"),
-        rl: sigValue("wheel_rl_kph"), rr: sigValue("wheel_rr_kph")
-      },
-      charging: derived("charging") === true,
+      corners: wheelsHere,
+      charging: chargingHere,
       /* Plugged in but not necessarily taking current -- the two are
          different states and the light bar shows them differently: a finished
          charge is lit and still, a running one flows. */
-      plugged: derived("plugged") === true,
+      plugged: pluggedHere,
       /* The three raw thermal fields the part index promised were drawn and
          which nothing read. Their units are unknown, so what is shown is
          where the reading sits WITHIN ITS OWN FIELD WIDTH -- a relative ramp,
@@ -3508,7 +3771,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       coolant1: rawFraction("coolant_1_raw"),
       coolant2: rawFraction("coolant_2_raw"),
       compressor: rawFraction("compressor_temp_raw"),
-      chargeKw: Math.abs(num(derived("pack_kw")) || 0),
+      chargeKw: chargingHere && kwHere !== null ? Math.abs(kwHere) : 0,
       /* State of charge, for the light bar, which GMC built to report it.
          Read through atFrame so a replay lights the letters the truck had
          lit at that moment rather than the ones it has now. */
@@ -3517,10 +3780,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
          from chargeKw, which is the same magnitude while plugged in -- the
          two are never both meaningful at once, and conflating them would
          animate a charge cable during a drive. */
-      regenKw: (function () {
-        var kw = atFrame("pack_kw", num(derived("pack_kw")));
-        return kw !== null && kw < 0 && derived("charging") !== true ? -kw : 0;
-      })()
+      regenKw: kwHere !== null && kwHere < 0 && !chargingHere ? -kwHere : 0
     });
 
     /* --- what is happening at the cord, in numbers -------------------
@@ -3530,9 +3790,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        supply is which cordset family the state byte belongs to. */
     var chargeBadge = el["charge-badge"], packV = sigValue("pack_v"),
         packA = sigValue("pack_a"), packKw = num(derived("pack_kw")),
-        stateByte = hexBytes(sig("charger_5401_raw") ? sig("charger_5401_raw").value : null),
-        charging = derived("charging") === true,
-        plugged = derived("plugged") === true;
+        stateByte = hexBytes(atFrameRaw("charger_5401_raw",
+            sig("charger_5401_raw") ? sig("charger_5401_raw").value : null)),
+        /* The same per-frame answer the model uses, so the badge does not
+           say "charging" over a truck doing 39 mph in a replay. */
+        charging = chargingHere,
+        plugged = pluggedHere;
     clear(chargeBadge);
     chargeBadge.hidden = !plugged;
     if (plugged) {
@@ -3637,7 +3900,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        thing on offer. */
     if (clock) parts.push(clock);
     if (elapsed !== null) parts.push(duration(elapsed));
-    if (speed !== null) parts.push(speed.toFixed(0) + " km/h");
+    if (speed !== null) parts.push(miles(speed).toFixed(0) + " mph");
 
     /* A detection is a moment, not a place. Plotting it on the map says where
        it happened; this says WHEN, by lighting the marker as the replay
@@ -3984,17 +4247,29 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     /* A map with no scale is a picture. This one is drawn from metres, so it
        can say how big it is. */
     (function () {
-      var target = W * mPerPx / 4,
-          step = Math.pow(10, Math.floor(Math.log(target) / Math.LN10)),
-          nice = [1, 2, 5, 10].map(function (f) { return f * step; })
-                 .filter(function (v) { return v <= target * 2; }).pop() || step,
-          px = nice / mPerPx, y = 340 - 14, x0 = pad;
+      /* Picked in feet or miles, so the bar reads "500 ft" or "2 mi" rather
+         than a round number of metres relabelled as an odd one of feet. */
+      var target = W * mPerPx / 4, choice = null, label;
+      if (target * FT_PER_M < 2640) {
+        [100, 200, 500, 1000, 2000].forEach(function (ft) {
+          if (ft / FT_PER_M <= target * 2) choice = ft;
+        });
+        choice = choice || 100; label = choice + " ft";
+        var nice = choice / FT_PER_M;
+      } else {
+        [0.5, 1, 2, 5, 10, 20, 50].forEach(function (mi) {
+          if (mi * 1609.344 <= target * 2) choice = mi;
+        });
+        choice = choice || 0.5; label = choice + " mi";
+        nice = choice * 1609.344;
+      }
+      var px = nice / mPerPx, y = 340 - 14, x0 = pad;
       if (px > 8 && px < 300) {
         var bar = make("path");
         bar.setAttribute("d", "M" + x0 + " " + y + " h" + px.toFixed(1));
         bar.setAttribute("stroke", "#5c686c"); bar.setAttribute("stroke-width", "2");
         el["map-grid"].appendChild(bar);
-        var lab = make("text", null, nice >= 1000 ? (nice / 1000) + " km" : nice + " m");
+        var lab = make("text", null, label);
         lab.setAttribute("x", (x0 + px + 6).toFixed(1)); lab.setAttribute("y", y + 4);
         lab.setAttribute("font-size", "11"); lab.setAttribute("fill", "#7d888c");
         el["map-grid"].appendChild(lab);
@@ -4135,14 +4410,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
          fix quality was. */
       var odoKm = num(derived("distance_km"));
       if (odoKm !== null && odoKm > 0) {
-        stat("trip", odoKm.toFixed(2) + " km");
-        stat("by GPS", (metres / 1000).toFixed(2) + " km");
+        stat("trip", miles(odoKm).toFixed(2) + " mi");
+        stat("by GPS", miles(metres / 1000).toFixed(2) + " mi");
       } else {
-        stat("track", (metres / 1000).toFixed(2) + " km");
+        stat("track", miles(metres / 1000).toFixed(2) + " mi");
       }
     }
     var alt = sigValue("gps_alt_m"), sats = sigValue("gps_sats");
-    if (alt !== null) stat("altitude", alt.toFixed(0) + " m");
+    if (alt !== null) stat("altitude", (alt * FT_PER_M).toFixed(0) + " ft");
     if (sats !== null) stat("satellites", String(sats));
   }
 
@@ -4154,15 +4429,16 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     { key: "pack_kw",    label: "Pack power",      unit: "kW", digits: 1, accent: "var(--ev-orange)",
       detail: function () { var v = num(derived("pack_v")), a = num(derived("pack_a"));
         return v === null || a === null ? "" : v.toFixed(1) + " V × " + a.toFixed(1) + " A"; } },
-    { key: "speed_now_kph", label: "Speed",        unit: "km/h", digits: 0, accent: "var(--cool)",
+    { key: "speed_now_kph", label: "Speed",        unit: "mph", digits: 0, accent: "var(--cool)",
+      scale: MI_PER_KM,
       detail: function () { var m = num(derived("speed_max_kph"));
-        return m === null ? "" : "peak " + m.toFixed(0) + " km/h this session"; } },
+        return m === null ? "" : "peak " + miles(m).toFixed(0) + " mph this session"; } },
     { key: "cell_spread_mv", label: "Cell spread", unit: "mV", digits: 1, accent: "var(--warn)",
       detail: function () { var c = num(derived("cell_avg_v"));
         return c === null ? "" : "average cell " + c.toFixed(4) + " V"; } },
     { key: "energy_kwh", label: "Energy in pack",  unit: "kWh", digits: 2, accent: "var(--good)",
       detail: function () { var d = num(derived("distance_km"));
-        return d === null ? "" : d.toFixed(1) + " km this session"; } },
+        return d === null ? "" : miles(d).toFixed(1) + " mi this session"; } },
     { key: "resistance", label: "Pack resistance", unit: "mΩ", digits: 2, accent: "var(--ev-charge)",
       detail: function () { var r = derived("resistance");
         return Array.isArray(r) && r.length >= 2 ? "n=" + r[1] + " current steps" : "needs current steps"; } },
@@ -4181,7 +4457,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     var d = derived(t.key);
     if (d === undefined) return null;
     if (Array.isArray(d)) return num(d[0]);        /* resistance is (mΩ, n, r) */
-    return num(d);
+    var v = num(d);
+    return v === null || !t.scale ? v : v * t.scale;
   }
   function renderTiles() {
     clear(el.tiles);
@@ -4202,7 +4479,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   var SERIES = {
     power: { key: "pack_kw", label: "Pack power", unit: "kW", colour: "#ee521a", zero: true },
     soc:   { key: "soc_pct", label: "State of charge", unit: "%", colour: "#b9f227", zero: false },
-    speed: { key: "speed_kph", label: "Speed", unit: "km/h", colour: "#55d9ed", zero: true }
+    speed: { key: "speed_kph", label: "Speed", unit: "mph", colour: "#55d9ed", zero: true,
+             scale: MI_PER_KM }
   };
   function drawChart() {
     var canvas = el.chart, spec = SERIES[state.series],
@@ -4210,6 +4488,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         pts = [];
     for (var i = 0; i < hist.length; i++) {
       var t = num(hist[i].elapsed_s), v = num(hist[i][spec.key]);
+      if (v !== null && spec.scale) v *= spec.scale;
       if (t !== null && v !== null) pts.push([t, v]);
     }
     el["chart-sub"].textContent = spec.label + ", as recorded. Gaps are gaps, never interpolated.";
@@ -4410,11 +4689,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       nameWrap.appendChild(h("div", null, s.label || name));
       nameWrap.appendChild(h("div", "prov", name));
       cell("Signal", nameWrap);
-      var v = s.value, text;
+      var v = s.value, text, unit = s.unit, conv = unit && IMPERIAL_UNITS[unit];
+      /* Shown in miles, feet and mph; the provenance column still names the
+         recorded field, whose suffix says what the vehicle actually sent. */
+      if (conv && typeof v === "number") { v = v * conv[0]; unit = conv[1]; }
       if (v === null || v === undefined) text = "–";
       else if (typeof v === "number") text = (Math.abs(v) >= 1000 ? v.toFixed(0) : v.toFixed(3).replace(/\.?0+$/, ""));
       else text = String(v).slice(0, 60);
-      var vNode = h("span", "num", text + (s.unit && v !== null && v !== undefined ? " " + s.unit : ""));
+      var vNode = h("span", "num", text + (unit && v !== null && v !== undefined ? " " + unit : ""));
       cell("Value", vNode);
       var st = signalStatus(s.status, vs);
       cell("State", h("span", "pill s-" + st, st));
@@ -4788,7 +5070,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     function label(e) {
       var text = when(e.id);
       if (e.moved === false) return text + "  \u00B7  parked";
-      if (typeof e.km === "number" && e.km > 0) return text + "  \u00B7  " + e.km.toFixed(1) + " km";
+      if (typeof e.km === "number" && e.km > 0) return text + "  \u00B7  " + miles(e.km).toFixed(1) + " mi";
       return text;
     }
     function group(name, of) {
