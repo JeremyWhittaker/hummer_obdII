@@ -137,6 +137,42 @@ between them already had a name in this project, `plugged-idle`. A pack
 running accessories while connected is real (14 rows on the 120 V cordset) and
 is not charging either.
 
+#### What the alternation is *not* — 2026-09-11
+
+"Why it alternates between `0x93` and `0x96` while charging is unknown" has
+stood above since 2026-09-04. An AC charge recorded on 2026-09-11, following a
+Watts-to-Freedom run that left the pack at 116.6 °F, gave a chance to attack it
+with a hot pack and a ramping charger. Two hypotheses were tested and both
+failed, which is worth recording because both looked convincing first.
+
+The charge produced `0x91`, `0x94` and `0x95`, interleaved in short bursts
+rather than in phases:
+
+    94 x46  91 x2  94 x1  91 x1  94 x2  91 x3  94 x1  91 x1  94 x1  91 x6 ...
+
+**Hypothesis 1: temperature.** Grouped over the whole charge, `0x91` sat at
+visibly higher readings than `0x94` — coolant_1 `0x433`–`0x447` against
+`0x3D4`–`0x3E8`, compressor 75–77 against 70–73, `temp_f` pinned at 116.6
+against a range. That is a strong-looking split. It is entirely an artefact of
+when the states occur: `0x91` appears later, and the pack warms throughout.
+Restricted to the window where both states are present, they are
+indistinguishable — coolant_1 means 1101 against 1099, coolant_2 806 against
+806, compressor 118.0 against 118.1, pack current −12.2 A against −12.1 A.
+
+**Hypothesis 2: charge current.** `0x95` appeared only at the top of the
+current range and was the only state to exceed −21.55 A, which suggested a
+high-rate state. Same confound, same result: the charger ramps throughout, and
+`0x95` appears late. Within the window where both occur, `0x91` spans
+−21.55…−20.05 A (mean −20.43) and `0x95` spans −22.15…−20.05 A (mean −20.93) —
+overlapping ranges and a difference of half an amp on four samples.
+
+So the low nibble of `0x5401` has **no correlate in any column this project
+records**. Whatever it distinguishes — a contactor phase, a handshake bit, a
+converter state — is not visible from the outside at this sampling rate. That
+is a negative result, not a null one: it says stop looking for the answer in
+the recorded columns, and that a correlation found by grouping over a whole
+session must be re-checked against time before it is believed.
+
 ### What a charge does to state of charge, range and energy
 
 Measured across 101 samples of the 2026-09-04 AC charge, and they behave
