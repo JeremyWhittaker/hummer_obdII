@@ -783,6 +783,30 @@ class TestASleepingVehicleDoesNotBecomeARestartLoop(unittest.TestCase):
                          sleeper=lambda s: None, clock=_bounded_clock())
         self.assertTrue(session.ended_asleep)
 
+    def test_the_nodes_own_gps_fix_does_not_count_as_the_vehicle_answering(self):
+        """The overnight session of 2026-09-11, reproduced.
+
+        A truck asleep at exactly 12.8 V -- not below the band, so a session
+        opened -- with nothing answering and the node's receiver holding a
+        fix. The dead-cycle check should have ended it in three cycles. It
+        wrote 131 rows over 66 minutes instead, because the merged gps_*
+        columns were not on _NON_VEHICLE_COLUMNS and every one of them reset
+        the counter as if a module had spoken. A position from the Pi's own
+        antenna says nothing about whether the vehicle answered.
+        """
+        class _Fix:
+            def columns(self):
+                return {"gps_lat": 33.3746, "gps_lon": -111.7456,
+                        "gps_mode": 3, "gps_speed_mps": 0.0, "gps_sats": 7}
+        link = self._asleep_but_high_rail(12.8)
+        session = record(link, interval_s=0, duration_s=200.0,
+                         sleeper=lambda s: None, clock=_bounded_clock(),
+                         gps_reader=_Fix())
+        self.assertTrue(session.ended_asleep,
+                        "a GPS fix kept an asleep truck's session alive")
+        self.assertLessEqual(session.cycles, DEAD_CYCLES_BEFORE_EXIT + 1,
+                             f"ran {session.cycles} cycles before noticing")
+
     def test_a_normal_session_does_not_claim_the_vehicle_slept(self):
         session = record(_Fake(), interval_s=0, max_cycles=2,
                          sleeper=lambda s: None, clock=_bounded_clock())
@@ -1547,8 +1571,19 @@ class TestTheWakeWatchBacksOffInsteadOfAlwaysWaitingFiveMinutes(unittest.TestCas
                 )
             return waits
 
-        cold = waits_for([12.4] * 6, 4)
-        self.assertEqual(set(cold), {300.0}, f"cold start watched fast: {cold}")
+        # A cold start on a truck that is genuinely asleep gets a bounded
+        # handful of fast looks -- the 12 V rail can read low for a minute
+        # after ignition -- and then MUST drop to the slow interval. The
+        # property is "does not watch fast forever", not "never watches fast":
+        # the earlier form of this assertion pinned the first wait to 300 s,
+        # which is exactly what threw away six minutes of a drive on
+        # 2026-09-11 when the first probe after a reboot read below the band.
+        cold = waits_for([12.4] * 8, 8)
+        fast = [w for w in cold if w == drive.WAKE_WATCH_FAST_S]
+        self.assertLessEqual(len(fast), drive.COLD_START_RETRIES,
+                             f"cold start watched fast too long: {cold}")
+        self.assertEqual(cold[-1], 300.0,
+                         f"cold start never dropped to slow: {cold}")
 
         # Awake first, then the rail drops: this run has now seen it sleep.
         after = waits_for([13.9] + [12.4] * 10, 25)
@@ -1556,6 +1591,39 @@ class TestTheWakeWatchBacksOffInsteadOfAlwaysWaitingFiveMinutes(unittest.TestCas
             drive.WAKE_WATCH_FAST_S, after,
             f"no fast wait after falling asleep; waits were {after}",
         )
+
+    def test_a_transient_low_reading_at_boot_does_not_cost_five_minutes(self):
+        """The 2026-09-11 reboot, reproduced.
+
+        The Pi came up beside a running truck, the first ATRV read below the
+        band because the 12 V rail had not yet settled, and the watch went
+        silent for 300 s with no log line. The second probe read 13.7 V and a
+        session opened -- six minutes into the drive. Two low readings then a
+        running one must open the session inside the fast window, and every
+        wait before it must be the fast one.
+        """
+        waits: list[float] = []
+        said: list[str] = []
+        calls = {"n": 0}
+        def stop():
+            calls["n"] += 1
+            return calls["n"] > 6
+        with tempfile.TemporaryDirectory() as out:
+            run_auto(
+                _Fake(volts_sequence=[12.4, 12.5, 13.7, 13.7, 13.7]),
+                output_dir=out, sleeper=waits.append, say=said.append,
+                stop=stop, max_session_s=1.0,
+            )
+        self.assertNotIn(300.0, waits[:2],
+                         f"went to the slow interval on a cold start: {waits}")
+        self.assertTrue(all(w == drive.WAKE_WATCH_FAST_S for w in waits[:2]),
+                        f"pre-session waits were not fast: {waits[:2]}")
+        self.assertTrue(any("starting a session" in m for m in said),
+                        f"never opened a session: {said}")
+        # And it said so. The original failure was silent: nothing in the log
+        # distinguished "sleeping 300 s after a low reading" from a hang.
+        self.assertTrue(any("cold start" in m for m in said),
+                        f"a low cold-start reading was not logged: {said}")
 
     def test_the_fast_window_costs_far_less_than_the_restart_loop_it_replaces(self):
         # The 2026-09-04 restart loop sent roughly 100 requests a minute to a

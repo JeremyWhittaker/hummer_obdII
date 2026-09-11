@@ -504,7 +504,17 @@ DEAD_CYCLES_BEFORE_EXIT: int = 3
 #: ``utc`` and ``elapsed_s`` are the row's own bookkeeping, and ``volts`` comes
 #: from ``ATRV``, which the adapter answers by itself.  A cycle holding only
 #: these has decoded nothing, however healthy the process looks.
-_NON_VEHICLE_COLUMNS: Final[frozenset[str]] = frozenset({"utc", "elapsed_s", "volts"})
+_NON_VEHICLE_COLUMNS: Final[frozenset[str]] = frozenset({
+    "utc", "elapsed_s", "volts",
+    # The node's own receiver, not the vehicle. Left off this list, a GPS fix
+    # counted as "something answered" and reset the dead-cycle counter every
+    # cycle, so a truck asleep with a fix could never end its session: on
+    # 2026-09-11 one wrote 131 rows of nothing but 12.8 V and a position over
+    # 66 minutes, until the link dropped. The counter measures whether the
+    # VEHICLE answered; these columns say nothing about that.
+    "gps_lat", "gps_lon", "gps_alt_m", "gps_speed_mps", "gps_track_deg",
+    "gps_epx_m", "gps_sats", "gps_mode", "gps_time", "gps_anchored",
+})
 
 
 #: How the kernel describes an RFCOMM binding that is actually carrying a
@@ -1140,6 +1150,13 @@ WAKE_WATCH_WINDOW_S: float = 600.0
 #: The interval used inside that window.
 WAKE_WATCH_FAST_S: float = 20.0
 
+#: How many fast re-probes a COLD start gets when its first ATRV reads below
+#: the band, before the watch drops to the slow interval. Three at 20 s covers
+#: a minute -- long enough for a 12 V rail to settle after ignition, short
+#: enough that a node rebooted beside a truck parked overnight sends only a
+#: handful of adapter-only probes before going quiet.
+COLD_START_RETRIES: int = 3
+
 WAKE_PROBE: str = "010D"
 
 
@@ -1287,6 +1304,7 @@ def run_auto(
     #: clock.  ``None`` until it has, so a cold start does not watch fast.
     asleep_since: Optional[float] = None
     unanswered = 0
+    cold_probes = 0
 
     def watch_wait() -> None:
         """Sleep until the next look for a wake, fast or slow as appropriate."""
@@ -1335,6 +1353,23 @@ def run_auto(
                 say(f"vehicle asleep ({volts} V); session ended")
                 awake = False
                 asleep_since = clock()
+            elif asleep_since is None and cold_probes < COLD_START_RETRIES:
+                # A cold start that reads low is not yet evidence of a sleeping
+                # truck. The Pi boots faster than the vehicle's 12 V rail
+                # settles, so the first ATRV after a reboot next to a running
+                # truck can read below the band -- on 2026-09-11 it did, the
+                # watch dropped straight to the slow interval without a word,
+                # and six minutes of a drive were lost before the second probe
+                # read 13.7 V. Retry at the fast cadence a bounded number of
+                # times first. Bounded, because a node rebooted beside a truck
+                # parked overnight must not poll fast all night; that property
+                # is tested, and this keeps it.
+                cold_probes += 1
+                say(f"rail reads {volts} V on a cold start; "
+                    f"looking again in {WAKE_WATCH_FAST_S:.0f}s "
+                    f"({cold_probes}/{COLD_START_RETRIES})")
+                sleeper(WAKE_WATCH_FAST_S)
+                continue
             watch_wait()
             continue
 

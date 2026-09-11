@@ -1091,6 +1091,36 @@ with a zero-CAN-traffic voltage watch. Two things remain unproven: overnight
 12 V stability with the hardware attached, and whether the vehicle still sleeps
 while a diagnostic loop is actively polling. Autostart stays gated on both.
 
+### Two ways the recorder silently threw data away
+
+Both found on 2026-09-11, both on the same 12.8 V threshold, and both fixed
+by measuring what the vehicle *answered* rather than trusting what the rail
+*read*.
+
+**A cold start went quiet for five minutes.** The Pi boots faster than the
+truck's 12 V rail settles after ignition, so the first `ATRV` after a reboot
+beside a running truck can read below the band. The watch treated that as a
+sleeping vehicle and dropped straight to the slow 300 s interval — without a
+log line, so it was indistinguishable from a hang. The second probe read
+13.7 V and a session opened six minutes into the drive. A cold start that
+reads low now gets `COLD_START_RETRIES` fast looks (three at 20 s) before it
+goes slow, and says so. Bounded, because a node rebooted beside a truck parked
+overnight must not poll fast all night; that property is tested and kept.
+
+**A truck asleep with a GPS fix could never end its session.** `record()`
+ends a session once `DEAD_CYCLES_BEFORE_EXIT` consecutive cycles decode
+nothing — but "nothing" was judged by whether the row carried any column
+outside `_NON_VEHICLE_COLUMNS`, and the node's own `gps_*` columns were not
+on that list. A position from the Pi's antenna counted as a module speaking,
+reset the counter every cycle, and one overnight session wrote 131 rows of
+nothing but `12.8V` and a coordinate across 66 minutes until the link
+dropped. The `gps_*` columns are now on the list. They say nothing about
+whether the vehicle answered.
+
+The threshold itself was not the bug and was not moved: `WAKE_VOLTS` sits
+deliberately below the ambiguous band so every ambiguous reading is resolved
+by asking, and the tests pin it there.
+
 ## Validated result
 
 The reference deployment has demonstrated:
