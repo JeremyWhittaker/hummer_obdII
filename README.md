@@ -579,6 +579,18 @@ has no such trade — the far half stays intact as a silhouette and the near hal
 is simply gone. The camera stands on the side that was removed; put it on the
 surviving side and the view shows the outside of an ordinary truck.
 
+It became one on 2026-09-11. The first version culled parts whose *centre* lay on the
+driver's side and kept everything else whole — and 154 of 379 parts sit on the
+centreline: the pack, the drive units, the cabin, the roof, the bed, every
+crossmember. Those survived at full width with their driver-side faces toward
+the eye, so the view was a side elevation of an entire truck with two wheels
+missing, which the owner correctly said was not cut in half. Anything that
+straddles the plane is now clipped at it and drawn from the plane outward; a
+cylinder laid along X or Y has the local axis that maps to Z shortened, since
+the translate is applied before the rotation. `CutawayIsASection` in
+`tests/test_scene_geometry.py` mirrors the rule over `buildScene()`'s own output
+and asserts no drawn geometry crosses the plane.
+
 **The parts are sourced, and the gaps are named.** The drive units open up to
 copper hairpin stator windings, because GM describes this motor family as
 hairpin-wound and oil-cooled "with what's essentially transmission fluid"; the
