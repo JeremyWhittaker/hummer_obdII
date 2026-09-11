@@ -1248,18 +1248,6 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        that rises to about 0.34 m at mid-wheelbase, where a flat slab at the
        0.2565 m ground clearance would give only 16.9. That much is left to
        the skid plates, which already sit above the rockers. --- */
-    /* WHERE THE COOLANT LINES RUN. They were at |z| = packWidth/2 + 0.14 =
-       0.85, with an 0.08 m bore, which puts them at |z| 0.81..0.89 -- entirely
-       inside the front tyre's band of 0.779..1.084. The pipe axis sits 0.127 m
-       below the wheel centre, so inside a 0.4471 m tyre it cut a chord 0.857 m
-       long straight through both front tyres and both rims, plus 0.269 m
-       through each brake rotor. Jeremy asked for the cooling lines to be more
-       accurate; they were routed through the wheels.
-       
-       0.73 puts them at |z| 0.69..0.77: clear of the tyre's inner sidewall by
-       0.009 m, and just outboard of the battery modules at 0.685 so they still
-       read as running along the pack rather than through it. */
-    var PIPE_Z = 0.73;
     var FLARE_R = 0.55, FLARE_DEPTH = 0.13, FLARE_STEPS = 9,
         frontCutX = AXLE + 0.18, rearCutX = -AXLE - 0.24,
         flankZ = W - 0.055,
@@ -1901,21 +1889,27 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
               s: [0.13, 0.17, 0.03] });
       });
 
-    /* --- thermal --- */
-    add({ id: "hvac", mesh: "bev", layer: "thermal", colour: [0.19, 0.44, 0.50],
-          t: [2.18, 0.80, -0.44], s: [0.40, 0.34, 0.42] });
+    /* --- thermal, front ---------------------------------------------
+       What the parts catalogue lists for this truck as FRONT assemblies: a
+       "drive motor control module radiator", a "high voltage battery
+       coolant cooler" and the chiller hoses that serve it. So there is a
+       radiator stack behind the grille and a chiller near it, and that much
+       is sourced. Neither's dimensions nor exact station is published: the
+       radiator is drawn behind the grille at the grille's own width, and the
+       chiller is a box low on the passenger side because that is where the
+       12 V battery is not. Two boxes labelled "hvac" and "chiller" used to
+       stand here at a size and place nobody had sourced; the owner said the
+       front did not look like parts and sizes, and it was not.
+
+       The two 3.3 m coolant lines that ran from here to nowhere at wheel
+       height are gone. They were placeholders the model itself called
+       unsourced, they ran alongside the front tyres, and the owner saw
+       exactly that. What is sourced is that coolant passes through every
+       module, and that is where the flow is drawn now. */
+    add({ id: "radiator", mesh: "bev", layer: "thermal", colour: [0.19, 0.44, 0.50],
+          t: [noseX - 0.22, 0.82, 0], s: [0.06, 0.52, 1.30] });
     add({ id: "chiller", mesh: "bev", layer: "thermal", colour: [0.19, 0.44, 0.50],
-          t: [2.18, 0.80, 0.44], s: [0.40, 0.34, 0.42] });
-    /* Scale is applied AFTER the rotation in the model matrix, so these are
-       world axes: a pipe turned onto X is stretched along X. Scaling the
-       cylinder's original Z instead made it short and fat and left a stray
-       bar sticking out past the body. */
-    add({ id: "pipe-l", mesh: "cyl", layer: "thermal", colour: [0.16, 0.52, 0.60],
-          flow: true, t: [0.70, 0.32, -(PIPE_Z)],
-          s: [3.3, 0.08, 0.08], rot: "x" });
-    add({ id: "pipe-r", mesh: "cyl", layer: "thermal", colour: [0.16, 0.52, 0.60],
-          flow: true, t: [0.70, 0.32, PIPE_Z],
-          s: [3.3, 0.08, 0.08], rot: "x" });
+          t: [noseX - 0.55, 0.70, 0.55], s: [0.26, 0.22, 0.24] });
 
     /* Coolant that actually moves. The pipes used to pulse in place, which
        says "thermal system" and not "flow". These are slugs running the
@@ -1956,21 +1950,21 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
             s: [0.035, 0.035, VEH.packWidth], rot: "z" });
     }
 
-    var pipeBackX = 0.70 - 1.65, pipeFrontX = 0.70 + 1.65;
-    [[-(PIPE_Z), pipeBackX, pipeFrontX],
-     [PIPE_Z, pipeFrontX, pipeBackX]].forEach(function (run, side) {
+    /* The slugs run the two manifolds, one each way, so the pair reads as a
+       supply and a return. Scale is world-axis after rotation, so 0.16 is
+       the slug's length along its travel and 0.04 its width, inside the
+       0.055 m manifold. Named here rather than reusing the regen block's
+       pack-end variables below it: `var` hoists the name and not the value,
+       and this file has been bitten by that before. */
+    var mfRear = VEH.packCentreX - VEH.packLength / 2 + 0.08,
+        mfFront = VEH.packCentreX + VEH.packLength / 2 - 0.08;
+    [[-1, mfRear, mfFront], [1, mfFront, mfRear]].forEach(function (run, side) {
       for (var i = 0; i < 5; i++) {
         add({ id: "coolant-" + side + "-" + i, mesh: "cyl", layer: "thermal",
               colour: [0.30, 0.72, 0.82], coolant: true, chargeOnly: false,
               travel: { axis: 0, from: run[1], to: run[2], phase: i / 5,
                         rate: "coolant" },
-              /* Scale is world-axis after rotation -- the comment above the
-                 pipes says so -- so [0.115, 0.115, 0.20] made each slug
-                 0.115 m along its direction of travel and 0.20 m ACROSS,
-                 wider than the 0.08 m hose carrying it. A bead of coolant
-                 bulging out either side of its own pipe. Now 0.20 long and
-                 0.05 across, which leaves 0.015 m of pipe wall all round. */
-              t: [run[1], 0.32, run[0]], s: [0.20, 0.05, 0.05], rot: "x" });
+              t: [run[1], manifoldY, run[0] * manifoldZ], s: [0.16, 0.04, 0.04], rot: "x" });
       }
     });
 
@@ -2179,9 +2173,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                  halfshaft ran straight through the middle of all four. A
                  spring skewered by a driveshaft is not a suspension. Offset
                  0.24 m inboard along X clears the shaft band by 0.080 m. */
-              t: [w[1] - (w[1] > 0 ? 0.24 : -0.24), 0.66,
+              /* Under the bed floor. At 0.42 m tall on a 0.66 m centre the
+                 rear pair topped out at 0.87, and the bed floor is at 0.75:
+                 the bellows stood up through the bed. They do not on the
+                 truck, and the owner said so. 0.445..0.725 now, front and
+                 rear alike since the station and size of neither is
+                 published. */
+              t: [w[1] - (w[1] > 0 ? 0.24 : -0.24), 0.585,
                   w[2] * (HALF_TRACK - 0.30)],
-              s: [0.22, 0.42, 0.22], rot: "y" });
+              s: [0.20, 0.28, 0.20], rot: "y" });
         /* The adaptive damper beside each spring. GM's own list is "Air
            Ride Adaptive Suspension" -- air springs AND continuously
            variable dampers -- and the model had only the springs, which
@@ -2194,10 +2194,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         var dx = w[1] - (w[1] > 0 ? 0.24 : -0.24), dz = w[2] * (HALF_TRACK - 0.48);
         add({ id: "damper-" + w[0], mesh: "cyl", layer: "suspension",
               colour: [0.50, 0.52, 0.55],
-              t: [dx, 0.62, dz], s: [0.07, 0.34, 0.07], rot: "y" });
+              t: [dx, 0.57, dz], s: [0.07, 0.26, 0.07], rot: "y" });
         add({ id: "damper-rod-" + w[0], mesh: "cyl", layer: "suspension",
               colour: [0.72, 0.74, 0.76],
-              t: [dx, 0.88, dz], s: [0.028, 0.20, 0.028], rot: "y" });
+              t: [dx, 0.72, dz], s: [0.028, 0.05, 0.028], rot: "y" });
       });
 
     /* Four plates: front underbody, front battery, rear battery, rear
@@ -2936,15 +2936,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
             emissive = [0.52, 0.54, 0.58];
           }
         }
-        if (p.id === "pipe-r" && live.coolant1 !== null) {
+        if (p.id === "coolant-manifold-r" && live.coolant1 !== null) {
           /* Warm where the reading sits high in its range, cool where it sits
-             low. The left pipe stays plain so the two can be compared -- one
-             tinted pipe beside an untinted one says "this is the one with a
-             reading behind it", which two tinted pipes would not. */
+             low. The left manifold stays plain so the two can be compared --
+             one tinted run beside an untinted one says "this is the one with
+             a reading behind it", which two tinted runs would not. */
           emissive = [0.30 * live.coolant1, 0.16 + 0.22 * live.coolant1,
                       0.26 * (1 - live.coolant1) + 0.10];
         }
-        if (p.id === "hvac" && live.coolant2 !== null) {
+        if (p.id === "radiator" && live.coolant2 !== null) {
           /* On or off, which is all the index ever claimed for this one. */
           var hot = live.coolant2 > 0.02;
           emissive = hot ? [0.10, 0.34, 0.40] : [0.03, 0.06, 0.07];
@@ -3837,17 +3837,20 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
          pass for the Ultium thermal layout came back empty on what the
          underbody cylinders are, whether there is a front radiator, how many
          loops there are, and how coolant routes through the 24 modules. The
-         pipes end in mid-air because there is no sourced component to end them
-         into.
+         runs to the front were deleted for that reason; what remains is the
+         pack's own passages and the two front parts the catalogue names.
          
          A model that draws 28 confident-looking thermal parts while its own
          documentation calls them unverified is telling two different stories.
          The reader is looking at the model, so the caveat goes here too. */
       thermalBadge.appendChild(h("span", "note",
-        "The plumbing itself is UNSOURCED. Pipe routing, the radiator and the "
-        + "loop count could not be found in GM material — the pipes end in "
-        + "mid-air because nothing sourced says what they connect to. Treat "
-        + "the shapes as placeholders; the temperature above is measured."));
+        "The plumbing itself is UNSOURCED beyond what is drawn: coolant "
+        + "passes through every module (GM's service publication) and there "
+        + "is a radiator and a chiller at the nose (the parts catalogue). How "
+        + "the loops connect, and the size and station of the front parts, "
+        + "are not published, so nothing is drawn between the pack and the "
+        + "nose. Treat the shapes as placeholders; "
+        + "the temperature above is measured."));
     }
 
     /* The caption belongs to the view, not to this function. Setting it here
@@ -4618,10 +4621,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     longitudinal_g: ["shell", "body pitch"],
 
     /* --- thermal --- */
-    thermal_energy_raw:  ["pipe-l", "coolant flow, gated on the accumulator advancing"],
-    coolant_1_raw:       ["pipe-r", "coolant tint, relative ramp — the unit is unknown"],
-    coolant_2_raw:       ["hvac", "HVAC on/off only"],
-    group_v1_raw:        ["hvac", "HVAC actuator command"],
+    thermal_energy_raw:  ["coolant-*", "coolant flow through the pack, gated on the accumulator advancing"],
+    coolant_1_raw:       ["coolant-manifold-r", "coolant tint, relative ramp — the unit is unknown"],
+    coolant_2_raw:       ["radiator", "on/off only"],
+    group_v1_raw:        ["radiator", "HVAC actuator command"],
     field_4127_raw:      ["shell", "powertrain awake/asleep — wakes or dims the whole model"],
     compressor_temp_raw: ["chiller", "compressor activity"],
 

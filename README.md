@@ -660,12 +660,15 @@ for the 2022–2025 Hummer EV Pickup at 355 mm front and rear, 40 mm thick at
 the front and 20 mm at the rear, and that is what is drawn. Caliper piston
 count is still unpublished.
 
-**Every corner has a spring and a damper.** GM's feature is "Air Ride
-Adaptive Suspension" — air springs *and* adaptive dampers — and the model had
-only the springs, drawn near-black on a black background, which is why the
-owner said the entire shock system was missing. The bellows are lighter now
-and a damper stands inboard of each one. Their stations are not published and
-nothing in the telemetry reports ride height, so they do not move.
+**Every corner has a spring and a damper, under the floor.** GM's feature is
+"Air Ride Adaptive Suspension" — air springs *and* adaptive dampers — and the
+model had only the springs, drawn near-black on a black background, which is
+why the owner said the entire shock system was missing. The bellows are
+lighter now and a damper stands inboard of each one. The first version of
+that stood the rear pair 0.12 m up through the bed floor; the owner asked
+whether they really do that, and they do not — they are 0.28 m tall now and
+top out below the floor, which a test pins. Their stations are not published
+and nothing in the telemetry reports ride height, so they do not move.
 
 **A replay is judged frame by frame.** Charging, plugged, coolant flow and
 the four wheel speeds were read from the session's final state, so a trip
@@ -717,13 +720,22 @@ positions rather than the eighteen *views* GMC advertises.
 an aftermarket retailer rather than GMC's catalogue, and a lamp the vehicle does
 not have is worse than one it does.
 
-**The thermal plumbing IS drawn, and it is not sourced.** Twenty-eight parts on
-the `thermal` layer — pipes, manifolds, a chiller, an HVAC box — were placed
-before any of it could be verified, and the sourcing attempt that followed
-returned nothing: what the underbody cylinders actually are, whether there is a
-front radiator, how many coolant loops exist and how they route through the 24
-modules are all unanswered. The two long pipes terminate in mid-air at the
-front axle because there is no sourced component to terminate them into.
+**The thermal layer draws only what something sourced puts there.** It used
+to carry twenty-eight parts — two 3.3 m pipes, manifolds, a chiller, an HVAC
+box — placed before any of it could be verified, with the two long pipes
+running from the pack to nowhere at wheel height, past the front tyres. The
+owner saw "two blue cylinder tubes that definitely do not run under the
+tires", and he was looking at exactly that. On 2026-09-11 they went. What
+stays is sourced: coolant passes through every module (GM's service
+publication for this vehicle says each CMA contains internal coolant
+passages), so the manifolds and crossings stay and the flow animation now
+runs along them; and the parts catalogue lists a "drive motor control module
+radiator" and a "high voltage battery coolant cooler" as front assemblies, so
+a radiator stands behind the grille and a chiller beside it. Their sizes and
+exact stations are not published, and nothing is drawn between the pack and
+the nose because nothing sourced says how the loops connect.
+`UnderbodyStaysUnderTheBody` pins that every thermal part is inside the pack
+envelope or ahead of the front axle.
 
 An earlier version of this paragraph claimed the plumbing was *not* drawn. That
 was written to be honest about a gap and was simply false about the code — the

@@ -408,3 +408,54 @@ class LayerControlTests(unittest.TestCase):
         keys = re.findall(r'key: "(\w+)"', views)
         self.assertEqual(keys, ["exterior", "driver"])
         self.assertNotIn('state.view === "cutaway"', _script())
+
+
+@unittest.skipIf(NODE is None, "node is not installed on this machine")
+class UnderbodyStaysUnderTheBody(unittest.TestCase):
+    """What sits under the truck must not stand up through it.
+
+    The rear air springs were 0.42 m tall on a 0.66 m centre, topping out at
+    0.87 m, with the bed floor at 0.75 m: the bellows stood up through the
+    bed. The owner asked whether they really do that. They do not.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.parts = build_parts()
+        cls.by_id = {p["id"]: p for p in cls.parts}
+
+    def test_no_suspension_part_rises_through_the_bed_floor(self):
+        floor = self.by_id["bed-floor"]
+        floor_y = floor["t"][1] - floor["s"][1] / 2
+        x0 = floor["t"][0] - floor["s"][0] / 2
+        x1 = floor["t"][0] + floor["s"][0] / 2
+        tall = [(p["id"], round(p["t"][1] + p["s"][1] / 2, 3))
+                for p in self.parts
+                if p["layer"] == "suspension" and x0 <= p["t"][0] <= x1
+                and p["t"][1] + p["s"][1] / 2 > floor_y + 1e-6]
+        self.assertEqual(tall, [], f"through the bed floor at {floor_y:.3f}: {tall}")
+
+    def test_thermal_parts_are_only_where_something_sourced_puts_them(self):
+        """Inside the pack, or at the nose. Nothing in between.
+
+        Two 3.3 m coolant lines used to run from the pack to nowhere at wheel
+        height, past the front tyres. The model called them unsourced and
+        drew them anyway; the owner saw tubes that do not run under his
+        tyres. What is sourced is coolant through every module and a
+        radiator and chiller at the front, so that is where thermal parts
+        may be.
+        """
+        case = self.by_id["pack-case"]
+        px0 = case["t"][0] - case["s"][0] / 2 - 0.05
+        px1 = case["t"][0] + case["s"][0] / 2 + 0.05
+        pz = case["s"][2] / 2 + 0.05
+        stray = []
+        for p in self.parts:
+            if p["layer"] != "thermal":
+                continue
+            x, y, z = p["t"]
+            in_pack = px0 <= x <= px1 and abs(z) <= pz
+            at_nose = x > 1.75            # ahead of the front axle
+            if not (in_pack or at_nose):
+                stray.append((p["id"], round(x, 2), round(z, 2)))
+        self.assertEqual(stray, [], f"thermal parts drawn where nothing sourced puts them: {stray}")
