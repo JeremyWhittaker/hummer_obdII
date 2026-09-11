@@ -1352,11 +1352,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        it is the one piece of this model that was already designed to show
        telemetry before anybody wired telemetry to it.
 
-       So the six letters are six parts, and while the truck is charging they
-       fill left to right in proportion to state of charge -- five solid and
-       the sixth breathing at 84%, which is what a bar that reports charge
-       does. The letters are cut from the bar rather than laid on it, at
-       0.11 m wide with 0.035 m between, spanning the full width GMC gives it.
+       So the six letters are six parts. They USED to fill with state of
+       charge; the owner's manual puts the charge status indicator in the
+       headlamps, not the bar (see the headlamps below), so the letters are
+       the lit signature and nothing more: steady, the way a badge is. The
+       letters are cut from the bar rather than laid on it, at 0.11 m wide
+       with 0.035 m between, spanning the full width GMC gives it.
 
        Full width, not inset: the previous bar stopped 0.30 m short of each
        flank, which is a lamp, not the "full-width upper lightbar" every
@@ -1407,10 +1408,38 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        is an aftermarket retailer; they are not in GMC's catalogue, and a
        lamp this truck does not have is worse than one it does. */
     [-1, 1].forEach(function (side) {
+      /* THE HEADLIGHT CHARGE STATUS INDICATOR, from the owner's manual for
+         this truck (GM 15481078, "Charge Status Indicator"): "The headlight
+         CSI bar is located on the headlamps. As charging occurs, the blue
+         light bars on the headlamps fill towards the center of the
+         vehicle." And: "Solid light bars represent the available state of
+         charge. The remaining light bars build in a swipe pattern towards
+         the center of the vehicle." Complete: "all light bars are solid",
+         and "they will remain lit for five minutes and then turn off."
+         Initial connection: "Solid Blue".
+
+         So each headlamp is a housing with a row of bars inside it, filled
+         from the OUTER edge toward the nose -- which, seen from the front,
+         is the side-to-side blue sweep the owner described. The bar count
+         and the housing's size are not published; eight per lamp is a
+         drawing choice, the lens is the 0.40 m the model already gave it.
+
+         This used to be on the HUMMER letters, on the strength of a
+         brochure line listing "charge status" among the signature
+         lighting's features. The manual is specific about where it is. */
+      var lampZ = side * (W - 0.30), lampY = beltline - 0.20, lampW = 0.40, BARS_PER_LAMP = 8;
       add({ id: "headlamp-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "lights",
-            colour: [0.70, 0.73, 0.76], alpha: 1,
-            t: [noseX - 0.01, beltline - 0.20, side * (W - 0.30)],
-            s: [0.06, 0.16, 0.34], emissiveTag: "lights", lamp: "head" });
+            colour: [0.12, 0.13, 0.14], alpha: 1,
+            t: [noseX - 0.02, lampY, lampZ], s: [0.06, 0.16, lampW] });
+      for (var bi = 0; bi < BARS_PER_LAMP; bi++) {
+        /* Index 0 is the outermost bar; the fill runs toward the centre. */
+        var pitch = (lampW - 0.04) / BARS_PER_LAMP,
+            bz = lampZ + side * ((lampW - 0.04) / 2 - pitch * (bi + 0.5));
+        add({ id: "headlamp-" + (side < 0 ? "l" : "r") + "-bar-" + bi, mesh: "bev",
+              layer: "lights", colour: [0.20, 0.30, 0.45], alpha: 1,
+              t: [noseX + 0.015, lampY, bz], s: [0.02, 0.05, pitch - 0.008],
+              csi: { index: bi, count: BARS_PER_LAMP } });
+      }
       /* Tall and narrow: the rear "H" is the elongated one. */
       add({ id: "taillamp-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "lights",
             colour: [0.42, 0.10, 0.10], alpha: 1,
@@ -2535,7 +2564,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         /* Every field the draw loop reads has to exist before the first
            snapshot arrives, or a frame renders NaN into the shader and the
            part disappears without an error anywhere. */
-        live = { modules: [], kw: 0, brake: 0, flow: 0, speed: 0, steer: 0,
+        live = { modules: [], kw: 0, brake: 0, flow: 0, speed: 0, steer: 0, csi: "off",
                  corners: {}, charging: false, plugged: false, soc: null,
                  coolant1: null, coolant2: null, compressor: null,
                  roll: 0, pitch: 0,
@@ -2971,46 +3000,36 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           emissive = [0.30 * load + 0.04, 0.13 * load + 0.015, 0.02 * load];
         }
         if (p.letter !== undefined) {
-          /* The bar reports charge, which is what GMC built it to do -- and
-             it FLOWS, which is what was asked for and what the first version
-             did not deliver. That one lit letters up to the state of charge
-             and breathed the single letter straddling the threshold, so five
-             of the six were static on/off steps at any instant and nothing
-             ever travelled across the badge.
-             
-             Now there are two things happening at once, which is how a real
-             charge-status bar behaves: the FILL says how full the pack is,
-             and a WAVE runs left to right across the filled letters saying
-             that energy is still moving. Each letter carries its own phase --
-             that per-letter offset is the flow; a single shared sine is a
-             blink.
-
-             The wave runs at the charge rate, so a 19.2 kW charge visibly
-             hurries and a 1 kW trickle crawls. It stops dead when the pack
-             stops taking current, because a bar still sweeping on a finished
-             charge would be saying something untrue. */
-          var frac = (p.letter + 1) / p.letters,
-              soc = live.soc === null ? null : live.soc / 100;
-          if (live.charging && soc !== null) {
-            var filled = soc >= frac,
-                edge = !filled && soc > frac - 1 / p.letters,
-                rate = 0.4 + Math.min(1, Math.abs(live.chargeKw || 0) / 19.2) * 1.6,
-                /* Phase per letter is what makes it travel. 0.85 of a cycle
-                   across six letters keeps a visible crest rather than every
-                   letter peaking together. */
-                phase = now * 0.001 * rate - p.letter * (0.85 / p.letters),
-                wave = Math.sin(phase * Math.PI * 2) * 0.5 + 0.5,
-                on = filled ? 0.55 + wave * 0.45
-                   : edge ? 0.18 + wave * 0.55
-                   : 0.05 + wave * 0.05;
-            emissive = [on * 0.10, on * 0.72, on * 0.34];
-          } else if (live.plugged) {
-            /* Plugged and not taking current: lit, even, still. The charge is
-               done and the bar should say so by NOT moving. */
-            emissive = [0.06, 0.42, 0.20];
+          /* The lit signature: steady. The charge-status fill and wave that
+             used to run across these letters moved to the headlamps, which
+             is where the owner's manual says the indicator is. */
+          emissive = [0.34, 0.36, 0.40];
+        }
+        if (p.csi !== undefined) {
+          /* The headlight Charge Status Indicator, per the manual. `live.csi`
+             is "charging", "solid" or "off", decided per frame from the port
+             state, the pack current and the five-minute rule. Bar 0 is the
+             outermost; the fill runs toward the centre of the vehicle. */
+          var BLUE = [0.16, 0.48, 0.98], n = p.csi.count, bi2 = p.csi.index, lvl;
+          if (live.csi === "charging" && live.soc !== null) {
+            var lit = Math.round(live.soc / 100 * n), rem = n - lit;
+            if (bi2 < lit) {
+              lvl = 1;
+            } else if (rem > 0) {
+              /* "The remaining light bars build in a swipe pattern towards
+                 the center": the unfilled bars light one after another from
+                 the solid boundary inward, then start again. */
+              var built = ((now * 0.001 * 0.55) % 1) * (rem + 1);
+              lvl = (bi2 - lit) < built ? 0.62 : 0.06;
+            } else {
+              lvl = 1;
+            }
+          } else if (live.csi === "solid") {
+            lvl = 1;
           } else {
-            emissive = [0.34, 0.36, 0.40];
+            lvl = 0.02;
           }
+          emissive = [BLUE[0] * lvl, BLUE[1] * lvl, BLUE[2] * lvl];
         }
         if (p.brake) {
           emissive = [live.brake * 0.9, live.brake * 0.08, live.brake * 0.08];
@@ -3635,6 +3654,35 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        frame and the ones around it, the same rule the live view applies to
        successive polls. A frame carries no clock of its own to diff against,
        so the neighbour a few samples back stands in. */
+    /* THE HEADLIGHT CHARGE STATUS INDICATOR'S STATE, from the manual's
+       rules: solid blue on connection, filling while charging, all solid
+       when complete and off five minutes after that. Nothing here reports
+       the lamps themselves; this is what the manual says they do given the
+       port state and the pack current, which the recorder does have. The
+       five-minute rule needs the moment charging last happened, so the
+       history is walked back within the current plug-in. */
+    var csiHere = (function () {
+      if (!pluggedHere) return "off";
+      if (chargingHere) return "charging";
+      var hist = (state.snapshot && state.snapshot.history) || [],
+          at = f ? hist.indexOf(f) : hist.length - 1;
+      if (at < 0) return "solid";
+      function rowPlugged(r) { return (r.charger_5401_raw || "00") !== "00"; }
+      function rowCharging(r) {
+        var kw = num(r.pack_kw);
+        return rowPlugged(r) && kw !== null && kw < -0.2
+          && !(num(r.speed_kph) > 0.5) && !(num(r.wheel_fl_kph) > 0.5);
+      }
+      var nowT = num(hist[at].elapsed_s);
+      for (var b = at - 1; b >= 0; b--) {
+        if (!rowPlugged(hist[b])) return "solid";       /* connected, not yet charging */
+        if (rowCharging(hist[b])) {
+          var then = num(hist[b].elapsed_s);
+          return nowT !== null && then !== null && nowT - then > 300 ? "off" : "solid";
+        }
+      }
+      return "solid";
+    })();
     var flowHere;
     if (f) {
       var hist = (state.snapshot && state.snapshot.history) || [],
@@ -3759,6 +3807,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       })(),
       corners: wheelsHere,
       charging: chargingHere,
+      csi: csiHere,
       /* Plugged in but not necessarily taking current -- the two are
          different states and the light bar shows them differently: a finished
          charge is lit and still, a running one flows. */
@@ -4582,7 +4631,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
      those on a part would look better and mean less. */
   var SIGNAL_PART = {
     /* --- traction pack --- */
-    soc_pct:        ["pack-case", "pack charge level"],
+    soc_pct:        ["headlamp-*-bar-*", "charge status indicator fill while plugged in"],
     energy_kwh:     ["pack-case", "pack charge level (the one that moves smoothly)"],
     range_mi:       ["pack-case", "pack charge level"],
     dist_since_chg_mi: ["pack-case", "pack charge level"],

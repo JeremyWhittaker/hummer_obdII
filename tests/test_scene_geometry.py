@@ -459,3 +459,46 @@ class UnderbodyStaysUnderTheBody(unittest.TestCase):
             if not (in_pack or at_nose):
                 stray.append((p["id"], round(x, 2), round(z, 2)))
         self.assertEqual(stray, [], f"thermal parts drawn where nothing sourced puts them: {stray}")
+
+
+@unittest.skipIf(NODE is None, "node is not installed on this machine")
+class ChargeStatusIndicatorTests(unittest.TestCase):
+    """The headlight CSI, as the owner's manual describes it.
+
+    "The headlight CSI bar is located on the headlamps. As charging occurs,
+    the blue light bars on the headlamps fill towards the center of the
+    vehicle." So: bars inside each headlamp housing, indexed from the outer
+    edge, and the fill code lights index 0 first.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.parts = {p["id"]: p for p in build_parts()}
+
+    def test_each_headlamp_carries_a_row_of_bars_inside_its_housing(self):
+        for side in "lr":
+            with self.subTest(side=side):
+                housing = self.parts[f"headlamp-{side}"]
+                bars = [p for i, p in self.parts.items() if i.startswith(f"headlamp-{side}-bar-")]
+                self.assertGreaterEqual(len(bars), 4)
+                z0 = housing["t"][2] - housing["s"][2] / 2
+                z1 = housing["t"][2] + housing["s"][2] / 2
+                for b in bars:
+                    self.assertTrue(z0 <= b["t"][2] - b["s"][2] / 2 and b["t"][2] + b["s"][2] / 2 <= z1,
+                                    f"{b['id']} is outside its housing")
+
+    def test_bar_zero_is_the_outermost_so_the_fill_runs_toward_the_centre(self):
+        for side in "lr":
+            with self.subTest(side=side):
+                bars = sorted((p for i, p in self.parts.items()
+                               if i.startswith(f"headlamp-{side}-bar-")),
+                              key=lambda p: int(p["id"].rsplit("-", 1)[1]))
+                outer = abs(bars[0]["t"][2])
+                inner = abs(bars[-1]["t"][2])
+                self.assertGreater(outer, inner, "bar 0 is not the outermost")
+
+    def test_the_letters_no_longer_carry_a_charge_fill(self):
+        block = _script()
+        block = block[block.index("if (p.letter !== undefined) {"):]
+        block = block[:block.index("if (p.csi !== undefined) {")]
+        self.assertNotIn("live.soc", block, "the letters still fill with state of charge")

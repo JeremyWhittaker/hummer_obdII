@@ -594,8 +594,9 @@ Drive units, Wheels, Brakes, Suspension & steering, Frame & armour, Thermal,
 12 V & charging, Cabin, Radar. Brakes were folded into the wheels and the air
 springs, tie rods, skid plates, rock rails and bumper beam into one
 "Underbody"; they are separate now because they are separate things. Lighting
-is its own layer so the light bar that spells the name and reports the charge
-is there with the body off — it is a display, not a panel. The eTrunk moved
+is its own layer so the light bar that spells the name and the headlamps that
+report the charge are there with the body off — they are displays, not
+panels. The eTrunk moved
 the other way, into Body, because it is a cavity in the bodywork and a tub
 floating in space says nothing.
 
@@ -686,6 +687,29 @@ should mean what the instrument said; the page converts once, at the edge
 where a person reads it. The signals table still names the recorded field,
 whose suffix says what the vehicle actually sent.
 
+**The headlights show the charge, the way the manual says they do.** The
+owner said that while charging "the front headlights do this cool side to
+side blue light", and the owner's manual for this truck (GM 15481078,
+"Charge Status Indicator") describes exactly that: "The headlight CSI bar is
+located on the headlamps. As charging occurs, the blue light bars on the
+headlamps fill towards the center of the vehicle." While charging, "solid
+light bars represent the available state of charge. The remaining light bars
+build in a swipe pattern towards the center of the vehicle." On connection
+they are solid blue; when complete "all light bars are solid" and "they will
+remain lit for five minutes and then turn off." So each headlamp is now a
+housing with eight bars inside it, filled from the outer edge toward the
+nose by state of charge, the remainder building inward and restarting while
+energy is going in, all solid when connected but not charging, and dark five
+minutes after the last charging sample — the history is walked back within
+the current plug-in to find it. The bar count and the lens size are not
+published; eight is a drawing choice. The fill that used to run across the
+HUMMER letters was built from a brochure line listing "charge status" among
+the signature lighting's features; the manual is specific about where the
+indicator is, so the letters are the lit signature and nothing more. The
+manual's colour table also lists blinking green while charging and solid
+green when complete, which contradicts its own prose and the owner's eyes;
+the page follows the prose and the owner.
+
 **Lamp status is not captured.** Nothing this vehicle answers carries
 headlamp or taillamp state — the catalogue records body signals as absent
 from every module that answers — so the taillamps light from brake pressure,
@@ -711,8 +735,8 @@ it is and says so in the source.
 copper hairpin stator windings, because GM describes this motor family as
 hairpin-wound and oil-cooled "with what's essentially transmission fluid"; the
 front unit is longer than the rear pair because its reduction is 13.3:1 against
-10.5:1. The front light bar spells HUMMER and fills against state of charge,
-which is not an invention — GMC builds it as a charge-status display. Lamps and
+10.5:1. The front light bar spells HUMMER as the lit signature, and the charge
+status is shown where the owner's manual says it is — see below. Lamps and
 cameras are where GMC's brochures and support pages put them, at eight camera
 positions rather than the eighteen *views* GMC advertises.
 
