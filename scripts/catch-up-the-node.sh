@@ -16,7 +16,12 @@
 #
 #   1. Deploys the current source. The node is running a gps.py without the
 #      anchor fix, which is why the position still flickers while parked and
-#      why it freezes for up to 100 m while driving.
+#      why it freezes for up to 100 m while driving. It is also running a
+#      drive.py with two silent data-loss defects: a cold start that reads a
+#      low 12 V rail sleeps 300 s without a log line (six minutes of the
+#      2026-09-11 drive lost), and a truck asleep with a GPS fix can never end
+#      its session (131 empty rows overnight). Both are fixed in the source
+#      this deploys.
 #   2. Restarts hummer-drive so the new gps.py is actually loaded. Python
 #      imports once at start; deploying alone changes nothing until this.
 #      *** THIS ENDS THE SESSION IN PROGRESS. *** Rows already written are kept;
@@ -52,7 +57,10 @@ HOST="$NODE" "$REPO/scripts/deploy.sh" >/dev/null
 ssh -o BatchMode=yes "$NODE" \
     "grep -c odo_says_still /home/jeremy/hummer-obd/src/hummer_obd/gps.py" >/dev/null \
   || { echo "error: the anchor fix is not on the node after deploying" >&2; exit 1; }
-echo "   gps.py now carries the anchor fix"
+ssh -o BatchMode=yes "$NODE" \
+    "grep -c COLD_START_RETRIES /home/jeremy/hummer-obd/src/hummer_obd/drive.py" >/dev/null \
+  || { echo "error: the recorder fixes are not on the node after deploying" >&2; exit 1; }
+echo "   gps.py carries the anchor fix; drive.py carries the recorder fixes"
 
 say "3/5  letting the dashboard save a place name"
 ssh -t "$NODE" "
