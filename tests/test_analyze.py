@@ -979,3 +979,88 @@ class SocQuantumTests(unittest.TestCase):
                  "soc_pct": 84.555, "energy_kwh": 161.12,
                  "elapsed_s": float(i * 15)} for i in range(70)]
         self.assertNotIn("soc_below_quantum", analyze._charge_report(rows))
+
+
+class PackResistanceTests(unittest.TestCase):
+    """Ohm's law on the pack, and the refusal to fit a line through a cloud.
+
+    This is the only check in the project that would catch two decoders that
+    were wrong together: every other one divides a decoded number by another
+    decoded number and compares the ratio with a figure measured earlier, which
+    moves if one scaling changes and stays put if both always were wrong. This
+    one appeals to physics -- a pack sags in proportion to the current it
+    delivers, and a wrong scale, offset or byte order on either side does not
+    produce a straight line with a plausible slope AND an intercept that tracks
+    state of charge.
+    """
+
+    def rows(self, ocv, milliohms, currents, soc=76.0):
+        # cell_avg_v is present because contactors_closed() looks for a pack
+        # that is actually connected; without it every row is filtered out and
+        # the test passes for the wrong reason.
+        return [{"pack_a": a, "pack_v": ocv - (milliohms / 1000.0) * a,
+                 "soc_pct": soc, "cell_avg_v": 3.9}
+                for a in currents]
+
+    def test_it_recovers_a_resistance_it_was_given(self):
+        rows = self.rows(390.0, 20.0, range(-300, 601, 30))
+        got = analyze.pack_resistance(rows)
+        self.assertIsNotNone(got)
+        self.assertAlmostEqual(got["milliohms"], 20.0, places=1)
+        self.assertAlmostEqual(got["open_circuit_v"], 390.0, places=1)
+        self.assertAlmostEqual(got["r_squared"], 1.0, places=3)
+
+    def test_a_narrow_current_span_returns_nothing(self):
+        # The important refusal. Over a few amps any line fits, and the slope
+        # is whatever the noise happened to do -- but it still looks like a
+        # measurement once it is printed with a unit beside it.
+        rows = self.rows(390.0, 20.0, [x * 0.5 for x in range(40)])
+        self.assertIsNone(analyze.pack_resistance(rows))
+
+    def test_too_few_samples_returns_nothing(self):
+        rows = self.rows(390.0, 20.0, [-200, 0, 200])
+        self.assertIsNone(analyze.pack_resistance(rows))
+
+    def test_a_parked_pack_never_produces_a_figure(self):
+        # Contactors open: pack_v is whatever the module says about a
+        # disconnected bus, and fitting it against current is meaningless.
+        rows = [{"pack_a": a, "pack_v": 1.0, "soc_pct": 76.0, "cell_avg_v": 3.9}
+                for a in range(-300, 601, 30)]
+        self.assertIsNone(analyze.pack_resistance(rows))
+
+    def test_it_bands_by_state_of_charge(self):
+        # The open-circuit voltage really does move as the pack empties, so an
+        # unbanded fit puts that drift in the residual. Banding is what lets
+        # the intercept be read as a voltage rather than as an average of two.
+        rows = (self.rows(382.0, 19.0, range(-300, 601, 40), soc=77.0)
+                + self.rows(380.0, 19.0, range(-300, 601, 40), soc=75.0))
+        got = analyze.pack_resistance(rows)
+        self.assertIn("by_soc_pct", got)
+        self.assertEqual(set(got["by_soc_pct"]), {75, 77})
+        self.assertAlmostEqual(got["by_soc_pct"][77]["open_circuit_v"], 382.0, places=1)
+        self.assertAlmostEqual(got["by_soc_pct"][75]["open_circuit_v"], 380.0, places=1)
+        for band in got["by_soc_pct"].values():
+            self.assertAlmostEqual(band["milliohms"], 19.0, places=1)
+
+    def test_a_wrong_scale_on_either_side_shows_up(self):
+        """What the check is for.
+
+        A decoder whose scaling is out by a factor does not merely shift the
+        answer -- it moves the recovered resistance by that same factor, away
+        from a figure already measured on this vehicle (18-20 mOhm). Halving
+        the current scale doubles the slope.
+        """
+        good = analyze.pack_resistance(self.rows(390.0, 19.0, range(-300, 601, 30)))
+        bad_rows = [dict(r, pack_a=r["pack_a"] / 2) for r
+                    in self.rows(390.0, 19.0, range(-300, 601, 30))]
+        bad = analyze.pack_resistance(bad_rows)
+        self.assertAlmostEqual(good["milliohms"], 19.0, places=1)
+        self.assertAlmostEqual(bad["milliohms"], 38.0, places=1)
+
+    def test_the_measured_range_is_stated_where_it_can_be_checked(self):
+        # The figures this vehicle has actually produced live in the
+        # docstring, so a future reader can tell a plausible number from a
+        # measured one without going to find a session.
+        doc = analyze.pack_resistance.__doc__ or ""
+        self.assertIn("mOhm", doc)
+        self.assertIn("2026-09-11", doc, "the measurement has no date on it")

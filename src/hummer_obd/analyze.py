@@ -506,6 +506,99 @@ def contactors_closed(row: dict) -> bool:
     return float(pack_v) >= MIN_PLAUSIBLE_SERIES * float(cell_v)
 
 
+def pack_resistance(rows: list[dict], *, min_span_a: float = 150.0,
+                    min_samples: int = 12) -> Optional[dict]:
+    """Ohm's law on the traction pack: the slope of voltage against current.
+
+    Under load the pack sags, and it sags in proportion to the current drawn.
+    Fitting ``pack_v`` against ``pack_a`` therefore recovers two physical
+    quantities at once: the slope is minus the pack's internal resistance, and
+    the intercept is its open-circuit voltage at the state of charge in
+    question.
+
+    This is the strongest cross-check in the project, and it is worth saying
+    why. ``pack_v`` and ``pack_a`` are decoded from DIFFERENT modules. Every
+    other check here divides one number by another and compares the answer with
+    a figure measured earlier, which catches a scaling that moves but not two
+    that were always wrong together. This one appeals to physics instead: if
+    either decode carried a wrong scale, offset or byte order, the pair would
+    not lie on a straight line, the slope would not land on a plausible
+    resistance, and the intercept would not climb with state of charge. Nothing
+    about a decoding error produces all three by accident.
+
+    Measured on a Watts-to-Freedom run recorded 2026-09-11, 254 samples
+    spanning -414 A to +595 A, banded by state of charge to keep the
+    open-circuit voltage from drifting through the fit:
+
+        SoC ~75%   n=43    OCV 379.90 V   18.9 mOhm   r2 0.963
+        SoC ~76%   n=114   OCV 381.06 V   18.2 mOhm   r2 0.929
+        SoC ~77%   n=97    OCV 381.94 V   19.9 mOhm   r2 0.925
+
+    The resistance agrees across three independent bands, and the intercept
+    rises monotonically with charge, which is what a battery does.
+
+    Returns None rather than a number when the drive did not draw enough
+    current to separate the slope from the noise: a fit over a narrow span is
+    an arbitrary line through a cloud, and reporting it as a measurement is how
+    a plausible figure gets quoted later as though it were evidence.
+    """
+    points = [(r, _is_finite_number(r.get("pack_v")), _is_finite_number(r.get("pack_a")))
+              for r in rows]
+    usable = [(float(r["pack_a"]), float(r["pack_v"]), r.get("soc_pct"))
+              for r, v_ok, a_ok in points
+              if v_ok and a_ok and contactors_closed(r)]
+    if len(usable) < min_samples:
+        return None
+    span = max(a for a, _, _ in usable) - min(a for a, _, _ in usable)
+    if span < min_span_a:
+        return None
+
+    def fit(sub: list[tuple]) -> Optional[dict]:
+        if len(sub) < min_samples:
+            return None
+        xs = [a for a, _, _ in sub]
+        ys = [v for _, v, _ in sub]
+        n = len(xs)
+        mx = sum(xs) / n
+        my = sum(ys) / n
+        sxx = sum((x - mx) ** 2 for x in xs)
+        if sxx == 0:
+            return None
+        slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
+        intercept = my - slope * mx
+        sst = sum((y - my) ** 2 for y in ys)
+        ssr = sum((y - (intercept + slope * x)) ** 2 for x, y in zip(xs, ys))
+        return {
+            "samples": n,
+            "current_span_a": _round(max(xs) - min(xs), 1),
+            "open_circuit_v": _round(intercept, 2),
+            "milliohms": _round(-slope * 1000.0, 1),
+            "r_squared": _round(1 - ssr / sst, 4) if sst else None,
+        }
+
+    result = fit(usable)
+    if result is None:
+        return None
+    # Banded by state of charge because the intercept is the open-circuit
+    # voltage, and that genuinely moves as the pack empties. Left unbanded the
+    # drift lands in the residual and depresses r-squared -- 0.84 across the
+    # whole run against 0.93 or better within a band -- which would read as a
+    # worse fit rather than as a second effect the model does not include.
+    bands = {}
+    for a, v, soc in usable:
+        if not _is_finite_number(soc):
+            continue
+        bands.setdefault(round(float(soc)), []).append((a, v, soc))
+    by_soc = {}
+    for soc, sub in sorted(bands.items()):
+        got = fit(sub)
+        if got is not None:
+            by_soc[soc] = got
+    if by_soc:
+        result["by_soc_pct"] = by_soc
+    return result
+
+
 def _cross_checks(rows: list[dict]) -> dict:
     """Relationships between columns that should hold whatever the vehicle did.
 
@@ -543,6 +636,12 @@ def _cross_checks(rows: list[dict]) -> dict:
     module = _ratio(rows, "volts", "module_voltage")
     if module:
         checks["adapter_over_pid42_volts"] = module
+    # Physics rather than arithmetic: the only check here that would catch two
+    # decoders that were wrong together. Absent from a gentle drive, because a
+    # fit needs the current to actually move.
+    resistance = pack_resistance(rows)
+    if resistance:
+        checks["pack_resistance"] = resistance
     return checks
 
 

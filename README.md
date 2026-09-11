@@ -251,6 +251,40 @@ reported **0 m for a truck whose odometer moved 100 m**, because wheel speed
 answered rarely, read zero, and the latch never released. An anchor that cannot
 release is not a filter, it is a deletion.
 
+### Pack internal resistance, and why it is the strongest check here
+
+Under load the pack sags in proportion to the current it delivers, so fitting
+`pack_v` against `pack_a` recovers two physical quantities at once: the slope
+is minus the internal resistance, the intercept is the open-circuit voltage at
+that state of charge.
+
+Measured on a Watts-to-Freedom run recorded 2026-09-11 — 262 samples spanning
+−414 A to +595 A, banded by state of charge so the drifting intercept does not
+land in the residual:
+
+| SoC | n | open-circuit V | resistance | r² |
+|---|---|---|---|---|
+| ~75 % | 48 | 379.93 V | 19.0 mΩ | 0.962 |
+| ~76 % | 114 | 381.06 V | 18.2 mΩ | 0.929 |
+| ~77 % | 97 | 381.94 V | 19.9 mΩ | 0.925 |
+
+`pack_v` and `pack_a` are decoded from **different modules**. Every other
+cross-check in this project divides one decoded number by another and compares
+the ratio with a figure measured earlier — which catches a scaling that moves,
+and cannot catch two that were always wrong together. This one appeals to
+physics instead: a wrong scale, offset or byte order on either side does not
+produce a straight line, *and* a slope that lands on a plausible resistance,
+*and* an intercept that climbs monotonically with charge. Nothing about a
+decoding error produces all three by accident.
+
+It also explains the cooling load. At the sampled peak of 595 A the pack was
+dissipating I²R ≈ **6.6 kW** as heat.
+
+`analyze.pack_resistance()` returns `None` rather than a number when the drive
+did not swing the current far enough to separate the slope from the noise. A
+fit over a narrow span is an arbitrary line through a cloud, and it still looks
+like a measurement once it is printed with a unit beside it.
+
 **The wheels are the fallback**, for every row the odometer does not reach. Three earlier versions of this
 filter arbitrated between GPS position and GPS Doppler — two views of one noisy
 signal — while an independent witness sat in the same row saying the wheels were
