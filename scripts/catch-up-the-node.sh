@@ -104,9 +104,21 @@ ssh -t "$NODE" "
 "
 
 say "5/5  verifying from here"
+# Everything that changes the node is already done above. From here on a
+# failure is REPORTED, never fatal: the first run of this script exited 7 on a
+# single curl fired seconds after the restart, before the listener was back,
+# and made a fully successful deploy read as a failure. A service restart gets
+# a bounded grace period, not one attempt.
+set +e
 echo -n "   api answers            : "
-curl -s --max-time 15 -o /dev/null -w '%{http_code}\n' \
-    "http://100.71.118.116:8765/api/snapshot?session=latest"
+code=000
+for _ in $(seq 1 12); do
+    code=$(curl -s --max-time 6 -o /dev/null -w '%{http_code}' \
+        "http://100.71.118.116:8765/api/snapshot?session=latest" 2>/dev/null)
+    [ "$code" = "200" ] && break
+    sleep 5
+done
+echo "$code$([ "$code" = 200 ] || echo '   <-- not up after 60 s; check: ssh '"$NODE"' systemctl status hummer-dashboard')"
 echo -n "   places endpoint        : "
 curl -s --max-time 15 "http://100.71.118.116:8765/api/places" \
   | python3 -c "import sys,json;d=json.load(sys.stdin);print('%d places defined' % len(d.get('places',[])))" \
