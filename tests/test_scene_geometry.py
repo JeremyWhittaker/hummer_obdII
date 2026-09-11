@@ -70,6 +70,83 @@ process.stdout.write(JSON.stringify(parts.map(p => ({
 
 
 @unittest.skipIf(NODE is None, "node is not installed on this machine")
+class CutawayIsASection(unittest.TestCase):
+    """The cutaway must draw nothing on the removed side of the plane.
+
+    The first cutaway culled parts whose CENTRE lay on the driver's side and
+    kept everything else whole. 154 of 379 parts sit on the centreline -- the
+    pack, the drive units, the cabin, the roof, the bed -- so they survived at
+    full width with their driver-side faces toward the eye, and the view was
+    a side elevation with two wheels missing. The owner said it was not cut in
+    half. He was right.
+
+    This mirrors the page's clip rule over the same parts list and asserts the
+    property the view exists for: after the cutaway, no drawn geometry extends
+    onto the removed side, and the parts that straddled the plane are still
+    drawn -- a pack cut at the centreline is still the pack.
+    """
+
+    PLANE = -0.02
+
+    @staticmethod
+    def _clip(p):
+        t, s, r = list(p["t"]), list(p["s"]), p.get("rot")
+        axis = 0 if r == "x" else 1 if r == "y" else 2
+        hz = s[axis] / 2
+        if t[2] < CutawayIsASection.PLANE:
+            return None
+        if t[2] - hz < 0 < t[2] + hz:
+            top = t[2] + hz
+            s[axis] = top
+            t[2] = top / 2
+        return t, s, axis
+
+    def test_nothing_drawn_extends_onto_the_removed_side(self):
+        drawn = 0
+        worst = 0.0
+        for p in build_parts_with_rot():
+            got = self._clip(p)
+            if got is None:
+                continue
+            drawn += 1
+            t, s, axis = got
+            low = t[2] - s[axis] / 2
+            worst = min(worst, low)
+        self.assertGreater(drawn, 200, "the cutaway drew almost nothing")
+        self.assertGreaterEqual(worst, -1e-9,
+                                f"drawn geometry reaches z={worst:.3f}, past the plane")
+
+    def test_the_parts_on_the_centreline_are_clipped_not_deleted(self):
+        ids = {p["id"] for p in build_parts_with_rot() if self._clip(p) is not None}
+        # Concepts, not literal names: the ids are the page's business.
+        for concept, pattern in (("pack", r"pack|module|cell"),
+                                 ("cabin", r"cabin|seat|dash|cab|cluster"),
+                                 ("roof/glass", r"roof|top|greenhouse|glass")):
+            self.assertTrue(any(re.search(pattern, i) for i in ids),
+                            f"no {concept} part survives the cutaway")
+
+
+def build_parts_with_rot() -> list[dict]:
+    """build_parts(), plus the rotation the clip rule depends on."""
+    source = _script()
+    veh = re.search(r"var VEH = \{[\s\S]*?\n  \};", source)
+    consts = re.findall(r"^  var (?:HALF_TRACK|AXLE|HALF_W) = [^;]+;", source, re.M)
+    scene = _balanced(source, source.index("function buildScene"))
+    harness = (veh.group(0) + "\n" + "\n".join(consts) + "\n" + scene + """
+const parts = buildScene();
+process.stdout.write(JSON.stringify(parts.map(p => ({
+  id: p.id, t: p.t, s: p.s, rot: p.rot === undefined ? null : p.rot
+}))));
+""")
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "scene.js"
+        path.write_text(harness, encoding="utf-8")
+        done = subprocess.run([NODE, str(path)], capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, f"buildScene failed:\n{done.stderr[:800]}"
+    return json.loads(done.stdout)
+
+
+@unittest.skipIf(NODE is None, "node is not installed on this machine")
 class ScenePartTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

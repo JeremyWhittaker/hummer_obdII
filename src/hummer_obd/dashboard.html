@@ -2606,6 +2606,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            the "eliminating some of the unnecessary stuff around" part of the
            ask. Faded rather than removed, so the windscreen aperture and the
            A-pillars still frame the view the way they do from a seat. */
+        var pt = p.t, ps = p.s;
         if (state.view === "cutaway") {
           /* A LONGITUDINAL SECTION, which is what a cutaway drawing is and
              what fading the body could never be. Fading leaves every panel in
@@ -2624,6 +2625,28 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
              the centreline is still the pack and deleting it would leave the
              floor empty. */
           if (p.t[2] < -0.02) return;
+          /* AND CLIP WHAT STRADDLES THE PLANE. Culling by centre alone is not
+             a section: 154 of 379 parts -- the pack, the drive units, the
+             cabin, the roof, the bed, every crossmember -- sit ON the
+             centreline, so they survived the cull at full width and their
+             driver-side faces pointed straight at the eye. The result was a
+             side elevation of a whole truck with two wheels missing, which is
+             what the owner saw and rightly said was not cut in half.
+
+             A part that straddles z=0 is drawn from the plane outward: its
+             extent along world Z becomes [0, +half] and its centre moves to
+             the middle of that. For an unrotated box or a Z-axis cylinder
+             that is s[2]; a cylinder laid along X or Y was a Z-cylinder
+             turned by a quarter, so the local axis that now lies along world
+             Z is the one to shorten. The translate is applied before the
+             rotation, so t[2] is world Z in every case. */
+          var hzAxis = p.rot === "x" ? 0 : p.rot === "y" ? 1 : 2,
+              hz = p.s[hzAxis] / 2;
+          if (p.t[2] - hz < 0 && p.t[2] + hz > 0) {
+            var top = p.t[2] + hz;
+            ps = p.s.slice(); ps[hzAxis] = top;
+            pt = p.t.slice(); pt[2] = top / 2;
+          }
           /* THE BODY BECOMES CONTEXT, THE PARTS BECOME THE SUBJECT.
           
              Drawing everything solid was the first attempt and it does not
@@ -2673,7 +2696,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         gl.vertexAttribPointer(loc.nrm, 3, gl.FLOAT, false, 0, 0);
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.index);
 
-        var model = m4trs(p.t[0], p.t[1], p.t[2], p.s[0], p.s[1], p.s[2]);
+        var model = m4trs(pt[0], pt[1], pt[2], ps[0], ps[1], ps[2]);
         if (p.steer && Math.abs(live.steer) > 0.2) {
           /* Front wheels only. steering_deg is at the wheel rather than the
              rim, so it is divided down to something that looks like lock
@@ -2681,8 +2704,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           var sa = live.steer * Math.PI / 180 / 16,
               cs = Math.cos(sa), ss = Math.sin(sa), yaw = m4();
           yaw[0] = cs; yaw[2] = -ss; yaw[8] = ss; yaw[10] = cs;
-          model = m4mul(m4trs(p.t[0], p.t[1], p.t[2], 1, 1, 1),
-                        m4mul(yaw, m4trs(0, 0, 0, p.s[0], p.s[1], p.s[2])));
+          model = m4mul(m4trs(pt[0], pt[1], pt[2], 1, 1, 1),
+                        m4mul(yaw, m4trs(0, 0, 0, ps[0], ps[1], ps[2])));
         }
         if (p.rot === "y") {
           /* Cylinders are built on Z; an air spring stands up, so its axis is
