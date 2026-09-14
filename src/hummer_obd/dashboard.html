@@ -1830,6 +1830,16 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       }
     }
     driveUnit("motor-front", AXLE, 0, 0.70, { statorZ: -0.12 });
+    /* THE GEARBOX END. GM describes the front unit's casing as an engine
+       block with a transmission bell housing: the round motor and, bolted to
+       its end, a squarer housing holding the two-stage 13.3:1 reduction and
+       the e-locking differential the halfshafts leave from. So the housing
+       is not one cylinder: the reduction end is a block. Which end is not
+       published; the passenger side is a drawing choice. */
+    add({ id: "gearbox-front", mesh: "bev", layer: "drive", colour: [0.30, 0.33, 0.36],
+          t: [AXLE + 0.02, VEH.wheelRadius, 0.30], s: [0.40, 0.38, 0.22], alpha: 0.55 });
+    add({ id: "gearbox-rear", mesh: "bev", layer: "drive", colour: [0.30, 0.33, 0.36],
+          t: [-AXLE + 0.02, VEH.wheelRadius, 0], s: [0.40, 0.38, 0.26], alpha: 0.55 });
     /* ONE CASING AT THE REAR, TWO MOTORS INSIDE IT. GM's description of the
        Edition 1 driveline: the "two rear motors are housed within the same
        casing", each driving its own wheel, with the locking effect done in
@@ -1900,10 +1910,25 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            resolves it and the factory wheels are too closed to read it off a
            photograph. */
         var inboard = z - w[2] * 0.10;
-        add({ id: "brake-rotor-" + w[0], mesh: "cyl", layer: "brakes",
-              colour: [0.52, 0.55, 0.58], brake: true,
-              t: [w[1], VEH.wheelRadius, inboard],
-              s: [0.355, 0.355, front ? 0.040 : 0.020], rot: "z" });
+        if (front) {
+          /* A 40 mm disc is a vented disc: two friction plates with the
+             vanes between them. Two thin discs and a dark spacer read as
+             one from any distance and as a vented rotor up close. */
+          [-1, 1].forEach(function (face, fi) {
+            add({ id: "brake-rotor-" + w[0] + (fi ? "" : "-inner"), mesh: "cyl", layer: "brakes",
+                  colour: [0.52, 0.55, 0.58], brake: true,
+                  t: [w[1], VEH.wheelRadius, inboard + face * 0.014],
+                  s: [0.355, 0.355, 0.012], rot: "z" });
+          });
+          add({ id: "brake-vanes-" + w[0], mesh: "cyl", layer: "brakes",
+                colour: [0.20, 0.21, 0.22],
+                t: [w[1], VEH.wheelRadius, inboard], s: [0.33, 0.33, 0.016], rot: "z" });
+        } else {
+          add({ id: "brake-rotor-" + w[0], mesh: "cyl", layer: "brakes",
+                colour: [0.52, 0.55, 0.58], brake: true,
+                t: [w[1], VEH.wheelRadius, inboard],
+                s: [0.355, 0.355, 0.020], rot: "z" });
+        }
         add({ id: "brake-hat-" + w[0], mesh: "cyl", layer: "brakes",
               colour: [0.13, 0.14, 0.15],
               t: [w[1], VEH.wheelRadius, inboard],
@@ -1937,6 +1962,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        module, and that is where the flow is drawn now. */
     add({ id: "radiator", mesh: "bev", layer: "thermal", colour: [0.19, 0.44, 0.50],
           t: [noseX - 0.22, 0.82, 0], s: [0.06, 0.52, 1.30] });
+    /* The A/C condenser sits "at the front of the vehicle, right in front
+       of the radiator", which is where a condenser always is; the same
+       width, thinner, and lighter so the two read as a stack. */
+    add({ id: "condenser", mesh: "bev", layer: "thermal", colour: [0.30, 0.52, 0.56],
+          t: [noseX - 0.16, 0.82, 0], s: [0.03, 0.48, 1.26] });
     add({ id: "chiller", mesh: "bev", layer: "thermal", colour: [0.19, 0.44, 0.50],
           t: [noseX - 0.55, 0.70, 0.55], s: [0.26, 0.22, 0.24] });
 
@@ -2067,6 +2097,53 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        behind the driver's eye -- a shoulder-line pillar -- and the cluster
        0.67 m ahead of it. */
     var ipX = 0.73, seatZ = -0.40;
+    /* THE FLOOR. There was none: the seats stood on the battery case, 0.015 m
+       INSIDE it, which the owner spotted -- "there would be nowhere to put
+       your feet". A skateboard EV's cabin floor is the pack's lid plus a
+       carpet, so the floor sits on the case top and runs from the bed
+       bulkhead to a toe board at the cowl. What follows from that is the
+       seating position: GM publishes 41.5 in of front head room, measured
+       (SAE H61) from the H-point up to the headliner and a hand's width
+       beyond, and with the headliner at 1.889 m that puts the H-point near
+       0.95 m -- a knees-up position 0.15 m above the floor, which is what
+       every review of this truck describes. The cushion tops at 0.99, the
+       eye sits 0.68 above the H-point at 1.63, and the wheel came up with
+       the seat. */
+    var FLOOR_Y = VEH.packTop + 0.04 + 0.01, FLOOR_T = 0.03, TOE_X = cowlX - 0.10;
+    slab("cabin-floor", bulkX + 0.06, TOE_X, FLOOR_Y, FLOOR_Y + FLOOR_T,
+         -W + 0.12, W - 0.12, [0.10, 0.10, 0.11], { layer: "cabin" });
+    slab("cabin-toeboard", TOE_X, TOE_X + 0.05, FLOOR_Y, 1.38,
+         -W + 0.12, W - 0.12, [0.10, 0.10, 0.11], { layer: "cabin" });
+    /* Pedals on the toe board: accelerator inboard, brake outboard and
+       wider, which is where they are on every left-hand-drive vehicle. */
+    add({ id: "pedal-accel", mesh: "bev", layer: "cabin", colour: [0.30, 0.31, 0.33],
+          t: [TOE_X - 0.03, 0.97, seatZ + 0.10], s: [0.03, 0.12, 0.05] });
+    add({ id: "pedal-brake", mesh: "bev", layer: "cabin", colour: [0.30, 0.31, 0.33],
+          t: [TOE_X - 0.03, 0.99, seatZ - 0.04], s: [0.03, 0.09, 0.10] });
+    /* The centre console, between the seats, from the floor to elbow height.
+       The shifter is NOT on it: the manual's "press the button on top of the
+       shift lever" describes the column stalk this truck has, so the stalk
+       is on the column and the console carries the drive-mode controls and
+       the cupholders. */
+    slab("console", -0.12, 0.60, FLOOR_Y + FLOOR_T, 1.16, -0.13, 0.13,
+         [0.11, 0.12, 0.13], { layer: "cabin" });
+    slab("console-lid", -0.12, 0.18, 1.16, 1.20, -0.135, 0.135,
+         [0.09, 0.10, 0.11], { layer: "cabin" });
+    /* Reviews of this truck describe "a thick T-shaped shifter and a rotary
+       drive-mode selector on the center console", and the manual's "button
+       on top of the shift lever" is the button on that T. So: a stem and a
+       T-bar on the console, and a dial behind it. An earlier version put a
+       stalk on the column; that was the wrong truck. */
+    add({ id: "shifter-stem", mesh: "cyl", layer: "cabin", colour: [0.14, 0.15, 0.16],
+          t: [0.36, 1.26, 0], s: [0.025, 0.12, 0.025], rot: "y" });
+    add({ id: "shifter-t", mesh: "bev", layer: "cabin", colour: [0.16, 0.17, 0.18],
+          t: [0.36, 1.33, 0], s: [0.06, 0.03, 0.14] });
+    add({ id: "mode-dial", mesh: "cyl", layer: "cabin", colour: [0.36, 0.38, 0.40],
+          t: [0.14, 1.215, 0], s: [0.07, 0.03, 0.07], rot: "y" });
+    /* The dead pedal, outboard of the brake -- the "moon-boot footprint"
+       every review mentions. */
+    add({ id: "pedal-dead", mesh: "bev", layer: "cabin", colour: [0.22, 0.23, 0.25],
+          t: [TOE_X - 0.03, 0.96, seatZ - 0.20], s: [0.03, 0.14, 0.11] });
     slab("dash-pad", 0.63, 0.93, 1.38, 1.52, -W + 0.06, W - 0.06,
          [0.13, 0.14, 0.15], { layer: "cabin" });
     slab("dash-defrost", 0.86, 0.94, 1.50, 1.55, -W + 0.10, W - 0.10,
@@ -2099,27 +2176,31 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
              sits 0.40-0.50 m below it, and the rim top stood above the dash
              pad. Dropped 0.17 m so the wheel is in front of the driver rather
              than in front of their face. */
-          t: [0.52, 1.23, seatZ], s: [0.040, 0.370, 0.370], rot: "x" });
+          t: [0.52, 1.30, seatZ], s: [0.040, 0.370, 0.370], rot: "x" });
     add({ id: "wheel-hub", mesh: "bev", layer: "cabin", colour: [0.11, 0.12, 0.13],
-          t: [0.54, 1.23, seatZ], s: [0.055, 0.135, 0.135] });
+          t: [0.54, 1.30, seatZ], s: [0.055, 0.135, 0.135] });
     add({ id: "wheel-spoke-l", mesh: "bev", layer: "cabin", colour: [0.13, 0.14, 0.15],
-          t: [0.54, 1.23, seatZ - 0.115], s: [0.022, 0.048, 0.130] });
+          t: [0.54, 1.30, seatZ - 0.115], s: [0.022, 0.048, 0.130] });
     add({ id: "wheel-spoke-r", mesh: "bev", layer: "cabin", colour: [0.13, 0.14, 0.15],
-          t: [0.54, 1.23, seatZ + 0.115], s: [0.022, 0.048, 0.130] });
+          t: [0.54, 1.30, seatZ + 0.115], s: [0.022, 0.048, 0.130] });
     add({ id: "wheel-spoke-b", mesh: "bev", layer: "cabin", colour: [0.30, 0.28, 0.22],
-          t: [0.54, 1.115, seatZ], s: [0.022, 0.130, 0.080] });
+          t: [0.54, 1.185, seatZ], s: [0.022, 0.130, 0.080] });
     /* One paddle, on the left of the column, and it lights under regen. */
     add({ id: "regen-paddle", mesh: "bev", layer: "cabin", colour: [0.14, 0.15, 0.16],
-          regen: true, t: [0.59, 1.25, seatZ - 0.185], s: [0.020, 0.095, 0.014] });
+          regen: true, t: [0.59, 1.32, seatZ - 0.185], s: [0.020, 0.095, 0.014] });
 
     /* The second row. GMC publishes its dimensions -- 38.4 in of head room,
        39.0 in of leg room, 64.0 in of shoulder room, 60.2 in of hip room --
        which is what puts the bench behind the front seats rather than at a
        spacing chosen to look right. */
     add({ id: "seat-rear-back", mesh: "bev", layer: "cabin", colour: [0.09, 0.10, 0.11],
-          t: [-1.04, 1.275, 0], s: [0.15, 0.72, 1.62] });
+          t: [-1.04, 1.325, 0], s: [0.15, 0.67, 1.62] });
     add({ id: "seat-rear-base", mesh: "bev", layer: "cabin", colour: [0.09, 0.10, 0.11],
-          t: [-0.76, 0.845, 0], s: [0.50, 0.14, 1.62] });
+          t: [-0.76, 0.93, 0], s: [0.50, 0.12, 1.62] });
+    [-0.55, 0, 0.55].forEach(function (hz, hi) {
+      add({ id: "headrest-rear-" + hi, mesh: "bev", layer: "cabin", colour: [0.09, 0.10, 0.11],
+            t: [-1.03, 1.74, hz], s: [0.12, 0.16, 0.24] });
+    });
 
     /* Door handles, two a side at the beltline. Small, and the thing a
        three-quarter view looks for to know it is looking at a door. */
@@ -2145,7 +2226,18 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
             /* Re-based on the lowered cushion and made taller: a backrest
                that starts at the seat and ends at a shoulder is 0.78 m, not
                0.66, and it used to start above the cushion it belongs to. */
-            t: [-0.04, 1.305, seat[0]], s: [0.14, 0.78, 0.52] });
+            t: [-0.04, 1.345, seat[0]], s: [0.14, 0.71, 0.52] });
+      /* Bolsters and a headrest, which are what make a box read as a seat. */
+      [-1, 1].forEach(function (bs) {
+        add({ id: "seat-bolster-" + seat[1] + (bs < 0 ? "-l" : "-r"), mesh: "bev",
+              layer: "cabin", colour: [0.12, 0.13, 0.14],
+              t: [0.24, 1.02, seat[0] + bs * 0.22], s: [0.50, 0.06, 0.08] });
+        add({ id: "seat-wing-" + seat[1] + (bs < 0 ? "-l" : "-r"), mesh: "bev",
+              layer: "cabin", colour: [0.12, 0.13, 0.14],
+              t: [0.05, 1.30, seat[0] + bs * 0.22], s: [0.06, 0.50, 0.08] });
+      });
+      add({ id: "headrest-" + seat[1], mesh: "bev", layer: "cabin", colour: [0.09, 0.10, 0.11],
+            t: [-0.02, 1.78, seat[0]], s: [0.12, 0.16, 0.24] });
       add({ id: "seat-base-" + seat[1], mesh: "bev", layer: "cabin",
             colour: [0.10, 0.11, 0.12],
             /* Cushion top was y=1.130 with the headliner at 1.889, leaving
@@ -2155,7 +2247,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                which is what GMC's published 41.5 in of front head room asks
                for and what puts a 1.66 m eye point where the driver camera
                already assumes it is. */
-            t: [0.24, 0.845, seat[0]], s: [0.56, 0.14, 0.52] });
+            t: [0.24, 0.93, seat[0]], s: [0.56, 0.12, 0.52] });
     });
 
     /* --- the detector, where it actually sits --------------------------
@@ -2227,7 +2319,49 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         add({ id: "damper-rod-" + w[0], mesh: "cyl", layer: "suspension",
               colour: [0.72, 0.74, 0.76],
               t: [dx, 0.72, dz], s: [0.028, 0.05, 0.028], rot: "y" });
+        /* Bellows convolutions: two rings, so the spring reads as an air
+           spring rather than a can. */
+        [0.50, 0.66].forEach(function (ry, ri) {
+          add({ id: "airspring-ring-" + w[0] + "-" + ri, mesh: "cyl", layer: "suspension",
+                colour: [0.16, 0.16, 0.18],
+                t: [w[1] - (w[1] > 0 ? 0.24 : -0.24), ry, w[2] * (HALF_TRACK - 0.30)],
+                s: [0.23, 0.03, 0.23], rot: "y" });
+        });
+        /* THE ARMS AND THE KNUCKLE. "Double-wishbone, fully independent"
+           at the front with air springs; "fully independent ... with air
+           springs" at the rear, link count not published. Each corner gets
+           a lower arm as two legs from the subframe out to the knuckle,
+           an upper arm above it, and the knuckle the hub bolts to -- the
+           halfshaft passes through it, which is what a hub carrier is for.
+           The air spring stands on the lower arm's legs, which is the usual
+           double-wishbone layout and is an ESTIMATE here: GM publishes no
+           arm geometry. Every dimension below is a drawing choice. */
+        var kz = w[2] * (HALF_TRACK - 0.205), sgn = w[2];
+        add({ id: "knuckle-" + w[0], mesh: "bev", layer: "suspension",
+              colour: [0.40, 0.42, 0.45],
+              t: [w[1], 0.50, kz], s: [0.10, 0.30, 0.06] });
+        [-0.18, 0.18].forEach(function (leg, li) {
+          add({ id: "arm-lower-" + w[0] + "-" + li, mesh: "cyl", layer: "suspension",
+                colour: [0.34, 0.36, 0.38],
+                t: [w[1] + leg, 0.36, sgn * ((0.45 + HALF_TRACK - 0.20) / 2)],
+                s: [0.04, 0.04, HALF_TRACK - 0.20 - 0.45], rot: "z" });
+        });
+        add({ id: "arm-upper-" + w[0], mesh: "cyl", layer: "suspension",
+              colour: [0.34, 0.36, 0.38],
+              t: [w[1] + (w[1] > 0 ? 0.10 : -0.10), 0.64, sgn * ((0.50 + HALF_TRACK - 0.20) / 2)],
+              s: [0.035, 0.035, HALF_TRACK - 0.20 - 0.50], rot: "z" });
       });
+    /* The front steering rack, ahead of the axle, and its tie rods to the
+       knuckles. "Dual rack-and-pinion steering" is what gives this truck
+       its rear steer; the rear rack was already drawn. */
+    add({ id: "steer-front", mesh: "bev", layer: "suspension", colour: [0.22, 0.24, 0.26],
+          t: [AXLE + 0.34, 0.42, 0], s: [0.10, 0.10, 0.70] });
+    [-1, 1].forEach(function (side) {
+      add({ id: "tierod-f-" + (side < 0 ? "l" : "r"), mesh: "cyl", layer: "suspension",
+            colour: [0.31, 0.33, 0.35],
+            t: [AXLE + 0.34, 0.42, side * ((0.35 + HALF_TRACK - 0.20) / 2)],
+            s: [0.035, 0.035, HALF_TRACK - 0.20 - 0.35], rot: "z" });
+    });
 
     /* Four plates: front underbody, front battery, rear battery, rear
        underbody. Translucent for the same reason the tyres are -- a plate
@@ -2237,8 +2371,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        of and behind the drive units -- not through them, which is where a
        plate at 0.2565 under an axle-mounted housing ends up. */
     [[2.25, 0.50, VEH.groundClearance + 0.025],
-     [VEH.packCentreX + VEH.packLength / 4, VEH.packLength / 2 - 0.02, VEH.packBottom - 0.03],
-     [VEH.packCentreX - VEH.packLength / 4, VEH.packLength / 2 - 0.02, VEH.packBottom - 0.03],
+     [VEH.packCentreX + VEH.packLength / 4, VEH.packLength / 2 - 0.02, VEH.packBottom - 0.07],
+     [VEH.packCentreX - VEH.packLength / 4, VEH.packLength / 2 - 0.02, VEH.packBottom - 0.07],
      [-2.25, 0.60, VEH.groundClearance + 0.025]]
       .forEach(function (plate, i) {
         add({ id: "skid-" + i, mesh: "bev", layer: "armour",
@@ -2262,14 +2396,22 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
          static because nothing here measures the angle. */
       add({ id: "tierod-" + (side < 0 ? "l" : "r"), mesh: "cyl", layer: "suspension",
             colour: [0.31, 0.33, 0.35],
-            t: [-AXLE - 0.26, 0.45, side * (W - 0.34) / 2],
+            t: [-AXLE - 0.34, 0.45, side * (W - 0.34) / 2],
             s: [0.06, 0.06, W - 0.34], rot: "z" });
       add({ id: "towloop-" + (side < 0 ? "l" : "r"), mesh: "cyl", layer: "armour",
             colour: [0.06, 0.06, 0.07],
             t: [2.55, 0.66, side * 0.40], s: [0.17, 0.17, 0.09], rot: "z" });
     });
     add({ id: "steer-rear", mesh: "bev", layer: "suspension", colour: [0.22, 0.24, 0.26],
-          t: [-AXLE - 0.26, 0.45, 0], s: [0.16, 0.14, 0.46] });
+          t: [-AXLE - 0.34, 0.45, 0], s: [0.16, 0.14, 0.46] });
+    /* The trailer hitch receiver. GMC publishes 7,500 lb of towing and a
+       trailer brake controller, and the fuse tables carry TIM 1/2 and the
+       trailer connector; a receiver tube under the rear bumper is what
+       those plug into. Its size is the standard 2-inch class it has to be. */
+    add({ id: "hitch-receiver", mesh: "bev", layer: "armour", colour: [0.12, 0.13, 0.14],
+          t: [tailX + 0.30, 0.50, 0], s: [0.50, 0.065, 0.065] });
+    add({ id: "hitch-crossbar", mesh: "bev", layer: "armour", colour: [0.15, 0.16, 0.17],
+          t: [tailX + 0.52, 0.50, 0], s: [0.08, 0.10, 1.10] });
     add({ id: "bumper-beam", mesh: "bev", layer: "armour", colour: [0.19, 0.20, 0.21],
           t: [2.50, 0.70, 0], s: [0.15, 0.22, 1.72] });
 
@@ -2285,7 +2427,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
              ahead of the front axle and 0.80 m off the centreline on the
              passenger side -- which agrees with the manual, and moves it
              0.42 m aft of where it was. */
-          t: [1.60, 1.10, 0.80], s: [0.32, 0.22, 0.28] });
+          /* BCI group 94R / H7, which the retailers' fitment pages agree on:
+             about 315 x 175 x 190 mm, terminals on top, long axis across
+             the truck. It was drawn 0.28 m deep, which is no battery group
+             at all. */
+          t: [1.60, 1.095, 0.80], s: [0.175, 0.19, 0.315] });
+    [-0.11, 0.11].forEach(function (tz, ti) {
+      add({ id: "lv-terminal-" + ti, mesh: "cyl", layer: "aux", colour: [0.55, 0.50, 0.40],
+            t: [1.60, 1.20, 0.80 + tz], s: [0.03, 0.02, 0.03], rot: "y" });
+    });
     /* THE THREE 12 V FUSE BLOCKS, where the owner's manual puts them: the
        underhood block "under a cover and side extensions/shields in the
        underhood compartment" with its access cover on the LEFT side (the
@@ -2318,10 +2468,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           t: [(hvRear0 + hvRear1) / 2, hvY, 0], s: [hvRear0 - hvRear1, 0.045, 0.045], rot: "x" });
     /* THE TRACTION POWER INVERTER MODULES. The manual's fuse tables name
        three (TPIM 1, 2, 3); the catalogue sells them as the "drive motor
-       power distribution control module", GM 24049478; the teardown puts
-       the inverter and its plate cooler on the drive unit "within a foot of
-       each other". So one sits on the front unit and two on the rear
-       casing, as boxes on top of the housings. Their size is not
+       power distribution control module", GM 24049478; and GM says of the
+       Ultium drive family that "inverters and other power electronics are
+       integrated directly into the Ultium drive units". So each is the
+       power-electronics section of its unit's casing, drawn as the boxed
+       top of the housing rather than a separate part hung on it. Size not
        published. */
     add({ id: "tpim-1", mesh: "bev", layer: "aux", colour: [0.24, 0.26, 0.30],
           t: [AXLE, VEH.wheelRadius + 0.19 + 0.08, -0.05], s: [0.36, 0.16, 0.34] });
@@ -2574,7 +2725,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            With the cowl at 0.95 and the cluster 0.23 m behind it, the eye
            is 0.54 m from the cluster -- closer than before, and what the
            rescue sheet's seat and wheel positions give. */
-        DRIVER_EYE = [0.18, 1.66, -0.33],
+        DRIVER_EYE = [0.18, 1.63, -0.33],
         /* A layer missing from this map resolves to undefined, which becomes
            a NaN alpha and a part that silently does not draw. Every layer a
            part can name has to have a value here. */

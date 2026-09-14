@@ -725,6 +725,43 @@ part numbers for the underhood block, the HV disconnect fuse, the charger
 relay, the DC-DC module, the inverter modules and the HV heater are recorded
 there too, read from catalogue pages rather than listings.
 
+**The cabin has a floor, and the seats are on it.** The seats stood 0.015 m
+inside the battery case with no floor drawn at all — "clearly this cannot be
+accurate because there would be nowhere to put your feet". A skateboard EV's
+cabin floor is the pack's lid plus a carpet, so the floor now sits on the case
+top and runs to a toe board at the cowl. The seating position follows from
+GM's published 41.5 in of front head room: measured SAE-style from the
+H-point to the headliner, with the headliner at 1.889 m that puts the H-point
+near 0.95 m, a knees-up 0.15 m above the floor, which is what every review of
+this truck describes. Cushions top at 0.99 m, the eye sits at 1.63 m, the
+wheel came up with the seat. Pedals and a dead pedal are on the toe board;
+the console carries the T-shaped shifter and rotary drive-mode dial the
+reviews describe (an earlier version had a column stalk, which was the wrong
+truck); every seat has bolsters and a headrest that clears the headliner.
+`CabinSitsOnAFloor` pins all of it.
+
+**The corners are suspensions, not springs floating beside wheels.** GM
+publishes double-wishbone front and fully independent rear suspension with
+air springs and dual rack-and-pinion steering, and no arm geometry. Each
+corner now has a lower arm as two legs from the subframe to a knuckle the
+halfshaft passes through, an upper arm, the air spring standing on the lower
+arm with its bellows rings, the damper beside it, and at the front a steering
+rack with tie rods. The arrangement is the usual double-wishbone one and is
+labelled an estimate in the source. The drive units gained the gearbox end GM
+describes as "an engine block with a transmission bell housing", and the
+inverters are drawn as the boxed top of each casing because GM says they are
+"integrated directly into the Ultium drive units", not hung on them.
+
+**Smaller things that were wrong and are not now.** The 12 V battery is drawn
+at BCI group 94R's 315 × 175 × 190 mm with two terminals, not a 0.28 m cube;
+the A/C condenser stands ahead of the radiator; the front rotors are vented
+(two plates and a vane ring, since a 40 mm disc is a vented disc); a 2-inch
+hitch receiver sits under the rear bumper because 7,500 lb of towing needs
+one; the rear-steer rack no longer overlaps the rear casing and the pack
+plates no longer overlap the pack. What is still a plain box because nothing
+describes it: the module covers and busbars, the on-board charger, the fans
+behind the radiator, the fuse-block lids.
+
 **The HV cables the rescue sheet draws are drawn, and the harness is not.**
 The sheet's plan view routes one orange cable from the pack's front wall to
 the front drive unit and one from its rear wall to the rear unit, both on the

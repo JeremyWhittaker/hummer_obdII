@@ -572,3 +572,50 @@ class HighVoltageRunTests(unittest.TestCase):
                 m, u = self.parts[tpim], self.parts[unit]
                 self.assertGreater(m["t"][1] - m["s"][1] / 2, u["t"][1], "inverter is not above the housing")
                 self.assertLess(abs(m["t"][0] - u["t"][0]), 0.2, "inverter is not on its drive unit")
+
+
+@unittest.skipIf(NODE is None, "node is not installed on this machine")
+class CabinSitsOnAFloor(unittest.TestCase):
+    """There is a floor, it is above the pack, and the seats are on it.
+
+    The seats stood 0.015 m inside the battery case with no floor drawn at
+    all. "Clearly this cannot be accurate because there would be nowhere to
+    put your feet." Correct.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.parts = {p["id"]: p for p in build_parts()}
+
+    def _top(self, pid): return self.parts[pid]["t"][1] + self.parts[pid]["s"][1] / 2
+    def _bottom(self, pid): return self.parts[pid]["t"][1] - self.parts[pid]["s"][1] / 2
+
+    def test_the_floor_lies_on_the_pack_not_in_it(self):
+        self.assertGreaterEqual(self._bottom("cabin-floor"), self._top("pack-case") - 1e-9)
+
+    def test_every_seat_cushion_stands_clear_of_the_floor(self):
+        floor = self._top("cabin-floor")
+        for pid in ("seat-base-driver", "seat-base-passenger", "seat-rear-base"):
+            with self.subTest(seat=pid):
+                self.assertGreater(self._bottom(pid), floor + 0.03, "no room for feet")
+
+    def test_no_cabin_part_enters_the_pack(self):
+        pack_top = self._top("pack-case")
+        low = [(i, round(self._bottom(i), 3)) for i, p in self.parts.items()
+               if p["layer"] == "cabin" and self._bottom(i) < pack_top - 1e-9]
+        self.assertEqual(low, [], f"cabin parts inside the pack: {low}")
+
+    def test_headrests_clear_the_headliner(self):
+        roof = self._bottom("shell-roof")
+        for i in self.parts:
+            if i.startswith("headrest"):
+                with self.subTest(part=i):
+                    self.assertLess(self._top(i), roof)
+
+    def test_the_pedals_are_on_the_toe_board_ahead_of_the_driver(self):
+        toe = self.parts["cabin-toeboard"]
+        for pid in ("pedal-accel", "pedal-brake"):
+            with self.subTest(pedal=pid):
+                p = self.parts[pid]
+                self.assertLess(abs(p["t"][0] - (toe["t"][0] - toe["s"][0] / 2)), 0.06)
+                self.assertLess(p["t"][2], 0, "pedals are not on the driver's side")
