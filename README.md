@@ -710,6 +710,17 @@ manual's colour table also lists blinking green while charging and solid
 green when complete, which contradicts its own prose and the owner's eyes;
 the page follows the prose and the owner.
 
+**The fuse blocks are where the manual puts them.** The owner's manual names
+three: the underhood compartment block, under a cover with its access panel on
+the driver's side; the instrument panel block on the driver side between the
+wheel and the door; and the instrument panel block behind the glove box. All
+three are drawn on the 12 V layer as the plain boxes those words describe, and
+[Electrical](docs/ELECTRICAL.md) transcribes every fuse in them, names the
+modules they feed, and lines those up against the eight modules this project
+has measured — the DLC this node plugs into is fuse F14 in the glove-box block,
+the gateway is F11 beside it, and the three drive motor controllers are almost
+certainly the manual's three traction power inverter modules.
+
 **Lamp status is not captured.** Nothing this vehicle answers carries
 headlamp or taillamp state — the catalogue records body signals as absent
 from every module that answers — so the taillamps light from brake pressure,
@@ -1305,6 +1316,9 @@ See [Validation](docs/VALIDATION.md) for the test matrix and evidence policy.
 
 ## Documentation
 
+- [Electrical](docs/ELECTRICAL.md) — the vehicle's HV and 12 V architecture as
+  GM publishes it: every fuse in all three fuse blocks, the modules they name,
+  and which of them this project can reach through the gateway.
 - [Architecture](docs/ARCHITECTURE.md) — components, data flow, trust boundaries,
   persistence, and service model.
 - [Build and deploy](docs/BUILD_AND_DEPLOY.md) — from a clean Pi image to the

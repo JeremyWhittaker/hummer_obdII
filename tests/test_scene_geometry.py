@@ -502,3 +502,40 @@ class ChargeStatusIndicatorTests(unittest.TestCase):
         block = block[block.index("if (p.letter !== undefined) {"):]
         block = block[:block.index("if (p.csi !== undefined) {")]
         self.assertNotIn("live.soc", block, "the letters still fill with state of charge")
+
+
+@unittest.skipIf(NODE is None, "node is not installed on this machine")
+class FuseBlockTests(unittest.TestCase):
+    """The three 12 V fuse blocks, where the owner's manual says they are."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.parts = {p["id"]: p for p in build_parts()}
+
+    def test_all_three_are_drawn_on_the_12v_layer(self):
+        for pid in ("fusebox-underhood", "fusebox-ip-left", "fusebox-ip-right"):
+            with self.subTest(block=pid):
+                self.assertIn(pid, self.parts)
+                self.assertEqual(self.parts[pid]["layer"], "aux")
+
+    def test_the_underhood_block_is_under_the_hood_on_the_driver_side(self):
+        # "Underhood Compartment Fuse Block"; the battery is on the passenger
+        # side and the block's access cover is on the left.
+        fb = self.parts["fusebox-underhood"]
+        hood = self.parts["shell-hood"]
+        self.assertLess(fb["t"][2], -0.4, "not on the driver's side")
+        self.assertLess(fb["t"][1] + fb["s"][1] / 2, hood["t"][1] - hood["s"][1] / 2,
+                        "stands up through the hood")
+        self.assertGreater(fb["t"][0], 0.95, "not in the underhood compartment")
+
+    def test_the_two_panel_blocks_flank_the_instrument_panel(self):
+        # Left: "driver side of the instrument panel, between the steering
+        # wheel and the door". Right: "behind the glove box".
+        left, right = self.parts["fusebox-ip-left"], self.parts["fusebox-ip-right"]
+        wheel = self.parts["wheel-rim"]
+        self.assertLess(left["t"][2], wheel["t"][2], "left block is inboard of the wheel")
+        self.assertGreater(right["t"][2], 0.3, "right block is not on the passenger side")
+        dash = self.parts["dash-pad"]
+        for fb in (left, right):
+            self.assertLess(fb["t"][1] + fb["s"][1] / 2, dash["t"][1] + dash["s"][1] / 2,
+                            "a fuse block stands above the dash top")

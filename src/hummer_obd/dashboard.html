@@ -2286,6 +2286,21 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
              passenger side -- which agrees with the manual, and moves it
              0.42 m aft of where it was. */
           t: [1.60, 1.10, 0.80], s: [0.32, 0.22, 0.28] });
+    /* THE THREE 12 V FUSE BLOCKS, where the owner's manual puts them: the
+       underhood block "under a cover and side extensions/shields in the
+       underhood compartment" with its access cover on the LEFT side (the
+       battery is on the right); the instrument panel block (left) "on the
+       driver side of the instrument panel, between the steering wheel and
+       the door"; the instrument panel block (right) "behind the glove box".
+       Sizes are not published and the underhood block's station within
+       the compartment is only "left"; these are the plain boxes the words
+       describe. docs/ELECTRICAL.md carries every fuse in them. */
+    [["fusebox-underhood", 1.60, 1.10, -0.78, 0.30, 0.14, 0.22],
+     ["fusebox-ip-left", 0.80, 1.12, -0.96, 0.12, 0.20, 0.06],
+     ["fusebox-ip-right", 0.80, 1.14, 0.70, 0.12, 0.18, 0.22]].forEach(function (fb) {
+      add({ id: fb[0], mesh: "bev", layer: "aux", colour: [0.22, 0.20, 0.12],
+            t: [fb[1], fb[2], fb[3]], s: [fb[4], fb[5], fb[6]] });
+    });
     /* An HV component the rescue sheet draws and does not name: an orange
        block behind the rear axle, on the centreline, in both views -- at
        -2.17 m, 0.66 m up, about 0.5 m across. The charge port's cable runs
