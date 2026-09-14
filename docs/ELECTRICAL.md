@@ -259,6 +259,16 @@ chassis controllers on buses the gateway does not forward to the DLC as
 diagnostic responses. Lamp state in particular lives in the ELMs; that is why
 [the catalogue](TELEMETRY_CATALOG.md) records lighting as absent.
 
+## What the 3D model draws from this
+
+On the Electrical layer: the three fuse blocks at the manual's stations; the
+three HV runs the rescue sheet draws (pack front wall to the front drive
+unit, pack rear wall to the rear unit, charge port forward along the driver's
+side); the three inverter modules on top of their drive units; the unnamed
+HV block behind the rear axle; the 12 V battery; the charge port. Not drawn,
+because no source places them: the DC-DC module, the HV service disconnect,
+the DC/AC inverter, the A/C compressor, the HV heater, and any 12 V harness.
+
 ## What is not published
 
 - The **routing** of any 12 V harness, and of the HV cables beyond the rescue

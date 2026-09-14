@@ -539,3 +539,36 @@ class FuseBlockTests(unittest.TestCase):
         for fb in (left, right):
             self.assertLess(fb["t"][1] + fb["s"][1] / 2, dash["t"][1] + dash["s"][1] / 2,
                             "a fuse block stands above the dash top")
+
+
+@unittest.skipIf(NODE is None, "node is not installed on this machine")
+class HighVoltageRunTests(unittest.TestCase):
+    """The HV cables the rescue sheet draws: pack wall to drive-unit housing."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.parts = {p["id"]: p for p in build_parts()}
+
+    def _x_span(self, pid):
+        p = self.parts[pid]
+        return p["t"][0] - p["s"][0] / 2, p["t"][0] + p["s"][0] / 2
+
+    def test_each_run_joins_the_pack_to_its_drive_unit(self):
+        pack = self._x_span("pack-case")
+        front = self._x_span("motor-front")
+        rear = self._x_span("motor-rear")
+        f0, f1 = self._x_span("hv-run-front")
+        r0, r1 = self._x_span("hv-run-rear")
+        # Front run: starts at (or inside) the pack's front wall, ends at the
+        # front housing. Rear run: the mirror.
+        self.assertLessEqual(f0, pack[1] + 0.07)
+        self.assertGreaterEqual(f1, front[0] - 0.01)
+        self.assertGreaterEqual(r1, pack[0] - 0.07)
+        self.assertLessEqual(r0, rear[1] + 0.01)
+
+    def test_an_inverter_sits_on_each_drive_unit(self):
+        for tpim, unit in (("tpim-1", "motor-front"), ("tpim-2", "motor-rear"), ("tpim-3", "motor-rear")):
+            with self.subTest(tpim=tpim):
+                m, u = self.parts[tpim], self.parts[unit]
+                self.assertGreater(m["t"][1] - m["s"][1] / 2, u["t"][1], "inverter is not above the housing")
+                self.assertLess(abs(m["t"][0] - u["t"][0]), 0.2, "inverter is not on its drive unit")

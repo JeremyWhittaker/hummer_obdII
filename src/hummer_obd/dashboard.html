@@ -2301,6 +2301,34 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       add({ id: fb[0], mesh: "bev", layer: "aux", colour: [0.22, 0.20, 0.12],
             t: [fb[1], fb[2], fb[3]], s: [fb[4], fb[5], fb[6]] });
     });
+    /* THE HV RUNS THE RESCUE SHEET DRAWS. In its plan view an orange cable
+       leaves the pack's front wall on the centreline for the front drive
+       unit, and another leaves the rear wall for the rear drive unit. They
+       are the only HV routing GM publishes apart from the charge-port run
+       along the driver's side, and they are drawn at pack mid-height, on
+       the centreline, from wall to housing -- no more precisely than the
+       sheet draws them. The 12 V harness is drawn nowhere because its
+       routing is published nowhere. */
+    var hvY = (VEH.packTop + VEH.packBottom) / 2,
+        hvFront0 = VEH.packCentreX + VEH.packLength / 2, hvFront1 = AXLE - 0.19,
+        hvRear0 = VEH.packCentreX - VEH.packLength / 2, hvRear1 = -AXLE + 0.19;
+    add({ id: "hv-run-front", mesh: "cyl", layer: "aux", colour: [0.55, 0.28, 0.10],
+          t: [(hvFront0 + hvFront1) / 2, hvY, 0], s: [hvFront1 - hvFront0, 0.045, 0.045], rot: "x" });
+    add({ id: "hv-run-rear", mesh: "cyl", layer: "aux", colour: [0.55, 0.28, 0.10],
+          t: [(hvRear0 + hvRear1) / 2, hvY, 0], s: [hvRear0 - hvRear1, 0.045, 0.045], rot: "x" });
+    /* THE TRACTION POWER INVERTER MODULES. The manual's fuse tables name
+       three (TPIM 1, 2, 3); the catalogue sells them as the "drive motor
+       power distribution control module", GM 24049478; the teardown puts
+       the inverter and its plate cooler on the drive unit "within a foot of
+       each other". So one sits on the front unit and two on the rear
+       casing, as boxes on top of the housings. Their size is not
+       published. */
+    add({ id: "tpim-1", mesh: "bev", layer: "aux", colour: [0.24, 0.26, 0.30],
+          t: [AXLE, VEH.wheelRadius + 0.19 + 0.08, -0.05], s: [0.36, 0.16, 0.34] });
+    add({ id: "tpim-2", mesh: "bev", layer: "aux", colour: [0.24, 0.26, 0.30],
+          t: [-AXLE, VEH.wheelRadius + 0.19 + 0.08, -0.27], s: [0.36, 0.16, 0.30] });
+    add({ id: "tpim-3", mesh: "bev", layer: "aux", colour: [0.24, 0.26, 0.30],
+          t: [-AXLE, VEH.wheelRadius + 0.19 + 0.08, 0.27], s: [0.36, 0.16, 0.30] });
     /* An HV component the rescue sheet draws and does not name: an orange
        block behind the rear axle, on the centreline, in both views -- at
        -2.17 m, 0.66 m up, about 0.5 m across. The charge port's cable runs
@@ -3388,7 +3416,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     ["shell", "Body"], ["lights", "Lighting"], ["pack", "Battery"],
     ["drive", "Drive units"], ["wheels", "Wheels"], ["brakes", "Brakes"],
     ["suspension", "Suspension & steering"], ["armour", "Frame & armour"],
-    ["thermal", "Thermal"], ["aux", "12 V & charging"], ["cabin", "Cabin"],
+    ["thermal", "Thermal"], ["aux", "Electrical"], ["cabin", "Cabin"],
     ["radar", "Radar"]
     ];
   /* Where the camera stands. Separate from the layer buttons because it is a

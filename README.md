@@ -591,7 +591,7 @@ two remaining views.
 
 **The layers are the groups a viewer would name.** Body, Lighting, Battery,
 Drive units, Wheels, Brakes, Suspension & steering, Frame & armour, Thermal,
-12 V & charging, Cabin, Radar. Brakes were folded into the wheels and the air
+Electrical, Cabin, Radar. Brakes were folded into the wheels and the air
 springs, tie rods, skid plates, rock rails and bumper beam into one
 "Underbody"; they are separate now because they are separate things. Lighting
 is its own layer so the light bar that spells the name and the headlamps that
@@ -714,7 +714,8 @@ the page follows the prose and the owner.
 three: the underhood compartment block, under a cover with its access panel on
 the driver's side; the instrument panel block on the driver side between the
 wheel and the door; and the instrument panel block behind the glove box. All
-three are drawn on the 12 V layer as the plain boxes those words describe, and
+three are drawn on the Electrical layer as the plain boxes those words
+describe, and
 [Electrical](docs/ELECTRICAL.md) transcribes every fuse in them, names the
 modules they feed, and lines those up against the eight modules this project
 has measured — the DLC this node plugs into is fuse F14 in the glove-box block,
@@ -723,6 +724,17 @@ certainly the manual's three traction power inverter modules. GM catalogue
 part numbers for the underhood block, the HV disconnect fuse, the charger
 relay, the DC-DC module, the inverter modules and the HV heater are recorded
 there too, read from catalogue pages rather than listings.
+
+**The HV cables the rescue sheet draws are drawn, and the harness is not.**
+The sheet's plan view routes one orange cable from the pack's front wall to
+the front drive unit and one from its rear wall to the rear unit, both on the
+centreline, plus the charge-port run along the driver's side that was already
+on the model; those three are now on the Electrical layer, no more precisely
+than the sheet draws them. The three traction power inverter modules sit on
+top of their drive units, which is where the teardown puts the inverter and
+its plate cooler. The 12 V harness is drawn nowhere because its routing is
+published nowhere, and a harness drawn from imagination would be a lie in
+three dimensions.
 
 **Lamp status is not captured.** Nothing this vehicle answers carries
 headlamp or taillamp state — the catalogue records body signals as absent
