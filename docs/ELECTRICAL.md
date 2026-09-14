@@ -271,13 +271,36 @@ diagnostic responses. Lamp state in particular lives in the ELMs; that is why
 
 ## Part numbers
 
-GM's parts catalogues refuse automated access (every catalogue site returned
-HTTP 403 to fetches on 2026-09-11 and 2026-09-14). What could be recovered
-from search-result listings is recorded here with that caveat; nothing below
-has been read off a catalogue page.
+Read off GM catalogue pages (gmpartsgiant.com) on 2026-09-14, fitment as the
+page states it. The instrument panel fuse blocks are not listed as separate
+parts; the catalogue folds them into the harness and body-control assemblies.
 
-No catalogue-page part number has been recovered for any of the three fuse
-blocks, the HV service disconnect, the on-board charging module or the DC-DC
-converter as of this writing. The manual itself carries none: "Refer to the
-replacement number shown on the original battery label" is the only
-part-number instruction it gives, and that is for the 12 V battery.
+| Part | GM number | Catalogue name | Fitment |
+|---|---|---|---|
+| Underhood fuse block | 86591540 | Block Assembly-Bat Distribution Eng Compt Fuse | 2022–2024 Hummer EV |
+| Underhood junction block | 85573517, 85609049 | Block Asm-Eng Wrg Harn Junc | 2023, 2023–2024 |
+| Underhood fuse block kit | 84669070, 87821881 | Block Kit-Bat Distribution Eng Compt Fuse | 2022–2024 |
+| HV battery disconnect relay fuse | 24045190 | Fuse-High Vltg Bat Disconnect Rly | 2022–2024 |
+| Its cover | 24049297 | Cover-High Vltg Bat Disconnect Rly | 2022–2024 |
+| Charger disconnect relay | 24046182 | Relay Asm-Drv Mot Bat Charger Mdl | 2024 |
+| Charger receptacle fuse block | 24046644 (24051375) | Block Asm-Drv Mot Bat Charger Rcpt Fuse | 2024 |
+| DC-DC / accessory power module | 84978033 (84978034, 86591121) | Module Asm-Acsry AC & DC Pwr Cont (w/brkt) | 2022–2024 |
+| Traction power inverter module | 24049478 (24053090) | Module Asm-Drv Mot Pwr Dstrbn Cont (HW) E | 2022–2024 |
+| HV battery heater | 86549712 | Module Asm-High Vltg Bat Htr | 2022–2024 |
+| HV battery pack | 24061750 / 24061751 / 24061752 | Battery Asm, High Vltg | 2024 |
+| Serial data gateway | 13551131 | Module Asm-Serial Data Gateway | 2022–2024 |
+
+So the DC-DC converter the manual never names has a catalogue name — GM's
+"accessory AC & DC power control module", the APM — and the manual's TPIM is
+the catalogue's "drive motor power distribution control module". Not found:
+a part listed as the Vehicle Integrated Control Module (VICM); the 12 V AGM
+battery's ACDelco number (a retailer snippet says BCI group 94R, 850 CCA,
+which could not be read from the page itself and is not relied on here).
+
+**The full Emergency Response Guide** (twelve pages, beyond the one-page
+rescue sheet) is at
+`gmstc.com/wp-content/uploads/2022/12/GMC-Hummer-EV-Pickup-2022-Emergency-Response-Guide_English.pdf`.
+It adds one location the sheet does not: the low-voltage cut point is "above
+the battery on the right side of the forward compartment", marked with yellow
+tape. Its HV diagram marks the drive units and the charge port and labels no
+component by name.

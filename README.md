@@ -719,7 +719,10 @@ three are drawn on the 12 V layer as the plain boxes those words describe, and
 modules they feed, and lines those up against the eight modules this project
 has measured — the DLC this node plugs into is fuse F14 in the glove-box block,
 the gateway is F11 beside it, and the three drive motor controllers are almost
-certainly the manual's three traction power inverter modules.
+certainly the manual's three traction power inverter modules. GM catalogue
+part numbers for the underhood block, the HV disconnect fuse, the charger
+relay, the DC-DC module, the inverter modules and the HV heater are recorded
+there too, read from catalogue pages rather than listings.
 
 **Lamp status is not captured.** Nothing this vehicle answers carries
 headlamp or taillamp state — the catalogue records body signals as absent
