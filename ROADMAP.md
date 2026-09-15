@@ -13,6 +13,22 @@ wrong thing.
 Nothing moves out of *Blocked* because it has been waited on long enough. Each
 blocked item below names the evidence that would release it.
 
+## New direction, 2026-09-15: going deeper
+
+The project ran for about a week gathering what sourced identifiers and the
+enumerated enhanced set could reach. Sourcing is now exhausted — two
+independent sweeps found no public identifier for motor speed, torque, inverter
+temperature, per-cell/per-module detail, or any body signal
+([SOURCING_2026-09-04.md](docs/SOURCING_2026-09-04.md)).
+
+So the vehicle's owner authorized the one route left: a **bounded, supervised
+scan** of the service-22 identifier space on their own truck. This is a real
+change of stance — the project previously refused to scan on principle — and it
+is documented, in full and unambiguously, in **[DEEP_SCAN.md](docs/DEEP_SCAN.md)**.
+It stays read-only to the vehicle; it adds no write, control or session
+capability; it runs parked, paced, DTC-bracketed and person-started, on a gate
+no unattended path can reach. **This is the current front of the project.**
+
 ## Where this stands, 2026-09-04
 
 **Start with [the access matrix](docs/ACCESS_MATRIX.md).** It is generated from
@@ -32,7 +48,7 @@ done, and the reasons differ item by item — which is the part worth reading.
 | **G1c** Cross-session trends | `--trend`: cell spread, implied capacity, efficiency and series-cell count across every committed session |
 | **G2** Collect what the census proved supported | All nine service-01 PIDs module `17` advertises, including PID `01` — the malfunction lamp and stored-fault count, added last |
 | **G3** Passive CAN capture | `hummer-obd-passive`, behind two gates of its own. Run on the vehicle: **zero bytes in 30.1 s** |
-| **G4** Source drive-motor identifiers | Two sweeps found **nothing** — no public source names motor RPM, torque, inverter temperature or power limits for any GM Ultium vehicle. Written up in `docs/SOURCING_2026-09-04.md` |
+| **G4** Source drive-motor identifiers | Two sweeps found **nothing** — no public source names motor RPM, torque, inverter temperature or power limits for any GM Ultium vehicle. Written up in `docs/SOURCING_2026-09-04.md`. **This dead end is what motivated the 2026-09-15 decision to scan** (`docs/DEEP_SCAN.md`) |
 | **G5** Confidence registry | `hummer_obd.confidence`: all 35 identifiers graded 0–4, key-parity with the gate asserted, level-3 claims recomputed from the corpus by tests |
 | **G6** Three documentation defects | All fixed, plus `docs/CAN_FD_EXPANSION.md` created |
 
@@ -59,7 +75,7 @@ is right and is what this project is doing. Its status here:
 | **G** OnStar command broker | **Deliberately not here** | Jeremy's explicit scope decision: this repository stays read-only. A cloud broker is a different trust domain — stored credentials, bidirectional by design — and belongs in its own repository, not wired into an unattended node |
 | **H** GM Service Information checklist | **Written** | [GM Service Information](docs/GM_SERVICE_INFORMATION.md) — what to retrieve privately against the VIN before any internal-bus work is even evaluated, and explicitly *not* authorisation to tap anything. Serves the hard rule in [CAN FD expansion](docs/CAN_FD_EXPANSION.md) |
 | **I** MDI2 / GDS2 workflow | **Written** | [OEM diagnostic workflow](docs/OEM_DIAGNOSTIC_WORKFLOW.md) — GM's own tool as a truth oracle for the seventeen identifiers that answer but are stored raw. Potentially the fastest route left, since sourcing has run dry ([the 2026-09-04 sweep](docs/SOURCING_2026-09-04.md)). It answers the one-connector-two-tools problem with a measurement rather than a shrug: `0x4149` holds eight distinct values across 1570 samples and `0x2709` thirteen across 1155, so those survive a tool swap taking minutes, while `pack_a` does not and needs nothing from the exercise |
-| **J** Safety boundary unchanged | **Enforced and machine-checked** | Session changes, security access, writes, actuator control, routines, resets, replay and identifier sweeping are all refused by every gate, and `docs/ACCESS_MATRIX.md` shows each one refused rather than asserting it |
+| **J** Write boundary unchanged | **Enforced and machine-checked** | Session changes, security access, writes, actuator control, routines, resets and replay are all refused by every gate, and `docs/ACCESS_MATRIX.md` shows each one refused rather than asserting it. **Identifier scanning** is the one thing that changed on 2026-09-15: it is now permitted on a single supervised, person-started gate (`validate_scan_command`) that no unattended path can reach — see `docs/DEEP_SCAN.md`. The unattended collector and the recorded set still never scan |
 
 ### What the zero-byte capture does to item A
 

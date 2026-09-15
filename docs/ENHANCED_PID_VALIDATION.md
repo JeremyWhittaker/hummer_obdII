@@ -239,10 +239,14 @@ Explicitly rejected as evidence, at any rank:
   response that decodes to a plausible number is not proof of meaning — a
   plausible number is the most likely way to be wrong without noticing.
 
-## Why identifier sweeping is forbidden
+## Why identifier sweeping was forbidden — and the conditions it now runs under
 
-Iterating `22 00 00` through `22 FF FF` — or any bounded subset of it — is
-banned outright, and would remain banned even if the results were interesting.
+**Superseded 2026-09-15.** Until this date, iterating `22 00 00` through
+`22 FF FF` — or any bounded subset of it — was banned outright. The vehicle's
+owner has now authorized a bounded, supervised scan of their own truck (see
+[DEEP_SCAN.md](DEEP_SCAN.md)). The reasoning below is preserved because it is
+exactly the set of harms the scan's safeguards exist to neutralize — read each
+bullet as a condition the scan must satisfy, not as a door that stays shut.
 
 * **It is 65,536 unreviewed requests.** Every single one of them fails the
   first change-control rule in [SAFETY.md](SAFETY.md), which requires a written
@@ -263,8 +267,13 @@ banned outright, and would remain banned even if the results were interesting.
   the shape of an intrusion attempt. Producing that record on a vehicle,
   deliberately, is not defensible with "I only wanted the state of charge".
 
-The project's premise is that unknown commands are rejected rather than
-guessed at. A sweep is guessing, industrialised.
+The project's premise was that unknown commands are rejected rather than
+guessed at. A sweep is guessing, industrialised — and so the scan authorized on
+2026-09-15 is deliberately *not* a blind sweep: it is paced to one request at a
+time, parked, bracketed by DTC checks, stopped on anything unexpected, run only
+when a person starts it, and every result is cross-validated against observable
+vehicle state before it is trusted. Each harm above maps to one of those
+safeguards. [DEEP_SCAN.md](DEEP_SCAN.md) is the binding version.
 
 ## Staged plan
 

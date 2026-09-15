@@ -15,6 +15,7 @@ negotiable at runtime — there is no flag that turns the gate off.
 | Service 03 / 07 / 0A | `03`, `07`, `0A` | Stored, pending and permanent DTC **reads** |
 | Service 06 | `0600`, `0601` | On-board monitoring test results the ECU computed itself |
 | Service 09 | `0902`, `0904`, `090A` | Vehicle information (VIN, calibration ID, ECU name) |
+| Service 22 — supervised only | `2227C6`, and (since 2026-09-15) `22XXXX` under the scan gate | Read-by-identifier. **Never** on an unattended path; see [DEEP_SCAN.md](DEEP_SCAN.md) |
 
 ## What must never be transmitted
 
@@ -26,9 +27,14 @@ negotiable at runtime — there is no flag that turns the gate off.
   `14`, `34`–`38`, `3D`, `3E`, `85` and the rest of the write/control/security
   set.
 * Adapter macros that would embed any of the above.
-* **Service 22** (enhanced read-by-identifier) is *deferred*, not permitted, in
-  this build. It is read-only in principle, but GM/Ultium identifiers are
-  unproven on this VIN; guessing identifiers is not acceptable.
+* **Service 22** (enhanced read-by-identifier) is read-only in principle. It is
+  refused by `validate_command` (the unattended gate) and permitted on two
+  supervised, person-started paths only: `validate_enhanced_command` for an
+  exact enumerated identifier set, and — since **2026-09-15**, with the
+  vehicle owner's explicit authorization — `validate_scan_command` for a
+  bounded, parked, supervised scan of the identifier space. See
+  [DEEP_SCAN.md](DEEP_SCAN.md). Neither path is reachable from any unattended
+  code, and neither widens the write/control prohibitions below.
 
 The gate is an allowlist: anything not listed as safe is rejected before any
 byte reaches the serial port, and `FORBIDDEN_SERVICES` is checked as a second,
@@ -75,9 +81,44 @@ change:
 
 Mode 22 remains out of scope **for unattended collection**, permanently. What
 changed on 2026-09-02 is not that the gate was widened but that a second,
-narrower gate was added beside it; see the change record below. A third-party
-app label or an Internet PID list is still not sufficient evidence to add an
-identifier, and identifiers are never guessed, incremented or swept.
+narrower gate was added beside it; see the change record below. For the
+*unattended* path, a third-party app label or an Internet PID list is still not
+sufficient evidence to add an identifier to the recorded set.
+
+**As of 2026-09-15 the project also performs a supervised identifier scan**, on
+a third gate (`validate_scan_command`) that no unattended path can reach. The
+"never guessed, incremented or swept" rule was a stance about what this project
+would do to a vehicle without leave; the owner has authorized a bounded, parked,
+supervised scan of their own truck, and the safeguards that stance produced now
+live in [DEEP_SCAN.md](DEEP_SCAN.md) as the conditions the scan runs under. A
+scanned identifier is added to the *recorded* set only after it is
+cross-validated on this vehicle.
+
+### Change record: supervised identifier scan, 2026-09-15
+
+The vehicle owner authorized a bounded, supervised scan of service `22`
+across the identifier space on their own truck. Against the five requirements:
+
+1. **Why it is read-only.** Service `22` reads a value the ECU already holds;
+   its write counterpart `2E` is in `FORBIDDEN_SERVICES` and stays there. An
+   unimplemented identifier answers `7F 22 31`. A scan changes no vehicle
+   state — the one state-changing service in reach, `10`
+   (DiagnosticSessionControl), is **not** used, so the scan stays in the
+   default session.
+2. **Allowlist not weakened.** `FORBIDDEN_SERVICES`, `ALLOWED_OBD_MODES` and
+   `ENHANCED_READ_DIDS` are all unchanged. The scan lives on a third gate,
+   `validate_scan_command`, which accepts `22XXXX` for any identifier and
+   nothing but adapter commands otherwise, and which no unattended path can
+   reach. An import-time assertion keeps `validate_command` refusing service 22.
+3. **Tests.** The scan gate refuses every forbidden service, every non-22
+   service, and command batching; `validate_command` still refuses `22XXXX`;
+   the scan runner sends only `22XXXX` reads, aborts on non-zero speed, aborts
+   on a new DTC, and resumes from saved state.
+4. **Offline acceptance.** Dry-run by default and exercised against the
+   PTY/ELM simulator before any vehicle use.
+5. **Supervised, parked, bracketed by DTC checks.** One request at a time,
+   paced, parked only, DTCs read before/during/after, stopping on anything
+   unexpected. Full protocol and safeguards in [DEEP_SCAN.md](DEEP_SCAN.md).
 
 ### Change record: supervised enhanced reads, 2026-09-02
 

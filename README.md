@@ -15,9 +15,13 @@ endorsed by General Motors, GMC, OBD Solutions, or Waveshare.
 
 > [!CAUTION]
 > Vehicle diagnostics can affect safety-critical systems. This project is
-> intentionally read-only: every serial write passes through an allowlist, DTC
-> clearing and control/write services are rejected, and unknown GM/Ultium
-> identifiers are not guessed. Read [the safety model](docs/SAFETY.md) before
+> intentionally read-only to the vehicle: every serial write passes through an
+> allowlist, and DTC clearing and control/write services are rejected. Since
+> 2026-09-15, with the owner's authorization, it also runs a **bounded,
+> supervised scan** of the read-only service-22 identifier space on the
+> reference truck — parked, paced and person-started, on a gate no unattended
+> path can reach ([DEEP_SCAN.md](docs/DEEP_SCAN.md)). No write or control
+> capability was added. Read [the safety model](docs/SAFETY.md) before
 > connecting it to any vehicle.
 
 > [!TIP]
@@ -98,7 +102,7 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 |---|---|
 | DTC clearing, actuator tests, any UDS write/control/security service | Permanently forbidden by the safety gate. Not a configuration option |
 | Mode 22 in unattended collection | Service `22` is still refused by the gate the collector uses. Enhanced reads exist only behind a separate, narrower gate that accepts an exact enumerated identifier and must be run deliberately — see [GM enhanced candidates](docs/GM_ENHANCED_CANDIDATES.md) |
-| Identifier sweeping / guessing | An identifier is added only when a fetchable source names it exactly. The gate refuses `0x27C5` and `0x27C7` — one step either side of the one that works |
+| Identifier sweeping, unattended or into the recorded set | The recorder never scans, and an identifier joins the recorded set only with a source or a cross-validated scan result. As of 2026-09-15 a **supervised, parked, person-started scan** of the read-only service-22 space is authorized on a separate gate — see [DEEP_SCAN.md](docs/DEEP_SCAN.md) |
 | Per-cell temperature, individually | The pack reports a temperature, and module `CB` answers a 24-value array whose scaling is not established. Nothing read here resolves an individual cell's temperature. (Pack **voltage** was listed here until 2026-09-03 and is now proven — see the row above. The claim outlived the fact by a day) |
 | Remote commands (lock, unlock, precondition, start) | Out of scope. This node has no vehicle write authority of any kind |
 | GPS / location | No receiver, and location is not an OBD-II service |

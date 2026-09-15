@@ -18,10 +18,18 @@ control authority. The current release proves standard OBD-II transport,
 logging, decoding, storage, Bluetooth recovery, and e-paper status.
 
 Since 2026-09-02 it also proves **supervised** enhanced reads: an exact,
-enumerated identifier set behind its own narrower gate, never guessed and never
-swept, and a drive/charge session recorder that runs unattended
-(`hummer-drive.service`). The *unattended collector* is a separate thing and is
-still disabled pending the power test; do not conflate them.
+enumerated identifier set behind its own narrower gate, and a drive/charge
+session recorder that runs unattended (`hummer-drive.service`). The *unattended
+collector* is a separate thing and is still disabled pending the power test; do
+not conflate them.
+
+**Since 2026-09-15 the mission has expanded to going deeper into the vehicle.**
+With the owner's explicit authorization, the project now runs a bounded,
+supervised scan of the service-22 identifier space to discover the identifiers
+sourcing could not find (motor, inverter, body). It is read-only and
+person-started, on a gate no unattended path can reach. `docs/DEEP_SCAN.md` is
+the spec. Read-only-to-the-vehicle is unchanged; no write/control capability was
+added.
 
 ## Non-negotiable invariants
 
@@ -34,11 +42,22 @@ still disabled pending the power test; do not conflate them.
    import-time assertion fails the build if anyone adds it.
    On 2026-09-02 a separate, narrower gate `validate_enhanced_command()` was
    added for supervised reads of an exact enumerated identifier set
-   (`ENHANCED_READ_DIDS`). Identifiers are never guessed, incremented or swept;
-   each needs a fetchable source naming it exactly. **Do not write the count
-   here** -- three hand-kept inventories in this project have gone stale, and
-   `docs/GM_ENHANCED_CANDIDATES.md` now renders the list, each identifier's
-   confidence level and where it answers directly from the gate.
+   (`ENHANCED_READ_DIDS`). For the recorded set, identifiers are never guessed,
+   incremented or swept; each needs a fetchable source or a cross-validated scan
+   result. **Do not write the count here** -- three hand-kept inventories in
+   this project have gone stale, and `docs/GM_ENHANCED_CANDIDATES.md` now
+   renders the list, each identifier's confidence level and where it answers
+   directly from the gate.
+
+   **On 2026-09-15 the project changed direction: it is now going deeper.** The
+   vehicle's owner authorized a bounded, supervised scan of the service-22
+   identifier space on their own truck, on a *third* gate
+   (`validate_scan_command`) that no unattended path reaches. Sourcing is
+   exhausted; a scan is the only route left to motor/inverter/body identifiers.
+   This does not touch invariants 1, 2 or 4, and `validate_command` still
+   refuses service 22. Read `docs/DEEP_SCAN.md` — it is the binding spec for the
+   scan, its safeguards (parked, paced, DTC-bracketed, person-started), and the
+   build checklist. This is the current front of the project.
 
    On 2026-09-03 two further gates were added for passive capture:
    `validate_monitor_setup_command` (the production gate plus `STCMM0`) and

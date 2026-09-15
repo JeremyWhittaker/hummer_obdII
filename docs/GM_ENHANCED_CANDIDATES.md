@@ -166,10 +166,14 @@ out of a profile that names this vehicle. The gate refuses `0x27C5` and
 `0x27C7` — one step either side, exactly what a sweep would try next — and
 `tests/test_enhanced.py` asserts that it does.
 
-**There is no DID sweeping in this project and there will not be.** An ECU
-asked for an identifier it does not have answers `7F 22 31`; an ECU asked for
-thousands in sequence is being probed, and that is not something to do to
-someone's vehicle.
+**This held until 2026-09-15, when the vehicle's owner authorized a bounded,
+supervised scan of their own truck** ([DEEP_SCAN.md](DEEP_SCAN.md)). The
+principle behind the sentence still governs the *unattended* and *enumerated*
+paths: the recorder never sweeps, and an identifier joins the recorded set only
+with a source or a cross-validated scan result. What changed is that "not
+something to do to someone's vehicle" was the owner's call to make, and they
+made it — under safeguards (parked, paced, DTC-bracketed, person-started) that
+keep the scan far from the intrusion-shaped flood the ban was written against.
 
 ---
 
