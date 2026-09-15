@@ -17,6 +17,7 @@ executes them, and asserts against the actual list of parts.
 """
 
 import json
+import math
 import re
 import shutil
 import subprocess
@@ -80,9 +81,16 @@ def build_parts() -> list[dict]:
     scene = _balanced(source, source.index("function buildScene"))
     harness = (veh.group(0) + "\n" + "\n".join(consts) + "\n" + scene + """
 const parts = buildScene();
-process.stdout.write(JSON.stringify(parts.map(p => ({
-  id: p.id, t: p.t, s: p.s, layer: p.layer, alpha: p.alpha === undefined ? null : p.alpha
-}))));
+// A part turned about Y reports the world box it occupies as s, so every box
+// test here stays true of it; its own size and angle come as size and yaw.
+process.stdout.write(JSON.stringify(parts.map(p => {
+  const c = Math.abs(Math.cos(p.yaw || 0)), n = Math.abs(Math.sin(p.yaw || 0));
+  return {
+    id: p.id, t: p.t, layer: p.layer, alpha: p.alpha === undefined ? null : p.alpha,
+    s: p.yaw ? [p.s[0] * c + p.s[2] * n, p.s[1], p.s[0] * n + p.s[2] * c] : p.s,
+    size: p.s, yaw: p.yaw === undefined ? null : p.yaw
+  };
+})));
 """)
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "scene.js"
@@ -237,22 +245,38 @@ class IntersectionTests(unittest.TestCase):
     ALLOWED_IN_WHEEL = {"shaft-f", "shaft-r"}
 
     def test_nothing_runs_through_a_wheel(self):
-        wheels = [p for p in self.parts if p["id"].startswith(("tyre-", "rim-"))]
-        self.assertTrue(wheels, "no wheels to test against")
+        """Through the tyre's rubber, or through the wheel's face.
+
+        The tyre's box is the wrong test: the knuckle, the brake hat and the
+        ball joints belong inside the wheel, within the rim, and a box test
+        called every one of them a collision. So a part runs through a wheel
+        if, across the tyre's width, some of it lies between the bead and the
+        tread -- or if it crosses the wheel's mounting face inside the bead.
+        The drawn spoke disc is not that face: it sits proud of the tyre's
+        outer sidewall. A 9.5Jx22 ET33 wheel mounts 33 mm outboard of the
+        tyre's centre plane.
+        """
         offenders = set()
-        for wheel in wheels:
+        for tyre in [p for p in self.parts if p["id"].startswith("tyre-")]:
+            cx, cy = tyre["t"][0], tyre["t"][1]
+            radius = abs(tyre["s"][0]) / 2
+            bead = 0.2794                               # 22 in rim
+            (tz0, tz1) = self._box(tyre)[2]
+            face = tyre["t"][2] + math.copysign(0.033, tyre["t"][2])
             for part in self.parts:
-                if part["id"].startswith(("tyre-", "rim-", "brake-", "flare-",
-                                          "wheel-", "hub")):
+                if part["id"].startswith(("tyre-", "rim-", "brake-", "flare-", "wheel-", "hub")):
                     continue
-                if part["layer"] in ("shell", "cabin"):
+                if part["layer"] in ("shell", "cabin") or part["id"] in self.ALLOWED_IN_WHEEL:
                     continue
-                if part["id"] in self.ALLOWED_IN_WHEEL:
-                    continue
-                if self._overlap(wheel, part):
+                (x0, x1), (y0, y1), (z0, z1) = self._box(part)
+                dx, dy = max(x0 - cx, 0, cx - x1), max(y0 - cy, 0, cy - y1)
+                near = (dx * dx + dy * dy) ** 0.5
+                far = max(((x - cx) ** 2 + (y - cy) ** 2) ** 0.5 for x in (x0, x1) for y in (y0, y1))
+                in_rubber = z0 < tz1 and tz0 < z1 and near < radius and far > bead
+                through_face = z0 < face < z1 and near < bead
+                if in_rubber or through_face:
                     offenders.add(part["id"])
-        self.assertEqual(sorted(offenders), [],
-                         f"parts inside a wheel: {sorted(offenders)}")
+        self.assertEqual(sorted(offenders), [], f"parts through a wheel: {sorted(offenders)}")
 
     def test_nothing_on_the_vehicle_is_wider_than_the_vehicle(self):
         """GMC publishes 2.202 m across the flares and 2.380 across mirrors.
@@ -366,9 +390,10 @@ class GreenhouseTests(unittest.TestCase):
 
     def test_the_pack_is_where_the_rescue_sheet_draws_it(self):
         case = self.parts["pack-case"]
-        # 2.09 m long centred 0.13 m ahead of the wheelbase midpoint, bottom at
-        # 0.43 m; the case carries a small margin around the modules.
-        self.assertAlmostEqual(case["t"][0], 0.13, places=2)
+        # 2.09 m long, bottom at 0.43 m. The sheet puts its centre 0.13 m ahead
+        # of the wheelbase midpoint; it is drawn at 0.03, inside the sheet's
+        # 0.10 m error, because at 0.13 its case sat in the front wheel wells.
+        self.assertAlmostEqual(case["t"][0], 0.03, places=2)
         self.assertLess(case["s"][0], 2.30)
         self.assertGreater(case["t"][1] - case["s"][1] / 2, 0.38)
 
@@ -517,14 +542,21 @@ class ChargeStatusIndicatorTests(unittest.TestCase):
     def test_each_headlamp_carries_a_row_of_bars_inside_its_housing(self):
         for side in "lr":
             with self.subTest(side=side):
-                housing = self.parts[f"headlamp-{side}"]
+                strips = [p for i, p in self.parts.items()
+                          if i == f"headlamp-{side}" or i.startswith(f"headlamp-{side}-seg-")]
                 bars = [p for i, p in self.parts.items() if i.startswith(f"headlamp-{side}-bar-")]
                 self.assertGreaterEqual(len(bars), 4)
-                z0 = housing["t"][2] - housing["s"][2] / 2
-                z1 = housing["t"][2] + housing["s"][2] / 2
+                z0 = min(p["t"][2] - abs(p["s"][2]) / 2 for p in strips)
+                z1 = max(p["t"][2] + abs(p["s"][2]) / 2 for p in strips)
                 for b in bars:
                     self.assertTrue(z0 <= b["t"][2] - b["s"][2] / 2 and b["t"][2] + b["s"][2] / 2 <= z1,
                                     f"{b['id']} is outside its housing")
+                    # On the housing, not floating ahead of it.
+                    bz0, bz1 = b["t"][2] - b["s"][2] / 2, b["t"][2] + b["s"][2] / 2
+                    under = [p["t"][0] + p["s"][0] / 2 for p in strips
+                             if p["t"][2] - abs(p["s"][2]) / 2 < bz1 and bz0 < p["t"][2] + abs(p["s"][2]) / 2]
+                    gap = (b["t"][0] - b["s"][0] / 2) - max(under)
+                    self.assertTrue(0 <= gap <= 0.05, f"{b['id']} is {gap:.3f} m off its housing")
 
     def test_bar_zero_is_the_outermost_so_the_fill_runs_toward_the_centre(self):
         for side in "lr":
@@ -648,8 +680,9 @@ class CabinSitsOnAFloor(unittest.TestCase):
 
     def test_headrests_clear_the_headliner(self):
         # The body has no headliner, only its roof skin, so the allowance is
-        # 0.20 m under the skin above every corner of every headrest -- tight
-        # enough that the box seats' 1.86 m headrests would fail it.
+        # 0.15 m under the skin above every corner of every headrest -- tight
+        # enough that the box seats' 1.86 m front headrests fail it, with room
+        # for a rear bench that GMC's rear head room puts higher than the front.
         top = skin()["y"]
         for i, p in self.parts.items():
             if i.startswith("headrest"):
@@ -657,7 +690,7 @@ class CabinSitsOnAFloor(unittest.TestCase):
                     for dx in (-1, 1):
                         for dz in (-1, 1):
                             roof = top.at(p["t"][0] + dx * p["s"][0] / 2, p["t"][2] + dz * p["s"][2] / 2)
-                            self.assertLess(self._top(i), roof - 0.20)
+                            self.assertLess(self._top(i), roof - 0.15)
 
     def test_the_pedals_are_on_the_toe_board_ahead_of_the_driver(self):
         toe = self.parts["cabin-toeboard"]
@@ -855,7 +888,8 @@ class PartsAgainstTheBody(unittest.TestCase):
     def test_what_is_inside_the_body_is_inside_it(self):
         out = []
         for pid, p in self.parts.items():
-            inside = p["layer"] in self.INSIDE_LAYERS or pid in self.INSIDE_IDS
+            inside = (p["layer"] in self.INSIDE_LAYERS or pid in self.INSIDE_IDS
+                      or pid.startswith(("headlamp-l-seg-", "headlamp-r-seg-")))
             # The pack is the rescue sheet's, and its case's front corners
             # reach 5 cm past the body's sill toward the front wheelhouse.
             # The sheet wins that one; the pack is still held under the body.
@@ -885,7 +919,7 @@ class PartsAgainstTheBody(unittest.TestCase):
                + [("taillamp-l", 0, "lo"), ("taillamp-r", 0, "lo")]
                + [("marker-f-%d" % i, 0, "hi") for i in range(3)]
                + [("marker-r-%d" % i, 0, "lo") for i in range(3)]
-               + [("portlamp", 2, "lo")] + [("charge-%d" % i, 2, "lo") for i in range(6)]
+               + [("portlamp", 2, "lo")]
                + [("cam-front", 0, "hi"), ("cam-rear", 0, "lo"), ("cam-tailgate", 0, "lo"),
                   ("cam-under-f", 1, "lo"), ("cam-under-r", 1, "lo"),
                   ("cam-mirror-l", 1, "lo"), ("cam-mirror-r", 1, "lo")])
@@ -911,14 +945,41 @@ class PartsAgainstTheBody(unittest.TestCase):
                 wrong.append((pid, None if proud is None else round(proud, 3)))
         self.assertEqual(wrong, [], f"not on the skin (proud, m): {wrong}")
 
-    def test_what_is_mounted_in_the_bed_is_on_its_walls(self):
+    def test_the_charge_door_lies_on_its_panel(self):
+        # The bedside tapers outward across the door, so the door is one plate
+        # turned to follow it: outside the skin across its whole face, nowhere
+        # more than 15 mm proud of it, and between the taillamp and the flare.
+        door = self.parts["charge-door"]
+        self.assertIsNotNone(door["yaw"], "the door is not turned to follow its panel")
+        tris = [t for t in skin()["tris"]
+                if min(q[0] for q in t[1:]) < -2.3 and min(q[2] for q in t[1:]) < -0.9]
+        a, (length, height, thick) = door["yaw"], door["size"]
+        ox = door["t"][0] - thick / 2 * math.sin(a)     # outer face centre
+        oz = door["t"][2] - thick / 2 * math.cos(a)
+        proud = []
+        for k in range(9):
+            u = -length / 2 + length * k / 8
+            for m in range(7):
+                x, y = ox + u * math.cos(a), door["t"][1] - height / 2 + height * m / 6
+                s = reference_skin.extreme(tris, 2, "lo", (x - 5e-4, x + 5e-4), (y - 5e-4, y + 5e-4), samples=2)
+                self.assertIsNotNone(s, f"no skin behind the door at x {x:.3f}, y {y:.3f}")
+                proud.append(s - (oz - u * math.sin(a)))
+        self.assertGreater(min(proud), 0, f"the door is buried {-min(proud) * 1000:.1f} mm")
+        self.assertLess(max(proud), 0.015, f"the door stands {max(proud) * 1000:.1f} mm off its panel")
+        (x0, x1), _, _ = self._box(door)
+        self.assertGreater(x0, -2.72, "the door runs into the taillamp")
+        self.assertLess(x1, -2.40, "the door runs onto the flare")
+
+    def test_what_looks_into_the_bed_is_on_what_holds_it(self):
         # The bed's inside is not the body's outline, so these are measured
-        # against the wall surfaces themselves: the bed lamps against the side
-        # walls' inner faces, the bed camera against the cab's back wall.
+        # against the surfaces themselves: the bed lamps against the side walls'
+        # inner faces, the bed camera against the cab's rear roof lip.
         tris = skin()["tris"]
         off = []
-        for pid, sign in (("bedlamp-l", -1), ("bedlamp-r", 1)):
-            p = self.parts[pid]
+        for pid, p in self.parts.items():
+            if not pid.startswith("bedlamp-"):
+                continue
+            sign = -1 if p["t"][2] < 0 else 1
             (x0, x1), (y0, y1), _ = self._box(p)
             wall = reference_skin.extreme(
                 tris, 2, "lo" if sign < 0 else "hi", (x0, x1), (y0, y1),
@@ -929,9 +990,84 @@ class PartsAgainstTheBody(unittest.TestCase):
                 off.append((pid, gap))
         cam = self.parts["cam-bed"]
         (x0, x1), (y0, y1), (z0, z1) = self._box(cam)
-        wall = reference_skin.extreme(tris, 0, "hi", (y0, y1), (z0, z1),
-                                      where=lambda a, b, c: all(-1.30 < q[0] < -1.20 for q in (a, b, c)))
-        proud = None if wall is None else wall - x0
+        lip = reference_skin.extreme(
+            tris, 0, "lo", (y0, y1), (z0, z1),
+            where=lambda a, b, c: min(q[0] for q in (a, b, c)) > -1.5 and min(q[1] for q in (a, b, c)) > 1.8)
+        proud = None if lip is None else lip - x0
         if proud is None or proud < -0.002 or proud - (x1 - x0) > 0.002:
             off.append(("cam-bed", proud))
-        self.assertEqual(off, [], f"not on the bed's walls: {off}")
+        self.assertEqual(off, [], f"not on what holds them: {off}")
+
+
+@unittest.skipIf(NODE is None, "node is not installed on this machine")
+class TonneauTests(unittest.TestCase):
+    """The power tonneau cover, LPO 5KM, drawn because the owner's truck has one.
+
+    A dealer accessory that nothing the truck reports can confirm, so it is its
+    own layer. Its sizes are GM's: 60.16 x 63.07 in, 9.23 mm, a 7.5 in canister.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.parts = {p["id"]: p for p in build_parts()}
+
+    @staticmethod
+    def _box(p):
+        return [(p["t"][i] - abs(p["s"][i]) / 2, p["t"][i] + abs(p["s"][i]) / 2) for i in range(3)]
+
+    def test_it_is_its_own_layer_and_starts_drawn(self):
+        layers = re.search(r"layers = \{([^}]*)\}", _script()).group(1)
+        self.assertRegex(layers, r"tonneau:\s*1\b")
+        self.assertIn('["tonneau", "Tonneau"]', _script())
+        self.assertGreaterEqual(len([p for p in self.parts.values() if p["layer"] == "tonneau"]), 5)
+
+    def test_the_cover_is_gms_size_and_spans_the_bed(self):
+        main, front = self._box(self.parts["tonneau-cover"]), self._box(self.parts["tonneau-cover-front"])
+        self.assertAlmostEqual(front[0][1] - main[0][0], 60.16 * 0.0254, delta=0.01)
+        self.assertAlmostEqual(main[2][1] - main[2][0], 63.07 * 0.0254, delta=0.005)
+        self.assertAlmostEqual(main[1][1] - main[1][0], 0.00923, delta=0.001)
+        self.assertAlmostEqual(main[0][0], -2.760, delta=0.005, msg="not at the tailgate's inner face")
+        self.assertAlmostEqual(front[0][1], -1.234, delta=0.005, msg="not at the cab's back wall")
+
+    def test_the_cover_lies_on_the_rail_caps_below_the_rear_window(self):
+        top = skin()["y"]
+        main = self._box(self.parts["tonneau-cover"])
+        rails = [top.at(x / 100, z) for x in range(-270, -160, 10) for z in (-0.80, 0.80)]
+        rails = [r for r in rails if r is not None]
+        self.assertTrue(rails)
+        self.assertLess(max(abs(r - main[1][0]) for r in rails), 0.01, "not on the rail caps")
+        window = min(p[1] for p in _glass_behind_the_cab())
+        for pid in ("tonneau-cover", "tonneau-cover-front"):
+            self.assertLess(self._box(self.parts[pid])[1][1], window, f"{pid} is above the rear window's edge")
+
+    def test_the_front_of_the_cover_fits_between_the_sail_panels(self):
+        front = self._box(self.parts["tonneau-cover-front"])
+        wall = reference_skin.extreme(
+            skin()["tris"], 2, "hi", front[0], front[1],
+            where=lambda a, b, c: all(-0.80 < q[2] < -0.70 for q in (a, b, c)))
+        self.assertIsNotNone(wall, "no sail panel found beside the front of the bed")
+        self.assertLessEqual(front[2][1], -wall + 1e-3, "the cover runs into the sail panels")
+
+    def test_the_canister_is_at_the_front_of_the_bed_under_the_cover(self):
+        can = self._box(self.parts["tonneau-canister"])
+        cover = self._box(self.parts["tonneau-cover-front"])
+        self.assertAlmostEqual(can[0][1], -1.234, delta=0.005, msg="not against the cab's back wall")
+        self.assertAlmostEqual(can[0][1] - can[0][0], 7.5 * 0.0254, delta=0.005)
+        self.assertLessEqual(can[1][1], cover[1][0] + 1e-6, "the canister stands through the cover")
+        self.assertGreater(can[1][0], skin()["y"].at(-1.35, 0.0), "the canister is below the bed floor")
+        release = self._box(self.parts["tonneau-release"])
+        self.assertGreater(release[2][0], 0, "the release lever is not on the passenger side")
+
+    def test_nothing_else_is_inside_the_tonneau(self):
+        clash = []
+        for pid, p in self.parts.items():
+            if p["layer"] != "tonneau":
+                continue
+            a = self._box(p)
+            for qid, q in self.parts.items():
+                if q["layer"] in ("tonneau", "shell"):
+                    continue
+                b = self._box(q)
+                if all(a[i][0] < b[i][1] - 1e-6 and b[i][0] < a[i][1] - 1e-6 for i in range(3)):
+                    clash.append((pid, qid))
+        self.assertEqual(clash, [], f"inside the tonneau: {clash}")

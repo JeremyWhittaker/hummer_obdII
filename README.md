@@ -534,10 +534,31 @@ What the body settled, beyond its own shape:
   roof is one crowned surface with no seam, so boxes laid over it would float
   above it or sink into it.
 
-The rescue sheet's pack stays where the sheet draws it, which puts the case's
-front corners 5 cm past the model's sill; the sheet wins that.
+The rescue sheet's pack is drawn 0.10 m aft of the sheet's reading, inside its
+3 % error, because at the reading its case's front corners sat in the body's
+front wheel wells.
 `ReferenceBodyTests` decodes the embedded mesh with the standard library and
-holds it to the published dimensions above, to the credit and its change notice, to a digest the build script writes, and to having no second interior; `PartsAgainstTheBody` checks that every cabin, radar and underhood part is inside the drawn skin and behind the windshield, that every exterior lamp and camera is on the skin across its whole footprint, and that the bed lamps and bed camera are on the bed's walls.
+holds it to the published dimensions above, to the credit and its change notice, to a digest the build script writes, and to having no second interior; `PartsAgainstTheBody` checks that every cabin, radar and underhood part is inside the drawn skin and behind the windshield, that every exterior lamp and camera is on the skin across its whole footprint, and that the bed lamps are on the bed's walls and the bed camera on the cab's rear
+roof lip.
+
+**Sized against the body, not only placed in it.** A second audit compared
+every part's size with GMC's figures, the drawn body and the model's own
+removed interior and wheel hardware, each finding re-measured by a second
+checker. It found the hub, disc and caliper stack 0.1 m inboard of where a
+9.5J×22 ET33 wheel mounts, arms and tie rods that stopped short of the
+knuckle, a steering wheel low enough to sit in the driver's shins, pedals and
+seats giving about 37 in of leg room against GMC's 45.6 in (measured with the
+seat fully back), a rear bench about 4 in lower than GMC's rear head room
+implies, a rear gearbox block running 0.09 m into both rear motors, and tow
+hooks drawn as discs that covered the body's own. Now the hubs, discs,
+calipers, arms and tie rods meet at the wheel; the wheel, pedals, seats, rear
+bench and console are where those figures put them (41 in of leg room at the
+drawn seat); the gearbox is the web between the motors; the HV runs and regen
+pulses end on the housings they feed; the tow hooks are rings; and the charge door is one plate turned 17.5° to follow its panel's taper,
+where six stepped boxes read as fins. A part now runs "through a
+wheel" only if it enters the tyre's rubber or crosses the wheel's face — a
+box test called the hub carrier a collision, and a hub carrier belongs inside
+the wheel.
 `scripts/build_reference_body.py` rebuilds the embedded mesh from the
 downloaded model, which is kept out of the repository under `3d/`, and
 `--check` reports whether the page still matches it.
@@ -594,12 +615,25 @@ published anywhere, and the body model's roof has no seams, so the panels are no
 shape nobody gives. The second row sits where GMC's published 39.0 in of leg
 room puts it.
 
-Not drawn: a tonneau cover. Both versions are accessories (RPO VPB soft
-roll-up, 5KM hard power retractable) rather than standard equipment, and
-nothing in the telemetry reports whether one is fitted — so drawing one would
-be asserting a fact about this specific truck that the vehicle never states.
-Nor are there controls for it: this node is read-only and a button that
-actuated anything would cross the line the whole project is built on.
+**The power tonneau cover is drawn, on its own layer.** Both of GMC's covers
+are accessories (LPO 5KM hard power retractable, VPB soft roll-up), and nothing
+the truck reports says whether one is fitted, so it was left off until the
+owner said this truck has the power one. What GM publishes places it: 60.16 ×
+63.07 in, 9.23 mm thick and 124 lb, matte black, on rails mounted inside the
+bed rails no more than 63.25 in apart, rolling into "a low profile 7.5-inch
+canister" at the front of the bed with the motor and its release lever on the
+passenger side and the buttons on the left rail by the tailgate (GM Service
+Update N222365730, bulletin 24-NA-028, GM's accessory catalogue data and
+gmc.com support; the left instrument-panel fuse block carries its fuse, F16).
+60.16 in is the bed's own inner length, so the cover runs from the tailgate's
+inner face to the cab's back wall on the rail caps, narrowing between the sail
+panels at the front. Which way the canister's 7.5 in runs is not published, so
+it is drawn 7.5 in each way. It is drawn shut, because nothing reports its
+position, and there are no controls for it: this node is read-only.
+`TonneauTests` pins its size, its fit on the rails and under the rear window,
+and that nothing else occupies it. The bed camera moved to the cab's rear roof
+lip, where GM's other pickups carry theirs, since the canister stands in front
+of the bed's front wall where it had been drawn.
 
 **The bed is a bed.** It was two thin rails with nothing between them, on a
 cab 0.8 m too short — proportions being most of what identifies this truck.
@@ -670,9 +704,8 @@ a Body button that removes the body outright does that with no half-truck
 left in the frame. `LayerControlTests` pins the default, the zero, and the
 two remaining views.
 
-**The layers are the groups a viewer would name.** Body, Lighting, Battery,
-Drive units, Wheels, Brakes, Suspension & steering, Frame & armour, Thermal,
-Electrical, Cabin, Radar. Brakes were folded into the wheels and the air
+**The layers are the groups a viewer would name.** Body, Tonneau, Lighting, Battery, Drive units, Wheels, Brakes, Suspension &
+steering, Frame & armour, Thermal, Electrical, Cabin, Radar. Brakes were folded into the wheels and the air
 springs, tie rods, skid plates, rock rails and bumper beam into one
 "Underbody"; they are separate now because they are separate things. Lighting
 is its own layer so the light bar that spells the name and the headlamps that
@@ -709,7 +742,9 @@ from it. What it fixed, on 2026-09-11:
   `GreenhouseTests` checks the windshield's rake, the instrument panel against
   it, and the front seatback beside the model's B-pillar.)
 - **The pack is 2.09 × 1.42 m, centred 0.13 m ahead of the wheelbase
-  midpoint, bottom at 0.43 m.** That is what this file's original 2.135 m was
+  midpoint, bottom at 0.43 m** (drawn at 0.03: with the body model drawn, a
+  case at 0.13 sat in the front wheel wells, and 0.10 m is the sheet's own
+  3 % error). That is what this file's original 2.135 m was
   measured from; the 2.780 m that replaced it, on the argument that the
   battery "fills the floor", was wrong — the sheet shows 0.8 m of nothing
   between the pack's rear wall and the rear drive unit. The two pack skid

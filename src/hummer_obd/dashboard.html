@@ -890,7 +890,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        unit. In side elevation the pack's bottom edge shows below the rocker
        at 0.43 m above ground; its top is hidden behind the high-strength
        zone, so 0.75 is the double-stack's height as drawn, not as measured. */
-    packLength: 2.090, packWidth: 1.420, packCentreX: 0.13,
+    /* Drawn at 0.03, not the sheet's 0.13. With the body model around it, a
+       case centred at 0.13 put its front corners 0.10 m into the front wheel
+       wells, 0.04 m from the tyre; at 0.03 it ends flush with the body's pack
+       tub. The move is the sheet's own 3 % error bar, 0.10 m. */
+    packLength: 2.090, packWidth: 1.420, packCentreX: 0.03,
     packTop: 0.750, packBottom: 0.430,
     /* 10.1 in at standard ride height. GMC's website quotes only Terrain
        (11.9 in) and Extract (16.0 in); the standard figure is in the 2022
@@ -1334,14 +1338,21 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
          from the OUTER edge toward the nose. The bar count is not published;
          eight per lamp is a drawing choice. The lamp is the body's: |z| 0.60
          to 0.95 in the lamp band, its lens wrapping back from x 2.476 at the
-         inner end to 2.34 at the corner, which a box cannot follow -- so the
-         housing is the lamp's back plate, behind the lens even at the corner where it wraps back to x 2.24, and each bar stands 4 mm proud of the frontmost lens behind it, from LENS_X, measured bar by bar. The box model had a flat lamp at the nose plane,
+         inner end to 2.34 at the corner, which a box cannot follow -- so the housing steps back with it in five
+         strips, each 5 mm behind the lens across its width, and each bar
+         stands 4 mm proud of the frontmost lens behind it, from LENS_X,
+         measured bar by bar. One flat plate behind the corner left the bars
+         floating 0.11-0.24 m ahead of it with the body off. The box model had a flat lamp at the nose plane,
          0.37 m ahead of the corner it belongs on. */
       var lampZ = side * 0.775, lampY = (LAMP_Y0 + LAMP_Y1) / 2, lampW = 0.35, BARS_PER_LAMP = 8,
           LENS_X = [2.347, 2.357, 2.377, 2.397, 2.416, 2.435, 2.454, 2.472];
-      add({ id: "headlamp-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "lights",
-            colour: [0.12, 0.13, 0.14], alpha: 1,
-            t: [2.195, lampY, lampZ], s: [0.05, LAMP_Y1 - LAMP_Y0 - 0.02, lampW] });
+      [[0.600, 0.6935, 2.416], [0.6935, 0.7755, 2.381], [0.7755, 0.8525, 2.337],
+       [0.8525, 0.920, 2.298], [0.920, 0.950, 2.235]].forEach(function (h, hi) {
+        slab("headlamp-" + (side < 0 ? "l" : "r") + (hi ? "-seg-" + hi : ""),
+             h[2] - 0.05, h[2], LAMP_Y0 + 0.01, LAMP_Y1 - 0.01,
+             Math.min(side * h[0], side * h[1]), Math.max(side * h[0], side * h[1]),
+             [0.12, 0.13, 0.14], { layer: "lights", alpha: 1 });
+      });
       for (var bi = 0; bi < BARS_PER_LAMP; bi++) {
         /* Index 0 is the outermost bar; the fill runs toward the centre. */
         var pitch = (lampW - 0.04) / BARS_PER_LAMP,
@@ -1373,12 +1384,18 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
             colour: [0.55, 0.10, 0.10], alpha: 1,
             t: [-1.215, 1.9135, mz], s: [0.122, 0.059, 0.032], lamp: "marker-red" });
     });
-    /* Bed lighting, under the rails, pointing in. */
+    /* Bed lighting, under the rails, pointing in. GMC lists "LED bed area
+       lighting" and nothing about its shape, so these are short pods, two a
+       side, rather than 0.90 m strips that were the brightest thing in the bed
+       and came from nowhere. The front pair stays aft of where the power
+       tonneau's canister stands. */
     [-1, 1].forEach(function (side) {
-      add({ id: "bedlamp-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "lights",
-            colour: [0.75, 0.76, 0.72], alpha: 1,
-            t: [(TAILGATE_INNER_X + bulkX) / 2, bedRail - 0.05, side * (bedInner - 0.016)],
-            s: [0.90, 0.03, 0.03], lamp: "bed" });
+      [-1.60, -2.55].forEach(function (px, pi) {
+        add({ id: "bedlamp-" + (side < 0 ? "l" : "r") + (pi ? "-aft" : ""), mesh: "bev", layer: "lights",
+              colour: [0.75, 0.76, 0.72], alpha: 1,
+              t: [px, bedRail - 0.05, side * (bedInner - 0.016)],
+              s: [0.15, 0.03, 0.03], lamp: "bed" });
+      });
     });
     /* The charge port lamp, which GMC lists as reporting charge status: a short strip under the port door, 4 mm proud of the bedside where it is outermost. */
     add({ id: "portlamp", mesh: "bev", layer: "lights",
@@ -1395,14 +1412,19 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        No station is published for any of them. What the body does settle is
        that each is ON something: the box model had the front camera 0.23 m
        ahead of the hood, the rear one 0.28 m above the tailgate and the
-       mirror cameras above their mirrors, all in air. Each now sits on the skin of the thing it is named for, its face 4-6 mm proud of the skin's outermost point behind it: under the front lamp band, on the tailgate top and face, under each mirror head, on the bed's front wall, and on the underside at each end. */
+       mirror cameras above their mirrors, all in air. Each now sits on the skin of the thing it is named for, its face 4-6 mm proud of the skin's outermost point behind it: under the front lamp band, on the tailgate top and face, under each
+       mirror head, and on the underside at each end. The bed camera is on the
+       cab's rear roof lip, beside the stop-lamp cluster, looking into the bed:
+       that is where GM's other pickups carry their bed-view camera. This
+       truck's station is not published, and the bed's front wall, where it was
+       drawn, is behind the power tonneau's canister. */
     [["cam-front", 2.5632, 1.005, 0],
      ["cam-rear", -2.8781, 1.44, 0],
      ["cam-mirror-l", 0.82, 1.4413, -1.10],
      ["cam-mirror-r", 0.82, 1.4413, 1.10],
      ["cam-under-f", 2.022, 0.3163, 0],
      ["cam-under-r", -1.97, 0.371, 0],
-     ["cam-bed", bulkX + 0.016, 1.50, 0],
+     ["cam-bed", -1.1946, 1.905, 0.115],
      ["cam-tailgate", -2.8677, 1.20, 0]
     ].forEach(function (c) {
       add({ id: c[0], mesh: "bev", layer: "shell", colour: [0.05, 0.05, 0.06],
@@ -1437,8 +1459,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     var cols = 12, rows = 1, mL = VEH.packLength / cols, mW = VEH.packWidth / rows,
         layerH = (VEH.packTop - VEH.packBottom) / 2;
     add({ id: "pack-case", mesh: "bev", layer: "pack", colour: [0.09, 0.11, 0.12],
-          t: [VEH.packCentreX, (VEH.packTop + VEH.packBottom) / 2, 0],
-          s: [VEH.packLength + 0.12, VEH.packTop - VEH.packBottom + 0.08,
+          /* The case's top is the module top plus 15 mm, where a 40 mm pad
+             stood 0.055 m above the body's pack tub and held the cabin floor
+             up with it. */
+          t: [VEH.packCentreX, (VEH.packTop + VEH.packBottom) / 2 - 0.02, 0],
+          s: [VEH.packLength + 0.12, VEH.packTop - VEH.packBottom + 0.04,
               VEH.packWidth + 0.12], alpha: 0.28 });
     for (var layer = 0; layer < 2; layer++) {
       for (var r = 0; r < rows; r++) {
@@ -1515,7 +1540,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
          project reports motor speed; this is the wheel speed and the
          gearing, and the caption says so. */
       for (var pk = 0; pk < 6; pk++) {
-        var pang = pk / 6 * Math.PI * 2, pr = 0.078;
+        var pang = pk / 6 * Math.PI * 2, pr = 0.095;   /* 0.078 buried them inside the rotor */
         add({ id: id + "-pole-" + pk, mesh: "bev", layer: "drive",
               colour: [0.46, 0.48, 0.52],
               t: [x + Math.cos(pang) * pr, VEH.wheelRadius + Math.sin(pang) * pr, sz],
@@ -1531,8 +1556,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        published; the passenger side is a drawing choice. */
     add({ id: "gearbox-front", mesh: "bev", layer: "drive", colour: [0.30, 0.33, 0.36],
           t: [AXLE + 0.02, VEH.wheelRadius, 0.30], s: [0.40, 0.38, 0.22], alpha: 0.55 });
+    /* The rear reduction is the web between the two rotors' inner ends. As a
+       0.26 m block it ran 0.09 m into both rotors: two rotors and that block
+       need 1.07 m, and the casing the body leaves room for is 0.90. */
     add({ id: "gearbox-rear", mesh: "bev", layer: "drive", colour: [0.30, 0.33, 0.36],
-          t: [-AXLE + 0.02, VEH.wheelRadius, 0], s: [0.40, 0.38, 0.26], alpha: 0.55 });
+          t: [-AXLE + 0.02, VEH.wheelRadius, 0], s: [0.40, 0.38, 0.07], alpha: 0.55 });
     /* ONE CASING AT THE REAR, TWO MOTORS INSIDE IT. GM's description of the
        Edition 1 driveline: the "two rear motors are housed within the same
        casing", each driving its own wheel, with the locking effect done in
@@ -1602,10 +1630,17 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            edges are dark and the swept band is bright, and why these rotors
            do not rust. Most renders get that exactly backwards.
 
-           The caliper's clock position is a modelling choice. No source
-           resolves it and the factory wheels are too closed to read it off a
-           photograph. */
-        var inboard = z - w[2] * 0.10;
+           The caliper's clock position is not published. It sits at nine or
+           three o'clock, toward the wheelbase centre, as the body model draws
+           both axles' calipers -- which is also where a box lies tangential to
+           the disc -- and inside the rotor's radius.
+
+           The stack is where the wheel mounts. The 22 in wheel is 9.5Jx22 ET33,
+           which puts its mounting face 33 mm outboard of the wheel centre
+           plane, |z| 0.964: the hat's outer face lands there and the disc sits
+           just inboard of it. The hat is 0.21 m across, outside the 8x165.1
+           bolt circle. The stack used to stop 0.10 m short of the wheel. */
+        var inboard = z - w[2] * 0.035;
         if (front) {
           /* A 40 mm disc is a vented disc: two friction plates with the
              vanes between them. Two thin discs and a dark spacer read as
@@ -1627,16 +1662,17 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         }
         add({ id: "brake-hat-" + w[0], mesh: "cyl", layer: "brakes",
               colour: [0.13, 0.14, 0.15],
-              t: [w[1], VEH.wheelRadius, inboard],
-              s: [0.16, 0.16, 0.07], rot: "z" });
+              t: [w[1], VEH.wheelRadius, w[2] * 0.935],
+              s: [0.21, 0.21, 0.058], rot: "z" });
         add({ id: "brake-caliper-" + w[0], mesh: "bev", layer: "brakes",
               colour: [0.21, 0.18, 0.16], brake: true,
-              t: [w[1] - 0.115, VEH.wheelRadius + 0.115, inboard],
-              s: [0.11, 0.15, 0.115] });
+              t: [w[1] - (front ? 0.13 : -0.13), VEH.wheelRadius, inboard],
+              s: [0.04, 0.14, front ? 0.115 : 0.09] });
         add({ id: "brake-bracket-" + w[0], mesh: "bev", layer: "brakes",
               colour: [0.17, 0.15, 0.14],
-              t: [w[1] - 0.115, VEH.wheelRadius + 0.115, inboard + w[2] * 0.055],
-              s: [0.13, 0.17, 0.03] });
+              /* The anchor bracket bolts to the knuckle, so it is inboard. */
+              t: [w[1] - (front ? 0.13 : -0.13), VEH.wheelRadius, inboard - w[2] * 0.045],
+              s: [0.05, 0.18, 0.025] });
       });
 
     /* --- thermal, front ---------------------------------------------
@@ -1733,6 +1769,49 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        and the camera is allowed below the axle line so they can be seen.
        Grounding the object is not worth blindfolding the view. */
 
+    /* --- the power tonneau cover (LPO 5KM) ------------------------------
+       A dealer accessory, not standard equipment, and nothing this truck
+       reports says whether one is fitted: it is drawn because its owner says
+       this one has it, on its own layer so it can be taken off. What GM
+       publishes places it:
+         - "Accessory Power Tonneau Cover", LPO 5KM (GM Service Update
+           N222365730); parts 86575628, 86595165 or 85758525 (GM bulletin
+           24-NA-028).
+         - 60.16 in long, 63.07 in wide, 9.23 mm thick, 124 lb, matte black
+           powder coat, its rails mounted inside the bed rails (GM accessory
+           catalogue data), and no more than 63.25 in apart (24-NA-028).
+         - It "rolls up into a low profile 7.5-inch canister" at the front of
+           the bed, with the motor and its release lever on the passenger side
+           (N222365730). Which dimension the 7.5 in is, is not published: the
+           canister is drawn 7.5 in each way.
+         - Its buttons are "on the left bed rail, all the way back towards the
+           tailgate" (gmc.com support), and the left instrument panel fuse
+           block carries its fuse, F16 "Tonneau" (docs/ELECTRICAL.md).
+       Drawn shut, because nothing reports its position. 60.16 in is the bed's
+       own 60.10 in inner length, so it runs from the tailgate's inner face to
+       the cab's back wall on the rail caps; ahead of x -1.55 the cab's sail
+       panels stand beside the bed, so the front of it is only as wide as the
+       bed there. */
+    var TONNEAU = [0.06, 0.065, 0.07], TONNEAU_TOP = bedRail + 0.0092;
+    slab("tonneau-cover", TAILGATE_INNER_X, -1.55, bedRail, TONNEAU_TOP,
+         -0.801, 0.801, TONNEAU, { layer: "tonneau", mesh: "box" });
+    slab("tonneau-cover-front", -1.55, bulkX, bedRail, TONNEAU_TOP,
+         -(bedInner - 0.002), bedInner - 0.002, TONNEAU, { layer: "tonneau", mesh: "box" });
+    [-1, 1].forEach(function (side) {
+      slab("tonneau-rail-" + (side < 0 ? "l" : "r"), TAILGATE_INNER_X, bulkX,
+           bedRail - 0.034, bedRail, side * bedInner, side * (bedInner - 0.026),
+           [0.10, 0.105, 0.11], { layer: "tonneau" });
+    });
+    slab("tonneau-canister", bulkX - 0.1905, bulkX, bedRail - 0.001 - 0.1905, bedRail - 0.001,
+         -(bedInner - 0.026), bedInner - 0.026, TONNEAU, { layer: "tonneau" });
+    /* The motor unit's manual release lever, "white color -glow in the dark",
+       on the canister's passenger side. */
+    slab("tonneau-release", bulkX - 0.1905 - 0.012, bulkX - 0.1905, bedRail - 0.16, bedRail - 0.10,
+         0.52, 0.60, [0.85, 0.86, 0.80], { layer: "tonneau" });
+    slab("tonneau-buttons", TAILGATE_INNER_X + 0.04, TAILGATE_INNER_X + 0.12,
+         bedRail - 0.025, bedRail - 0.008, -(bedInner - 0.026), -(bedInner - 0.034),
+         [0.30, 0.32, 0.34], { layer: "tonneau" });
+
     /* --- the eTrunk ---------------------------------------------------
        11.3 cu ft under the power hood, published on GMC's own spec table:
        0.320 m3, drawn to that volume rather than to a shape nobody gives.
@@ -1784,19 +1863,21 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        head room, SAE H61 from the H-point up, which puts the H-point near
        0.95 m, cushions topping at 0.99 -- the model's own cushion tops at
        1.03, inside its height error. The floor stops at the rear wheelhouse
-       walls (x -1.10) and inside the door trim (|z| 0.84), and runs forward
-       to a toe board just short of the cowl. */
-    var FLOOR_Y = VEH.packTop + 0.04 + 0.01, FLOOR_T = 0.03, TOE_X = WIND_BASE_X - 0.095;
+       walls (x -1.10) and inside the door trim (|z| 0.84), and runs forward to a toe board at the body's footwell. With the pedals
+       0.05 m nearer the footwell and the seats 0.05 m further back, that gives
+       about 41 in of SAE leg room at the drawn seat, from 37; GMC's 45.6 in is
+       measured with the seat fully back. */
+    var FLOOR_Y = VEH.packTop + 0.005, FLOOR_T = 0.03, TOE_X = WIND_BASE_X - 0.045;
     slab("cabin-floor", -1.10, TOE_X, FLOOR_Y, FLOOR_Y + FLOOR_T,
          -0.84, 0.84, [0.10, 0.10, 0.11], { layer: "cabin" });
-    slab("cabin-toeboard", TOE_X, TOE_X + 0.05, FLOOR_Y, 1.24,
+    slab("cabin-toeboard", TOE_X, TOE_X + 0.05, FLOOR_Y, 1.17,
          -0.84, 0.84, [0.10, 0.10, 0.11], { layer: "cabin" });
     /* Pedals on the toe board: accelerator inboard, brake outboard and
        wider, which is where they are on every left-hand-drive vehicle. */
     add({ id: "pedal-accel", mesh: "bev", layer: "cabin", colour: [0.30, 0.31, 0.33],
-          t: [TOE_X - 0.03, 0.97, seatZ + 0.10], s: [0.03, 0.12, 0.05] });
+          t: [TOE_X - 0.03, 1.00, seatZ + 0.14], s: [0.03, 0.20, 0.075] });
     add({ id: "pedal-brake", mesh: "bev", layer: "cabin", colour: [0.30, 0.31, 0.33],
-          t: [TOE_X - 0.03, 0.99, seatZ - 0.04], s: [0.03, 0.09, 0.10] });
+          t: [TOE_X - 0.03, 0.99, seatZ - 0.04], s: [0.03, 0.08, 0.15] });
     /* The centre console, between the seats, running forward to meet the
        instrument panel the way the model's does, and at its height -- 1.035,
        where the box console stood at 1.16. Reviews of this truck describe "a
@@ -1807,6 +1888,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
          [0.11, 0.12, 0.13], { layer: "cabin" });
     slab("console-lid", -0.08, 0.22, 1.035, 1.075, -0.165, 0.165,
          [0.09, 0.10, 0.11], { layer: "cabin" });
+    /* Rising to 1.11 under the centre stack, as the model's does: it stopped
+       0.2 m below the panel and the driver looked through the gap at the toe
+       board. */
+    slab("console-front", 0.69, 1.07, FLOOR_Y + FLOOR_T, 1.11, -0.16, 0.16,
+         [0.11, 0.12, 0.13], { layer: "cabin" });
     add({ id: "shifter-stem", mesh: "cyl", layer: "cabin", colour: [0.14, 0.15, 0.16],
           t: [0.36, 1.095, 0], s: [0.025, 0.12, 0.025], rot: "y" });
     add({ id: "shifter-t", mesh: "bev", layer: "cabin", colour: [0.16, 0.17, 0.18],
@@ -1816,22 +1902,28 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     /* The dead pedal, outboard of the brake -- the "moon-boot footprint"
        every review mentions. */
     add({ id: "pedal-dead", mesh: "bev", layer: "cabin", colour: [0.22, 0.23, 0.25],
-          t: [TOE_X - 0.03, 0.96, seatZ - 0.20], s: [0.03, 0.14, 0.11] });
+          t: [TOE_X - 0.03, 0.96, seatZ - 0.24], s: [0.03, 0.14, 0.11] });
     /* The instrument panel, against the windshield and inside the door trim.
        The box dash was 2.08 m wide -- 0.18 m through the glass on each side,
        which only box glass at the doors' own width hid -- and its top at 1.52
-       stood 0.13 above the model's. The windshield bows forward in plan,
-       1.17 at the centreline to 1.09 at |z| 0.8, so the panel's outer thirds
-       stop short of where its middle reaches. */
-    slab("dash-pad", 0.94, WIND_BASE_X - 0.035, 1.25, 1.39, -0.50, 0.50,
+       stood 0.13 above the model's. The windshield bows forward in plan, 1.17 at the centreline to 1.07 at
+       |z| 0.8, so the panel's outer thirds and the defroster's ends stop
+       short of where their middles reach. Its lower edge is at the model's
+       1.18. */
+    slab("dash-pad", 0.94, WIND_BASE_X - 0.035, 1.18, 1.39, -0.50, 0.50,
          [0.13, 0.14, 0.15], { layer: "cabin" });
     [-1, 1].forEach(function (side) {
-      slab("dash-pad-" + (side < 0 ? "l" : "r"), 0.94, 1.08, 1.25, 1.39,
+      slab("dash-pad-" + (side < 0 ? "l" : "r"), 0.94, 1.06, 1.18, 1.39,
            side < 0 ? -0.80 : 0.50, side < 0 ? -0.50 : 0.80,
            [0.13, 0.14, 0.15], { layer: "cabin" });
     });
-    slab("dash-defrost", 1.04, 1.12, 1.39, 1.42, -0.76, 0.76,
+    slab("dash-defrost", 1.04, 1.11, 1.39, 1.42, -0.47, 0.47,
          [0.09, 0.10, 0.11], { layer: "cabin" });
+    [-1, 1].forEach(function (side) {
+      slab("dash-defrost-" + (side < 0 ? "l" : "r"), 0.98, 1.05, 1.39, 1.42,
+           side < 0 ? -0.76 : 0.47, side < 0 ? -0.47 : 0.76,
+           [0.09, 0.10, 0.11], { layer: "cabin" });
+    });
     [-1, 1].forEach(function (side) {
       add({ id: "vent-tower-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "cabin",
             colour: [0.08, 0.09, 0.10],
@@ -1852,34 +1944,37 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           screen: "centre", t: [0.806, 1.385, 0], s: [0.014, 0.1522, 0.3044] });
 
     /* The wheel: round, three spokes, chunky hub, at the model's station and
-       diameter. The model's is raked 21 degrees; parts here have no rake, so
-       it stands upright, 0.03 m lower than the model's so the sight line
-       from the eye to the cluster clears the rim. */
+       diameter, upright where the model's is raked 21 degrees. Its centre is
+       0.365 m above the H-point, where a rim clears a driver's shins; it sat
+       0.07 m lower, in them. From the eye an upright rim here crosses about a
+       third of the cluster, as a real one does. */
     add({ id: "wheel-rim", mesh: "ring", layer: "cabin", colour: [0.07, 0.075, 0.08],
-          t: [0.70, 1.245, seatZ], s: [0.040, 0.370, 0.370], rot: "x" });
+          t: [0.70, 1.315, seatZ], s: [0.040, 0.370, 0.370], rot: "x" });
     add({ id: "wheel-hub", mesh: "bev", layer: "cabin", colour: [0.11, 0.12, 0.13],
-          t: [0.72, 1.245, seatZ], s: [0.055, 0.135, 0.135] });
+          t: [0.72, 1.315, seatZ], s: [0.055, 0.135, 0.135] });
     add({ id: "wheel-spoke-l", mesh: "bev", layer: "cabin", colour: [0.13, 0.14, 0.15],
-          t: [0.72, 1.245, seatZ - 0.115], s: [0.022, 0.048, 0.130] });
+          t: [0.72, 1.315, seatZ - 0.115], s: [0.022, 0.048, 0.130] });
     add({ id: "wheel-spoke-r", mesh: "bev", layer: "cabin", colour: [0.13, 0.14, 0.15],
-          t: [0.72, 1.245, seatZ + 0.115], s: [0.022, 0.048, 0.130] });
+          t: [0.72, 1.315, seatZ + 0.115], s: [0.022, 0.048, 0.130] });
     add({ id: "wheel-spoke-b", mesh: "bev", layer: "cabin", colour: [0.30, 0.28, 0.22],
-          t: [0.72, 1.13, seatZ], s: [0.022, 0.130, 0.080] });
+          t: [0.72, 1.20, seatZ], s: [0.022, 0.130, 0.080] });
     /* One paddle, on the left of the column, and it lights under regen. */
     add({ id: "regen-paddle", mesh: "bev", layer: "cabin", colour: [0.14, 0.15, 0.16],
-          regen: true, t: [0.77, 1.265, seatZ - 0.185], s: [0.020, 0.095, 0.014] });
+          regen: true, t: [0.77, 1.335, seatZ - 0.185], s: [0.020, 0.095, 0.014] });
 
     /* The second row. GMC publishes its dimensions -- 38.4 in of head room,
        39.0 in of leg room, 64.0 in of shoulder room, 60.2 in of hip room --
        which is what puts the bench behind the front seats rather than at a
        spacing chosen to look right. 64.0 in is trim to trim, not the seat:
        the backrest is 1.42 m, inside the greenhouse's lean, and its
-       headrests are at the model's stations and height, where the box ones stood 0.09-0.14 m higher and 0.08 m further out. */
+       headrests are at the model's stations. The bench stands 0.08 m above the
+       front row: GMC's rear head room is 3.9 in less than the front's under a
+       roof that is flat, which puts a rear H-point higher than a front one. */
     add({ id: "seat-rear-back", mesh: "bev", layer: "cabin", colour: [0.09, 0.10, 0.11],
-          t: [-1.04, 1.27, 0], s: [0.15, 0.56, 1.42] });
+          t: [-1.04, 1.35, 0], s: [0.15, 0.56, 1.42] });
     add({ id: "seat-rear-base", mesh: "bev", layer: "cabin", colour: [0.09, 0.10, 0.11],
-          t: [-0.685, 0.93, 0], s: [0.53, 0.12, 1.42] });
-    [[-0.47, 1.65, 0.157], [0, 1.618, 0.116], [0.47, 1.65, 0.157]].forEach(function (hr, hi) {
+          t: [-0.685, 1.01, 0], s: [0.53, 0.12, 1.42] });
+    [[-0.47, 1.73, 0.157], [0, 1.698, 0.116], [0.47, 1.73, 0.157]].forEach(function (hr, hi) {
       add({ id: "headrest-rear-" + hi, mesh: "bev", layer: "cabin", colour: [0.09, 0.10, 0.11],
             t: [-1.03, hr[1], hr[0]], s: [0.12, hr[2], 0.24] });
     });
@@ -1891,21 +1986,21 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     [[seatZ, "driver"], [-seatZ, "passenger"]].forEach(function (seat) {
       add({ id: "seat-back-" + seat[1], mesh: "bev", layer: "cabin",
             colour: [0.10, 0.11, 0.12],
-            t: [-0.04, 1.27, seat[0]], s: [0.14, 0.56, 0.48] });
+            t: [-0.09, 1.27, seat[0]], s: [0.14, 0.56, 0.48] });
       /* Bolsters and a headrest, which are what make a box read as a seat. */
       [-1, 1].forEach(function (bs) {
         add({ id: "seat-bolster-" + seat[1] + (bs < 0 ? "-l" : "-r"), mesh: "bev",
               layer: "cabin", colour: [0.12, 0.13, 0.14],
-              t: [0.24, 1.02, seat[0] + bs * 0.20], s: [0.50, 0.06, 0.08] });
+              t: [0.19, 1.02, seat[0] + bs * 0.20], s: [0.50, 0.06, 0.08] });
         add({ id: "seat-wing-" + seat[1] + (bs < 0 ? "-l" : "-r"), mesh: "bev",
               layer: "cabin", colour: [0.12, 0.13, 0.14],
-              t: [0.05, 1.25, seat[0] + bs * 0.20], s: [0.06, 0.40, 0.08] });
+              t: [0.00, 1.25, seat[0] + bs * 0.20], s: [0.06, 0.40, 0.08] });
       });
       add({ id: "headrest-" + seat[1], mesh: "bev", layer: "cabin", colour: [0.09, 0.10, 0.11],
-            t: [-0.02, 1.65, seat[0]], s: [0.12, 0.157, 0.24] });
+            t: [-0.07, 1.65, seat[0]], s: [0.12, 0.157, 0.24] });
       add({ id: "seat-base-" + seat[1], mesh: "bev", layer: "cabin",
             colour: [0.10, 0.11, 0.12],
-            t: [0.24, 0.93, seat[0]], s: [0.56, 0.12, 0.48] });
+            t: [0.19, 0.93, seat[0]], s: [0.56, 0.12, 0.48] });
     });
 
     /* --- the detector, where it actually sits --------------------------
@@ -1952,11 +2047,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            Each is one coaxial unit -- bellows above, damper below -- between
            the wheelhouse's inner wall and the rim: at the front inside the
            wall at |z| 0.511 and up to 1.05, under the wheelhouse roof at 1.061;
-           at the rear, where the wall is at 0.654 and the rim's inside at
-           0.776, a slimmer unit hanging from the wheelhouse roof at 1.083.
+           at the rear a 0.135 m bellows, as much as fits between the rim's inside
+           at 0.776 and the drawn wall at 0.654 -- it crosses that wall by
+           0.014, and GMC's published wheelhouse face is 0.018 further in --
+           hanging from the wheelhouse roof at 1.083. Each damper's foot stands
+           on the upper arm, which runs on the axle line.
            Nothing in the telemetry reports ride height or damper state, so
            they do not move. */
-        var front = w[1] > 0, sz = w[2] * (front ? 0.62 : 0.715), sd = front ? 0.19 : 0.115;
+        var front = w[1] > 0, sz = w[2] * (front ? 0.62 : 0.708), sd = front ? 0.19 : 0.135;
         add({ id: "airspring-" + w[0], mesh: "cyl", layer: "suspension",
               /* Lifted from near-black: a black bellows on a black background
                  with the body off is a part that is not there. */
@@ -1964,7 +2062,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
               t: [w[1], front ? 0.93 : 0.979, sz], s: [sd, front ? 0.24 : 0.198, sd], rot: "y" });
         add({ id: "damper-" + w[0], mesh: "cyl", layer: "suspension",
               colour: [0.50, 0.52, 0.55],
-              t: [w[1], front ? 0.71 : 0.75, sz], s: [front ? 0.07 : 0.05, front ? 0.20 : 0.26, front ? 0.07 : 0.05],
+              t: [w[1], front ? 0.7335 : 0.7685, sz], s: [front ? 0.07 : 0.05, front ? 0.153 : 0.223, front ? 0.07 : 0.05],
               rot: "y" });
         add({ id: "damper-rod-" + w[0], mesh: "cyl", layer: "suspension",
               colour: [0.72, 0.74, 0.76],
@@ -1973,7 +2071,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            spring rather than a can -- no wider than the bellows, which is all
            the room the wheelhouse leaves. */
         (front ? [0.87, 0.99] : [0.93, 1.03]).forEach(function (ry, ri) {
-          var rd = front ? 0.19 : 0.12;
+          var rd = front ? 0.20 : 0.14;
           add({ id: "airspring-ring-" + w[0] + "-" + ri, mesh: "cyl", layer: "suspension",
                 colour: [0.16, 0.16, 0.18],
                 t: [w[1], ry, sz], s: [rd, 0.03, rd], rot: "y" });
@@ -1984,34 +2082,52 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            a lower arm as two legs from the subframe out to the knuckle,
            an upper arm above it, and the knuckle the hub bolts to -- the
            halfshaft passes through it, which is what a hub carrier is for.
-           The air spring stands on the lower arm's legs, which is the usual
-           double-wishbone layout and is an ESTIMATE here: GM publishes no
-           arm geometry. Every dimension below is a drawing choice. */
-        var kz = w[2] * (HALF_TRACK - 0.205), sgn = w[2];
+           The knuckle carries the wheel's mounting face, so it is out at |z|
+           0.78-0.86 under the brake hat, the size of the body model's hub
+           carriers; the lower arm's two legs meet a fore-aft link at its ball
+           joint, and the upper arm runs on the axle line out to it and carries
+           the damper's foot. They used to stop 0.03-0.11 m short of a knuckle
+           0.2 m inboard of the wheel. GM publishes no arm geometry: stations
+           follow the body model's own arms, and every dimension is still a
+           drawing choice. */
+        var sgn = w[2];
         add({ id: "knuckle-" + w[0], mesh: "bev", layer: "suspension",
               colour: [0.40, 0.42, 0.45],
-              t: [w[1], 0.50, kz], s: [0.10, 0.30, 0.06] });
+              t: [w[1], 0.50, sgn * 0.82], s: [0.14, 0.36, 0.08] });
         [-0.18, 0.18].forEach(function (leg, li) {
           add({ id: "arm-lower-" + w[0] + "-" + li, mesh: "cyl", layer: "suspension",
                 colour: [0.34, 0.36, 0.38],
-                t: [w[1] + leg, 0.36, sgn * ((0.45 + HALF_TRACK - 0.20) / 2)],
-                s: [0.04, 0.04, HALF_TRACK - 0.20 - 0.45], rot: "z" });
+                t: [w[1] + leg, 0.36, sgn * 0.625], s: [0.04, 0.04, 0.35], rot: "z" });
         });
+        add({ id: "arm-lower-" + w[0] + "-joint", mesh: "cyl", layer: "suspension",
+              colour: [0.34, 0.36, 0.38],
+              t: [w[1], 0.36, sgn * 0.80], s: [0.40, 0.04, 0.04], rot: "x" });
         add({ id: "arm-upper-" + w[0], mesh: "cyl", layer: "suspension",
               colour: [0.34, 0.36, 0.38],
-              t: [w[1] + (w[1] > 0 ? 0.10 : -0.10), 0.64, sgn * ((0.50 + HALF_TRACK - 0.20) / 2)],
-              s: [0.035, 0.035, HALF_TRACK - 0.20 - 0.50], rot: "z" });
+              t: [w[1], 0.64, sgn * 0.65], s: [0.035, 0.035, 0.30], rot: "z" });
       });
     /* The front steering rack, ahead of the axle, and its tie rods to the
        knuckles. "Dual rack-and-pinion steering" is what gives this truck
        its rear steer; the rear rack was already drawn. */
     add({ id: "steer-front", mesh: "bev", layer: "suspension", colour: [0.22, 0.24, 0.26],
           t: [AXLE + 0.34, 0.42, 0], s: [0.10, 0.10, 0.70] });
+    /* The tie rods ran out to |z| 0.73 and stopped 0.27 m ahead of the
+       knuckle, where the steered tyre swept through their ends from about ten
+       degrees of lock. The rack cannot move aft or up -- the front drive unit
+       and its inverter are there -- so each tie rod stops at |z| 0.55, inside
+       the tyre's sweep, and a drag link runs back from its end to a steering
+       arm on the knuckle. The linkage's geometry is not published; this is
+       its layout, not its dimensions. */
     [-1, 1].forEach(function (side) {
       add({ id: "tierod-f-" + (side < 0 ? "l" : "r"), mesh: "cyl", layer: "suspension",
             colour: [0.31, 0.33, 0.35],
-            t: [AXLE + 0.34, 0.42, side * ((0.35 + HALF_TRACK - 0.20) / 2)],
-            s: [0.035, 0.035, HALF_TRACK - 0.20 - 0.35], rot: "z" });
+            t: [AXLE + 0.34, 0.42, side * 0.45], s: [0.035, 0.035, 0.20], rot: "z" });
+      add({ id: "draglink-f-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "suspension",
+            colour: [0.31, 0.33, 0.35],
+            t: [(1.775 + 2.06) / 2, 0.42, side * 0.55], s: [2.06 - 1.775, 0.04, 0.04] });
+      add({ id: "steerarm-f-" + (side < 0 ? "l" : "r"), mesh: "cyl", layer: "suspension",
+            colour: [0.31, 0.33, 0.35],
+            t: [1.80, 0.42, side * 0.665], s: [0.035, 0.035, 0.23], rot: "z" });
     });
 
     /* The plates. Translucent for the same reason the tyres are -- a plate
@@ -2032,16 +2148,16 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        under the body's rear underbody, their tops on its lowest point over
        each footprint, and none of the ends reaches under an underbody camera. */
     [["skid-0", 2.05, 2.18, VEH.groundClearance, VEH.groundClearance + 0.05, 0.42],
-     ["skid-1", VEH.packCentreX, VEH.packCentreX + VEH.packLength / 2 - 0.02,
+     ["skid-1", VEH.packCentreX, VEH.packCentreX + VEH.packLength / 2 + 0.06,
       VEH.packBottom - 0.095, VEH.packBottom - 0.045, VEH.packWidth / 2 + 0.06],
-     ["skid-2", VEH.packCentreX - VEH.packLength / 2 + 0.02, VEH.packCentreX,
+     ["skid-2", VEH.packCentreX - VEH.packLength / 2 - 0.06, VEH.packCentreX,
       VEH.packBottom - 0.095, VEH.packBottom - 0.045, VEH.packWidth / 2 + 0.06],
      ["skid-3", -2.26, -2.01, 0.2897, 0.3397, 0.35],
      ["skid-0-ramp-0", 2.18, 2.30, 0.365, 0.415, 0.55],
      ["skid-0-ramp-1", 2.30, 2.42, 0.47, 0.52, 0.59],
      /* Narrow, between the tow hooks. */
      ["skid-0-ramp-2", 2.42, 2.53, 0.585, 0.635, 0.34],
-     ["skid-3-ramp-0", -2.355, -2.26, 0.3157, 0.3507, 0.35],
+     ["skid-3-ramp-0", -2.355, -2.26, 0.3157, 0.3507, 0.29],
      ["skid-3-ramp-1", -2.45, -2.355, 0.3802, 0.4302, 0.35]]
       .forEach(function (plate) {
         add({ id: plate[0], mesh: "bev", layer: "armour",
@@ -2057,17 +2173,22 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                sill, |z| 0.89..1.01, between the arch edges, its bottom at 0.332 where it clears GMC's 22.3 degree breakover lines by a millimetre. It stood 0.1 m higher inside the box flank; nothing but the mirrors may pass GMC's 1.101 half-width, and this stops 0.09 inside it. */
             t: [-0.007, 0.3865, side * 0.9485], s: [2.23, 0.109, 0.121] });
       /* Rear tie rod: drawn because four-wheel steer is real on this truck,
-         static because nothing here measures the angle. */
+         static because nothing here measures the angle. The front's size and
+         reach from the track, not 0.06 m thick and sized off the body's
+         width, with an arm back to the knuckle it steers. */
       add({ id: "tierod-" + (side < 0 ? "l" : "r"), mesh: "cyl", layer: "suspension",
             colour: [0.31, 0.33, 0.35],
-            t: [-AXLE - 0.34, 0.45, side * (W - 0.34) / 2],
-            s: [0.06, 0.06, W - 0.34], rot: "z" });
-      add({ id: "towloop-" + (side < 0 ? "l" : "r"), mesh: "cyl", layer: "armour",
+            t: [-AXLE - 0.34, 0.45, side * 0.485], s: [0.035, 0.035, 0.51], rot: "z" });
+      add({ id: "steerarm-r-" + (side < 0 ? "l" : "r"), mesh: "bev", layer: "suspension",
+            colour: [0.31, 0.33, 0.35],
+            t: [(-2.07 - 1.79) / 2, 0.45, side * 0.7475], s: [0.28, 0.04, 0.055] });
+      add({ id: "towloop-" + (side < 0 ? "l" : "r"), mesh: "ring", layer: "armour",
             colour: [0.06, 0.06, 0.07],
             /* Recovery hooks where the body has them, either side of the
-               plate recess, facing forward. Like the model's, and like most
+               plate recess, facing forward, on the body's own shackles: rings,
+               where solid discs covered the hooks the body draws. Like most
                recovery points, they sit below the approach line. */
-            t: [2.52, 0.591, side * 0.455], s: [0.05, 0.15, 0.15], rot: "x" });
+            t: [2.52, 0.559, side * 0.455], s: [0.03, 0.14, 0.14], rot: "x" });
     });
     add({ id: "steer-rear", mesh: "bev", layer: "suspension", colour: [0.22, 0.24, 0.26],
           t: [-AXLE - 0.34, 0.45, 0], s: [0.16, 0.14, 0.46] });
@@ -2081,10 +2202,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           t: [-2.53, 0.585, 0], s: [0.34, 0.065, 0.065] });
     add({ id: "hitch-crossbar", mesh: "bev", layer: "armour", colour: [0.15, 0.16, 0.17],
           t: [-2.40, 0.585, 0], s: [0.08, 0.10, 1.10] });
-    /* Inside the bumper cover and ahead of the condenser. The box beam was
-       1.72 m wide and stood 0.15-0.28 m outside the nose where it wraps back. */
+    /* Inside the bumper cover and ahead of the condenser, and as wide as the
+       radiator behind it. The box beam was 1.72 m wide and stood 0.15-0.28 m
+       outside the nose where it wraps back. */
     add({ id: "bumper-beam", mesh: "bev", layer: "armour", colour: [0.19, 0.20, 0.21],
-          t: [2.4845, 0.74, 0], s: [0.045, 0.12, 1.00] });
+          t: [2.4845, 0.74, 0], s: [0.045, 0.12, 1.28] });
 
     /* --- 12 V and charge port --- */
     /* AGM, in the front compartment on the passenger side, outboard, under
@@ -2122,8 +2244,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        panel blocks are at the ends of the instrument panel, inside the door
        trim -- the left one was in the door skin. */
     [["fusebox-underhood", 1.60, 1.135, -0.78, 0.30, 0.14, 0.22],
-     ["fusebox-ip-left", 1.00, 1.12, -0.79, 0.12, 0.20, 0.06],
-     ["fusebox-ip-right", 1.00, 1.14, 0.70, 0.12, 0.18, 0.22]].forEach(function (fb) {
+     ["fusebox-ip-left", 1.00, 1.07, -0.79, 0.12, 0.20, 0.06],
+     ["fusebox-ip-right", 1.00, 1.08, 0.70, 0.12, 0.18, 0.22]].forEach(function (fb) {
       add({ id: fb[0], mesh: "bev", layer: "aux", colour: [0.22, 0.20, 0.12],
             t: [fb[1], fb[2], fb[3]], s: [fb[4], fb[5], fb[6]] });
     });
@@ -2136,8 +2258,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        sheet draws them. The 12 V harness is drawn nowhere because its
        routing is published nowhere. */
     var hvY = (VEH.packTop + VEH.packBottom) / 2,
-        hvFront0 = VEH.packCentreX + VEH.packLength / 2, hvFront1 = AXLE - 0.19,
-        hvRear0 = VEH.packCentreX - VEH.packLength / 2, hvRear1 = -AXLE + 0.19;
+        hvFront0 = VEH.packCentreX + VEH.packLength / 2,
+        /* Onto the housing's surface at the cable's height: AXLE - 0.19 is the
+           surface at the axle's height, and left the front run 0.065 m short. */
+        hvFront1 = AXLE - Math.sqrt(0.19 * 0.19 - Math.pow(hvY - VEH.wheelRadius, 2)),
+        hvRear0 = VEH.packCentreX - VEH.packLength / 2, hvRear1 = -hvFront1;
     add({ id: "hv-run-front", mesh: "cyl", layer: "aux", colour: [0.55, 0.28, 0.10],
           t: [(hvFront0 + hvFront1) / 2, hvY, 0], s: [hvFront1 - hvFront0, 0.045, 0.045], rot: "x" });
     add({ id: "hv-run-rear", mesh: "cyl", layer: "aux", colour: [0.55, 0.28, 0.10],
@@ -2174,24 +2299,16 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        bodyside at 1.18 m, which is what is drawn (see below). That scaling
        carries about 10% error, and the body model has no port door to check
        it against. It replaces a position that was 270 mm too far forward. */
-    add({ id: "charge-0", mesh: "bev", layer: "aux", colour: [0.20, 0.24, 0.26],
-          /* Was at -(W + 0.02) with an 0.08 depth, so its outer face reached
-             |z| 1.161 -- 0.060 m past the truck's own widest point. A charge
-             door is flush with the panel it is cut into, not a box bolted to
-             the outside of one. */
-          /* 1.18 m up, not 0.95: the sheet's cable reaches the bodyside at
-             y 350 px, which is 1.20 m above ground and just under the
-             beltline. */
-          /* And on THAT panel, not the 1.101 GMC measures across the flares,
-             which stood a door on the flare plane 0.12 m out from the truck.
-             The bedside tapers outward 0.07 m across the door, which one box
-             cannot follow, so the door is six 0.04 m steps, each 3 mm proud of the panel where it is outermost -- under a centimetre of step between neighbours, where four wider ones read as fins. */
-          chargePort: true, t: [-2.63, 1.18, -0.9181], s: [0.04, 0.24, 0.08] });
-    [["charge-1", -2.59, -0.9280], ["charge-2", -2.55, -0.9415], ["charge-3", -2.51, -0.9559],
-     ["charge-4", -2.47, -0.9722], ["charge-5", -2.43, -0.9893]].forEach(function (c) {
-      add({ id: c[0], mesh: "bev", layer: "aux", colour: [0.20, 0.24, 0.26],
-            chargePort: true, t: [c[1], 1.18, c[2]], s: [0.04, 0.24, 0.08] });
-    });
+    /* The door, on THAT panel -- not the 1.101 GMC measures across the
+       flares, which stood a door on the flare plane 0.12 m out from the truck
+       -- over the 1.18 m where the sheet's cable reaches the bodyside. The
+       bedside tapers outward across it, 1.5 cm in its first 5 cm and 6 cm by
+       the flare, so the door is one flat plate turned 17.5 degrees about Y,
+       fitted to the skin: 1.5-12 mm proud across its whole face. Five boxes
+       stepping out with the taper read as a louvre. 0.20 x 0.18 m: no door
+       size is published, and 0.24 left no margin to the flare. */
+    add({ id: "charge-door", mesh: "box", layer: "aux", colour: [0.20, 0.24, 0.26],
+          chargePort: true, t: [-2.537, 1.16, -0.9739], s: [0.20, 0.18, 0.02], yaw: 0.3054 });
 
     /* --- the HV run from the charge port ------------------------------
        GM's rescue sheet for this vehicle shows a pair of orange cables
@@ -2215,8 +2332,16 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           /* And z -0.70 ran it through the whole rear wheelhouse, the
              knuckle and the air strut. Inboard of the wheelhouse wall, above
              the rear casing and the upper arm, it runs clear. */
-          hvflow: true, t: [(-2.40 + (VEH.packCentreX - VEH.packLength / 2)) / 2, 0.69, -0.50],
-          s: [2.40 + (VEH.packCentreX - VEH.packLength / 2), 0.045, 0.045], rot: "x" });
+          hvflow: true, t: [(-2.53 + (VEH.packCentreX - VEH.packLength / 2)) / 2, 0.69, -0.50],
+          s: [2.53 + (VEH.packCentreX - VEH.packLength / 2), 0.045, 0.045], rot: "x" });
+    /* And it starts at the port: down inside the bedside from the door to
+       the run's height, then across to it. Where the sheet's cable turns is
+       not published; the run used to begin in mid-air 0.37 m below and 0.4 m
+       inboard of the door, with nothing joining them. */
+    add({ id: "hv-charge-drop", mesh: "cyl", layer: "aux", colour: [0.55, 0.28, 0.10],
+          hvflow: true, t: [-2.53, (0.69 + 1.08) / 2, -0.90], s: [0.045, 1.08 - 0.69, 0.045], rot: "y" });
+    add({ id: "hv-charge-cross", mesh: "cyl", layer: "aux", colour: [0.55, 0.28, 0.10],
+          hvflow: true, t: [-2.53, 0.69, -0.70], s: [0.045, 0.045, 0.40], rot: "z" });
 
     /* Energy arriving, drawn travelling the run it actually arrives on.
        From the port end toward the pack, at a speed taken from measured pack
@@ -2225,8 +2350,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     for (var cp = 0; cp < 4; cp++) {
       add({ id: "hv-charge-pulse-" + cp, mesh: "bev", layer: "aux",
             colour: [0.30, 0.80, 0.45], chargeOnly: true, pulse: true,
-            travel: { axis: 0, from: -2.40, to: VEH.packCentreX - VEH.packLength / 2 - 0.05, phase: cp / 4 },
-            t: [-2.40, 0.69, -0.50], s: [0.10, 0.075, 0.075] });
+            travel: { axis: 0, from: -2.53, to: VEH.packCentreX - VEH.packLength / 2 - 0.05, phase: cp / 4 },
+            t: [-2.53, 0.69, -0.50], s: [0.10, 0.075, 0.075] });
     }
 
     /* --- regen, drawn where it comes from ------------------------------
@@ -2243,14 +2368,17 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        nothing else. */
     var packFront = VEH.packCentreX + VEH.packLength / 2,
         packRear = VEH.packCentreX - VEH.packLength / 2;
-    [[AXLE - 0.30, packFront, "f"],
-     [-(AXLE - 0.30), packRear, "r"]].forEach(function (run) {
+    /* On the cables they depict, from each housing's surface to the pack:
+       they ran 0.09 m below the cables and started 0.11 m short of the
+       units. */
+    [[hvFront1, packFront, "f"],
+     [hvRear1, packRear, "r"]].forEach(function (run) {
       for (var rp = 0; rp < 3; rp++) {
         add({ id: "regen-pulse-" + run[2] + rp, mesh: "bev", layer: "drive",
               colour: [0.25, 0.85, 0.45], regenflow: true, pulse: true,
               travel: { axis: 0, from: run[0], to: run[1], phase: rp / 3,
                         rate: "regen" },
-              t: [run[0], 0.50, 0], s: [0.09, 0.07, 0.07] });
+              t: [run[0], hvY, 0], s: [0.09, 0.07, 0.07] });
       }
     });
 
@@ -2391,7 +2519,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     }
 
     var meshes = { box: makeMesh(gl, unitBox()), cyl: makeMesh(gl, unitCylinder(28)),
-                       bev: makeMesh(gl, bevelBox(0.10)), tyre: makeMesh(gl, tyreMesh(0.58, 30)),
+                       bev: makeMesh(gl, bevelBox(0.10)), tyre: makeMesh(gl, tyreMesh(0.625, 30)),   /* bead on the 22 in rim, 0.279 */
                        ring: makeMesh(gl, tyreMesh(0.86, 34)),
                        rim: makeMesh(gl, rimMesh(6)) },
         parts = buildScene(),
@@ -2463,7 +2591,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            into the wheels and a single "underbody". */
         layers = { shell: 0, lights: 1, pack: 1, drive: 1, wheels: 1, brakes: 1,
                    suspension: 1, armour: 1, thermal: 1, aux: 1, cabin: 1,
-                   radar: 1 },
+                   radar: 1, tonneau: 1 },
         /* What the Body button last asked for, kept apart from what is drawn
            because the driver's seat overrides the drawn value. */
         shellWanted = layers.shell,
@@ -2811,6 +2939,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           yaw[0] = cs; yaw[2] = -ss; yaw[8] = ss; yaw[10] = cs;
           model = m4mul(m4trs(pt[0], pt[1], pt[2], 1, 1, 1),
                         m4mul(yaw, m4trs(0, 0, 0, ps[0], ps[1], ps[2])));
+        }
+        if (typeof p.yaw === "number") {
+          /* Turned about Y, for a flat panel that is not square to the truck:
+             the charge door, on a bedside that tapers across it. Positive yaw
+             swings the part's +X toward -Z. */
+          var yc = Math.cos(p.yaw), ys = Math.sin(p.yaw), yawm = m4();
+          yawm[0] = yc; yawm[2] = -ys; yawm[8] = ys; yawm[10] = yc;
+          model = m4mul(m4trs(pt[0], pt[1], pt[2], 1, 1, 1),
+                        m4mul(yawm, m4trs(0, 0, 0, ps[0], ps[1], ps[2])));
         }
         if (p.rot === "y") {
           /* Cylinders are built on Z; an air spring stands up, so its axis is
@@ -3278,7 +3415,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   var viewer = null;
 
   var LAYER_LABELS = [
-    ["shell", "Body"], ["lights", "Lighting"], ["pack", "Battery"],
+    ["shell", "Body"], ["tonneau", "Tonneau"], ["lights", "Lighting"], ["pack", "Battery"],
     ["drive", "Drive units"], ["wheels", "Wheels"], ["brakes", "Brakes"],
     ["suspension", "Suspension & steering"], ["armour", "Frame & armour"],
     ["thermal", "Thermal"], ["aux", "Electrical"], ["cabin", "Cabin"],
