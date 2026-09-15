@@ -98,6 +98,14 @@ class TestNoVehicleDataIsCommitted(unittest.TestCase):
                 text = path.read_text(encoding="utf-8", errors="ignore")
             except OSError:
                 continue
+            if name == "src/hummer_obd/dashboard.html":
+                # A VIN written into the base64 in place is glued to base64
+                # letters on either side, and the \b-anchored pattern below
+                # cannot see it there. So the line is not merely scanned when
+                # its digest fails: a hand-edited REF_BODY is a finding itself.
+                if self._embedded_body_was_edited(text):
+                    hits.setdefault(name, "REF_BODY does not match its REF_DIGEST")
+                text = self._without_the_embedded_body(text)
             for m in vin.findall(text):
                 # Hex blobs and base64 are full of false positives; a real VIN
                 # has at least one letter and one digit and is not all hex.
@@ -107,6 +115,53 @@ class TestNoVehicleDataIsCommitted(unittest.TestCase):
                         and not all(c in "0123456789ABCDEFabcdef" for c in m)):
                     hits.setdefault(name, m)
         self.assertEqual(hits, {}, f"possible VIN in tracked files: {hits}")
+
+    @staticmethod
+    def _without_the_embedded_body(text: str) -> str:
+        """The page minus REF_BODY, and only while REF_BODY is exactly what the
+        build script wrote.
+
+        REF_BODY is 240 KB of base64-encoded vertex, normal and index bytes,
+        written by scripts/build_reference_body.py, and base64 between '+' and
+        '/' forms 17-character words that pass every VIN heuristic here. It is
+        removed from the scan only while the sha256 the script writes beside
+        it (REF_DIGEST, on its own line, which is scanned) still matches the
+        data and the placement table, and every group name is a body group's.
+        Any edit to that line -- a VIN overwriting base64 in place included --
+        breaks the digest, and the whole line is scanned again.
+        """
+        import re
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import reference_skin
+        line = re.search(r"  var REF_BODY = \[.*?\];\n", text)
+        if not line or not reference_skin.digest_ok(text):
+            return text
+        return text[:line.start()] + text[line.end():]
+
+    @staticmethod
+    def _embedded_body_was_edited(text: str) -> bool:
+        import re
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import reference_skin
+        return bool(re.search(r"  var REF_BODY = \[", text)) and not reference_skin.digest_ok(text)
+
+    def test_the_embedded_body_is_only_exempted_while_it_is_a_mesh(self):
+        page = (REPO / "src" / "hummer_obd" / "dashboard.html").read_text(encoding="utf-8")
+        self.assertLess(len(self._without_the_embedded_body(page)), len(page) - 100_000)
+        tampered = page.replace('"i":"', '"i":"1GT40FDA5RU100123', 1)
+        self.assertEqual(self._without_the_embedded_body(tampered), tampered)
+        # The same length written over base64 in place keeps every byte count
+        # valid; only the digest can tell.
+        at = page.index('"n":"') + 20
+        in_place = page[:at] + "1GT40FDA5RU100123" + page[at + 17:]
+        self.assertEqual(self._without_the_embedded_body(in_place), in_place)
+        # And the scan cannot see a VIN between base64 letters, so the edit
+        # itself is what gets reported.
+        self.assertTrue(self._embedded_body_was_edited(in_place))
+        self.assertTrue(self._embedded_body_was_edited(tampered))
+        self.assertFalse(self._embedded_body_was_edited(page))
 
     def test_no_committed_file_carries_a_remote_access_hostname(self):
         # A Nabu Casa remote domain is a credential, not a setting. Home

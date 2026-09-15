@@ -447,9 +447,10 @@ Open `http://127.0.0.1:8765`. It never opens the OBD adapter — it reads the
 CSVs the recorder already wrote.
 
 **The page is the vehicle, in live 3D.** Drag to orbit, scroll to zoom, and
-six toggles dim or remove the body, battery, drive units, wheels, thermal and
-auxiliary groups. The body is translucent rather than hidden by default, so the
-hardware reads as being inside a vehicle rather than floating.
+twelve layer buttons remove the body, lighting, battery, drive units, wheels,
+brakes, suspension, armour, thermal, electrical, cabin and radar groups one at a
+time. The body is off by default, so the page opens on the hardware (see *Body
+off means gone* below).
 
 It is hand-written WebGL with **no library**: the CSP forbids external scripts,
 so three.js was never available, and WebGL being a canvas API rather than a
@@ -457,19 +458,96 @@ fetch is what makes raw GL possible at all. The matrix maths, shaders and
 geometry are the cost of that, and the whole page remains one self-contained
 file with no external anything.
 
-Everything is modelled in metres from published dimensions, origin on the
-ground at the centre of the wheelbase: 5.507 m long on a 3.444 m wheelbase, the
-2.135 × 1.420 m pack between the axles, 24 modules in two layers of twelve (two
-across, six front-to-back), one motor on the front axle and two on the rear,
-plus wheels, brake discs, thermal hardware, the frunk 12 V pod and the
-driver's-side rear charge port.
+Everything is in metres, origin on the ground at the centre of the wheelbase:
+5.507 m long on a 3.444 m wheelbase, the 2.09 × 1.42 m pack between the axles,
+24 modules in two layers of twelve, one motor on the front axle and two on the
+rear, plus wheels, brakes, suspension, thermal hardware, the 12 V battery and
+the driver's-side rear charge port. The hardware is placed from published
+figures and GM's own drawings; the body around it is a measured model.
+
+**The body is a measured model, not boxes.** It was 180 axis-aligned boxes
+laid out from the published dimensions and GM's rescue sheet: right in the
+numbers that are published and wrong in most of what lies between them.
+Measured against a 3D model of this truck, the hood stood 0.15 m high and
+square to the nose, the light bar 0.24 m above the lamps it sits between, the bed rail 0.23 m low, the mirrors 0.21 m high, and the greenhouse was a box as
+wide as the doors where the real one leans in 0.15 m a side to a roof 1.56 m
+across. So the Body layer now draws that model: [“Hummer EV - Low
+Poly”](https://sketchfab.com/3d-models/hummer-ev-low-poly-12622086af0449eda09f9d2ce5596090)
+by Ajay Gawde, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/),
+credited under the 3D view and in [LICENSE](LICENSE).
+
+It is an artist's low-poly model, not GM data and not a scan, so it was
+checked before it was trusted: region by region against the box model, with
+every measured difference re-measured independently by a second method, and
+the model itself against GMC's published figures:
+
+| | model | GMC |
+|---|---|---|
+| Length | 5.519 m | 5.507 m |
+| Wheelbase | 3.448 m | 3.444 m |
+| Overhangs, front / rear | 0.891 / 1.180 m | 0.881 / 1.181 m |
+| Width across flares / mirrors | 2.190 / 2.394 m | 2.202 / 2.380 m |
+| Bed inner length, from the tailgate's inner face | 1.526 m | 1.527 m (60.10 in) |
+| Overall height | 1.940 m | 2.009 m |
+| Tyre diameter | 0.873 m | 0.894 m (LT305/55R22) |
+| Approach / departure / breakover (tangent to its own tyre) | 35.4° / 26.6° / 22.6° | 41.5° / 31.6° / 22.3° |
+
+In plan it agrees to 0.6 %, the front overhang to 1.1 % (10 mm). In height it is 3.4 % short on a tyre 2.3 %
+small, and no GM ride height explains that (standard is the lowest), so its
+heights are fitted to two published figures: wheel centres on the tyre's
+0.4471 m radius and roof on the 2.009 m overall height
+(y′ = 1.0389 y − 0.0067). Plan is left alone. Its underbody is a styling surface lower at both ends than GMC's approach and departure angles allow (its breakover, 22.6°, is about GMC's), so nothing under the truck is placed from it: the skid plates follow GMC's approach and
+departure lines instead, stepping up past the axles with every front-bottom
+corner on or above its line, and the hitch receiver sits under the bumper,
+where it no longer sets a 24.3° departure angle of its own. The model's tyres, rims, seats, steering wheel, console, discs, calipers, arms and coil-overs are removed,
+because this page draws its own of each, sourced separately.
+
+What the body settled, beyond its own shape:
+
+- **The cab's back wall is at x −1.234, not −1.377.** GMC's 60.10 in of bed
+  runs from the tailgate's inner face; the box model took it from the tail
+  plane, a tailgate of no thickness. The model's gate is 0.14 m thick, and its
+  bed front wall stands exactly 60.10 in ahead of the gate's inner face.
+- **The bed rail is at 1.534 m and the floor at 0.978**, 0.556 m deep against
+  GMC's 0.551. The box bed hung its rail at the side glass's lower edge.
+- **The windshield meets the cowl at x 1.165**, 0.21 m ahead of the 0.95 read
+  off the rescue sheet below, which is more than the sheet's scale error. With
+  the model's glass drawn, a dashboard at the old station would be visible
+  0.2 m behind it, so the instrument panel, screens, wheel and seats follow
+  the drawn body. Neither source settles which of the two is right.
+- **Lamps and cameras are on the body.** The HUMMER letters sit in the lamp
+  band between the headlamps, one per cell; the headlamp charge bars follow
+  the lens as it wraps back 0.13 m to the corner; the tail lamps are on the
+  bedside corners; there are three roof identification lamps a row, 0.23 m
+  apart, as the model has and FMVSS 108 requires of a truck this wide; every
+  camera is on the skin of the thing it is named for instead of in the air
+  near it. The charge port door follows the bedside, which tapers outward 0.07 m across it, in six narrow steps, instead of standing on the flare plane 0.12 m further out.
+- **Hardware left inside the wheels and doors is out.** The 12 V battery and
+  underhood fuse block stand on the wheelhouse roofs rather than in the
+  arches; the chiller is inboard of the wheelhouse wall; the driver-side
+  panel fuse block is inside the door trim; the charge-port HV run no longer
+  crosses the rear wheelhouse, knuckle and strut; the air struts are in the
+  arches on the axle line, where the model has them.
+- **The roof rails and Sky Panels are not drawn.** The rails had no source and
+  stood 0.06 m above the published overall height. The four Sky Panels and
+  their I-Bar are published as existing but not dimensioned, and the model's
+  roof is one crowned surface with no seam, so boxes laid over it would float
+  above it or sink into it.
+
+The rescue sheet's pack stays where the sheet draws it, which puts the case's
+front corners 5 cm past the model's sill; the sheet wins that.
+`ReferenceBodyTests` decodes the embedded mesh with the standard library and
+holds it to the published dimensions above, to the credit and its change notice, to a digest the build script writes, and to having no second interior; `PartsAgainstTheBody` checks that every cabin, radar and underhood part is inside the drawn skin and behind the windshield, that every exterior lamp and camera is on the skin across its whole footprint, and that the bed lamps and bed camera are on the bed's walls.
+`scripts/build_reference_body.py` rebuilds the embedded mesh from the
+downloaded model, which is kept out of the repository under `3d/`, and
+`--check` reports whether the page still matches it.
 
 There is **no ground plane**, so the camera can go below the axle line and the
 underside — the half of this vehicle worth looking at — is reachable. What is
 down there comes from GM's own published feature list for this truck: the Air
-Ride air springs standing inboard of each wheel, the four-plate skid shield,
-the rocker protectors, the four-wheel-steer tie rods and the front bumper beam
-with its two tow loops. The skid plates are translucent for the same reason
+Ride air struts in each wheel arch, the skid shield, the rocker protectors,
+the four-wheel-steer tie rods and the front bumper beam with its two tow
+hooks. The skid plates are translucent for the same reason
 the tyres are: a plate that hides the pack defeats the point of looking up at
 it. The rear tie rods are drawn and never animated — four-wheel steer is on
 the spec sheet, and nothing in this project measures a rear angle.
@@ -506,13 +584,13 @@ down its length, which also matches the shape of an Ultium CMA. Corrected to
 one across, twelve along: each module 1.42 × 0.178 m, where the assumption made
 them 0.71 × 0.36 — a shape Ultium does not build.
 
-**The Infinity Roof, the eTrunk, the second row and the door handles** are
-drawn from GM's own copy: "four class-exclusive removable modular Sky Panels
+**The Infinity Roof, the eTrunk, the second row and the door handles** were
+drawn from GM's own copy (the roof and handles are now the body model's, and
+the Sky Panels are not drawn; see above): "four class-exclusive removable modular Sky Panels
 and detachable front I-Bar", two front and two rear — confirmed from the other
 direction by the Sky Convertible Top accessory, which "functions in place of
 the two front Sky Panels and I-Bar". Individual panel dimensions are not
-published anywhere, so the roof opening is divided in four and no dimension is
-claimed. The eTrunk is drawn to its published 11.3 cu ft rather than to a
+published anywhere, and the body model's roof has no seams, so the panels are not drawn. The eTrunk is drawn to its published 11.3 cu ft rather than to a
 shape nobody gives. The second row sits where GMC's published 39.0 in of leg
 room puts it.
 
@@ -530,7 +608,9 @@ floor, 50.08 in between the wheelhousings and 21.7 in from floor to rail top,
 which is what sets the rail height. The wheelhousings are the detail worth
 having — they intrude 0.139 m per side, and they are why a box of those outer
 dimensions holds the published 36.7 cu ft rather than the 46.1 the arithmetic
-implies.
+implies. The bed is now the body model's, and it holds to those figures: 60.10
+in long from the tailgate's inner face, 0.556 m deep against 21.7 in, 1.8 %
+narrower at the floor and 3.5 % narrower between the wheelhousings.
 
 Where a part's position is published, it is used. The charge port sits on the
 rear driver's side because GM's manual says so outright and the Emergency
@@ -538,7 +618,8 @@ Response Guide fixes it independently by putting the manual release loop in
 the left rear wheelhouse; its station — about 810 mm aft of the rear axle,
 950 mm above ground — is scaled off the rescue sheet's side elevation against
 the published wheelbase, carries about 10% error, and is the only figure here
-measured off a drawing rather than read off a page. The port lights blue on
+measured off a drawing rather than read off a page. (The 950 mm was a first
+reading; the port is drawn at the 1.18 m the sheet's cable gives, below.) The port lights blue on
 connection and green while charging, which is GM's own light-ring code. The
 12 V battery is AGM and sits outboard on the passenger side of the front
 compartment, which is what the manual's two apparently contradictory sentences
@@ -600,7 +681,10 @@ panels. The eTrunk moved
 the other way, into Body, because it is a cavity in the bodywork and a tub
 floating in space says nothing.
 
-**The cab is laid out from GM's rescue sheet.** The first-responder drawing
+**The cab was laid out from GM's rescue sheet.** The body model now draws the
+cab; where the two disagree (the cowl, by 0.21 m) the cabin follows the drawn
+body, as described above. The pack, the HV runs and the charge port still
+come from the sheet. The first-responder drawing
 for this truck (GM document 1GT-21101) carries a scaled side elevation and
 plan with the HV pack in orange. Scaled on the wheelbase it gives 3.145 mm per
 pixel, and at that scale the drawn tyre measures 0.896 m against the 0.894 m
@@ -608,14 +692,8 @@ the LT305/55R22 actually is, so the scale is good to about 1 % with overall
 length coming out 3 % short — which is the error bar on everything taken
 from it. What it fixed, on 2026-09-11:
 
-- **The cowl is at +0.95 m, not +1.22.** The cab started 0.27 m too far
-  forward, the hood was 1.3 m instead of 1.6, and both door windows were long.
-  The instrument panel, wheel and paddle came back with it; the seats and the
-  eye point came back 0.10 m.
-- **The windshield is raked.** Its base is at the cowl and its top 0.22 m
-  behind it, drawn in three steps with the A-pillars stepped the same way. The
-  roof, rails, sky panels, front markers and the radar detector all start
-  where the glass ends.
+- **The cowl was read as +0.95 m, not +1.22.** The cab had started 0.27 m too far forward, the hood was 1.3 m instead of 1.6, and both door windows were long, so the instrument panel, wheel, paddle, seats and eye point came back with it. The body model's windshield meets the cowl at 1.165, and the cabin now follows the drawn body.
+- **The windshield is raked.** The box model drew it in three steps from the cowl to 0.22 m behind it. The body model's glass leans back about 31°, and the radar detector sits against its inner face.
 - **The B-pillar is at −0.13 m and the C-pillar is 0.32 m thick.** The side
   glass had been one pane with the B-pillar drawn across it beside the front
   seat cushion, so the rear pane was 1.62 m and the front 0.78 m — "rear side
@@ -624,11 +702,12 @@ from it. What it fixed, on 2026-09-11:
   0.20 m wide at −0.13 and the two panes within about 20 % of each other at
   the beltline, the front reading longer mostly because its top corner is cut
   by the raked A-pillar. The rear door glass ends at the C-pillar's front edge
-  at −1.06; the published bed length puts the bulkhead at −1.377; the sail
-  between them is the buttress every side view of this truck shows.
-  `GreenhouseTests` pins the ordering, the band, the pillar position and the
-  rake. The door handles are at 790 and 1085 px on the sheet, which is the
-  trailing edge of each door.
+  at −1.06; the published bed length, taken from the tail plane, put the bulkhead at −1.377 (from the tailgate's inner face it is −1.234); the sail
+  between them is the buttress every side view of this truck shows. The door
+  handles are at 790 and 1085 px on the sheet, which is the trailing edge of
+  each door. (All of this is the body model's glass and pillars now;
+  `GreenhouseTests` checks the windshield's rake, the instrument panel against
+  it, and the front seatback beside the model's B-pillar.)
 - **The pack is 2.09 × 1.42 m, centred 0.13 m ahead of the wheelbase
   midpoint, bottom at 0.43 m.** That is what this file's original 2.135 m was
   measured from; the 2.780 m that replaced it, on the argument that the
@@ -661,15 +740,18 @@ for the 2022–2025 Hummer EV Pickup at 355 mm front and rear, 40 mm thick at
 the front and 20 mm at the rear, and that is what is drawn. Caliper piston
 count is still unpublished.
 
-**Every corner has a spring and a damper, under the floor.** GM's feature is
+**Every corner has a spring and a damper, in the arch.** GM's feature is
 "Air Ride Adaptive Suspension" — air springs *and* adaptive dampers — and the
 model had only the springs, drawn near-black on a black background, which is
 why the owner said the entire shock system was missing. The bellows are
-lighter now and a damper stands inboard of each one. The first version of
-that stood the rear pair 0.12 m up through the bed floor; the owner asked
-whether they really do that, and they do not — they are 0.28 m tall now and
-top out below the floor, which a test pins. Their stations are not published
-and nothing in the telemetry reports ride height, so they do not move.
+lighter now. The first version stood the rear pair 0.12 m up through the bed
+floor; the owner asked whether they really do that, and they do not. They
+were then cut down to fit under a bed floor the box model had put 0.2 m too
+low. With the body drawn, each corner is one air strut on the axle line inside
+the wheelhouse, bellows over damper, where the model draws them, and the rear
+pair tops out under the body's bed floor, which a test measures against the
+drawn skin. Their stations are not published and nothing in the telemetry
+reports ride height, so they do not move.
 
 **A replay is judged frame by frame.** Charging, plugged, coolant flow and
 the four wheel speeds were read from the session's final state, so a trip
@@ -725,28 +807,27 @@ part numbers for the underhood block, the HV disconnect fuse, the charger
 relay, the DC-DC module, the inverter modules and the HV heater are recorded
 there too, read from catalogue pages rather than listings.
 
-**The cabin has a floor, and the seats are on it.** The seats stood 0.015 m
+**The cabin has a floor, and the seats are on it.** (Its stations now follow
+the body; see above.) The seats stood 0.015 m
 inside the battery case with no floor drawn at all — "clearly this cannot be
 accurate because there would be nowhere to put your feet". A skateboard EV's
 cabin floor is the pack's lid plus a carpet, so the floor now sits on the case
 top and runs to a toe board at the cowl. The seating position follows from
-GM's published 41.5 in of front head room: measured SAE-style from the
-H-point to the headliner, with the headliner at 1.889 m that puts the H-point
-near 0.95 m, a knees-up 0.15 m above the floor, which is what every review of
+GM's published 41.5 in of front head room: measured SAE-style from the H-point to the headliner, puts the H-point near 0.95 m, a knees-up 0.15 m above the floor, which is what every review of
 this truck describes. Cushions top at 0.99 m, the eye sits at 1.63 m, the
 wheel came up with the seat. Pedals and a dead pedal are on the toe board;
 the console carries the T-shaped shifter and rotary drive-mode dial the
 reviews describe (an earlier version had a column stalk, which was the wrong
-truck); every seat has bolsters and a headrest that clears the headliner.
-`CabinSitsOnAFloor` pins all of it.
+truck); every seat has bolsters and a headrest that clears the roof. The
+seats are at the model's stations, z ±0.47, with seatbacks and headrests at
+its heights: front headrests 0.13 m and rear ones 0.09–0.14 m lower than the box seats', whose front headrests came within 3 cm of the box roof. The drawn roof is 0.25 m above them. `CabinSitsOnAFloor` pins all
+of it.
 
 **The corners are suspensions, not springs floating beside wheels.** GM
 publishes double-wishbone front and fully independent rear suspension with
 air springs and dual rack-and-pinion steering, and no arm geometry. Each
 corner now has a lower arm as two legs from the subframe to a knuckle the
-halfshaft passes through, an upper arm, the air spring standing on the lower
-arm with its bellows rings, the damper beside it, and at the front a steering
-rack with tie rods. The arrangement is the usual double-wishbone one and is
+halfshaft passes through, an upper arm, one air strut in the arch (bellows over damper), and at the front a steering rack with tie rods. The arrangement is the usual double-wishbone one and is
 labelled an estimate in the source. The drive units gained the gearbox end GM
 describes as "an engine block with a transmission bell housing", and the
 inverters are drawn as the boxed top of each casing because GM says they are
@@ -1044,9 +1125,7 @@ trip clock and a scrub bar. A five-second poll used to rebuild the map and
 reset the marker with it; the track is compared before it is touched, so a
 playback in progress is left alone.
 
-The geometry is boxes and cylinders, so it reads as an engineering cutaway
-rather than a rendered game asset. The renderer takes vertex data, so a real
-modelled mesh is the next step rather than a rewrite.
+The hardware is boxes and cylinders, so it reads as an engineering cutaway rather than a rendered game asset; the body around it is the embedded low-poly model described above, which the renderer draws from the same vertex data path.
 
 Modules are shaded by **distance from the median of the 24**, not by absolute
 value. `0x2AF1` returns 24 bytes and the pack has 24 modules; that

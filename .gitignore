@@ -37,3 +37,7 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+
+# Downloaded third-party 3D reference models (large binaries). The page embeds
+# only the derived mesh; scripts/build_reference_body.py rebuilds it from them.
+3d/

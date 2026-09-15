@@ -56,3 +56,18 @@ This is an independent project. It is not affiliated with, endorsed by or
 sponsored by General Motors, GMC, OBD Solutions or Waveshare. Trademarks named
 in the Work belong to their respective owners and are used only to identify the
 vehicle and hardware this software was written for.
+
+
+THIRD-PARTY MATERIAL
+
+The vehicle body drawn by src/hummer_obd/dashboard.html (the REF_BODY data and
+the REF_PLACEMENTS table built from it by scripts/build_reference_body.py) is
+not the copyright holder's work and is not covered by the terms above. It is
+derived from "Hummer EV - Low Poly" by Ajay Gawde
+(https://sketchfab.com/3d-models/hummer-ev-low-poly-12622086af0449eda09f9d2ce5596090),
+licensed under Creative Commons Attribution 4.0 International
+(https://creativecommons.org/licenses/by/4.0/). Changes made: the interior and
+wheel hardware were removed, the faces were recoloured to this page's palette,
+heights were rescaled to GMC's published tyre radius and overall height, and
+the mesh was re-encoded. That derived material may be used under CC BY 4.0,
+with the attribution above.

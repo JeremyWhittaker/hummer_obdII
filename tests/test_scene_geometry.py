@@ -20,13 +20,37 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from importlib.resources import files
 from pathlib import Path
 
+import reference_skin
+
 PAGE = files("hummer_obd").joinpath("dashboard.html").read_text(encoding="utf-8")
 NODE = shutil.which("node") or shutil.which("nodejs")
+
+
+_SKIN: dict = {}
+
+
+def skin() -> dict:
+    """The body the page draws: its triangles and 5 cm extent maps, built once."""
+    if not _SKIN:
+        tris = reference_skin.triangles(PAGE)
+        _SKIN["tris"] = tris
+        _SKIN["x"], _SKIN["y"], _SKIN["z"] = (reference_skin.Extents(tris, a) for a in range(3))
+    return _SKIN
+
+
+def _glass_behind_the_cab() -> list:
+    return [p for name, *abc in skin()["tris"] if name == "glass" for p in abc if p[0] < -1.10]
+
+
+def _windshield() -> list:
+    return [p for name, *abc in skin()["tris"] if name == "glass" for p in abc
+            if abs(p[2]) < 0.05 and p[0] > 0.5]
 
 
 def _script() -> str:
@@ -143,27 +167,35 @@ class ScenePartTests(unittest.TestCase):
 
     def test_the_cab_has_a_rear_window(self):
         # There was none. Which made "the bed rests below the rear window" a
-        # claim about a part that did not exist.
-        self.assertIn("glass-back", self.ids)
+        # claim about a part that did not exist. The body's glass carries one:
+        # a pane across the cab back, behind the rear doors.
+        back = _glass_behind_the_cab()
+        self.assertTrue(back, "no glass behind the rear doors")
+        span = max(p[2] for p in back) - min(p[2] for p in back)
+        self.assertGreater(span, 1.0, f"the rear window spans only {span:.2f} m")
 
-    def test_the_bed_sits_entirely_below_the_glass_line(self):
+    def test_the_bed_sits_entirely_below_the_rear_window(self):
         """The complaint, asserted as geometry rather than trusted to a diff.
 
-        It was not satisfied after the first attempt: the pre-rework bed walls
-        were never deleted, and two of them stood 0.18 m and 0.24 m above the
-        bottom of the glass while the new box sat correctly below it.
+        "Clearly the bed rests below the rear window in its entirety." The box
+        bed failed it twice -- the second time because old walls were left
+        standing in front of the new box. The body now draws both, so this
+        measures the drawn skin: the top of the bedsides all along the bed
+        against the lowest edge of the rear window. The sail forward of
+        x -1.55 is the cab's buttress, not the bed.
         """
-        glass = [p for p in self.parts if p["id"].startswith("glass")]
-        self.assertTrue(glass, "no glass to compare against")
-        glass_bottom = min(p["t"][1] - p["s"][1] / 2 for p in glass)
-        offenders = [
-            (p["id"], round(p["t"][1] + p["s"][1] / 2, 3))
-            for p in self.parts
-            if p["id"].startswith("bed") and p["t"][1] + p["s"][1] / 2 > glass_bottom + 1e-6
-        ]
-        self.assertEqual(offenders, [],
-                         f"bed parts above the glass bottom ({glass_bottom:.3f}): "
-                         f"{offenders}")
+        top = skin()["y"]
+        glass_bottom = min(p[1] for p in _glass_behind_the_cab())
+        rails = [top.at(x / 100, z / 100) for x in range(-270, -155, 5)
+                 for z in (-90, -85, -80, 80, 85, 90)]
+        rails = [r for r in rails if r is not None]
+        self.assertTrue(rails, "no bedside found")
+        self.assertLess(max(rails), glass_bottom,
+                        f"bedside at {max(rails):.3f}, rear window from {glass_bottom:.3f}")
+        for lamp in ("bedlamp-l", "bedlamp-r"):
+            with self.subTest(lamp=lamp):
+                p = next(q for q in self.parts if q["id"] == lamp)
+                self.assertLess(p["t"][1] + p["s"][1] / 2, max(rails), "above the rail")
 
     def test_the_light_bar_spells_six_letters(self):
         letters = sorted(i for i in self.ids if i.startswith("lightbar-letter-"))
@@ -229,12 +261,23 @@ class IntersectionTests(unittest.TestCase):
         which DEFINE the 2.202 -- were hung outboard of it.
         """
         limit = 1.101 + 1e-3
-        mirrors = {"mirror-l", "mirror-r", "cam-mirror-l", "cam-mirror-r"}
+        mirrors = {"cam-mirror-l", "cam-mirror-r", "body-mirror-l-paint", "body-mirror-l-trim",
+                   "body-mirror-r-paint", "body-mirror-r-trim"}
         wide = [(p["id"], round(max(abs(v) for v in self._box(p)[2]), 3))
                 for p in self.parts
                 if p["id"] not in mirrors
                 and max(abs(v) for v in self._box(p)[2]) > limit]
         self.assertEqual(wide, [], f"wider than the published half-width: {wide}")
+        # And the mirrors to GMC's 2.380 m across them, inside the body
+        # model's own 0.6 % in width.
+        reach = max(max(abs(v) for v in self._box(p)[2]) for p in self.parts if p["id"] in mirrors)
+        self.assertLess(reach, 1.190 + 0.010, f"mirrors reach {reach:.3f}")
+
+    def test_nothing_stands_above_the_published_overall_height(self):
+        # GMC's 79.1 in. The roof rails and the old roof markers both did.
+        tall = [(p["id"], round(self._box(p)[1][1], 3)) for p in self.parts
+                if self._box(p)[1][1] > 2.009 + 1e-3]
+        self.assertEqual(tall, [], f"above the overall height: {tall}")
 
     def test_nothing_hangs_below_the_published_ground_clearance(self):
         # The skid plates -- the vehicle's own armour -- used to be the
@@ -274,69 +317,52 @@ class HonestyTests(unittest.TestCase):
 
 @unittest.skipIf(NODE is None, "node is not installed on this machine")
 class GreenhouseTests(unittest.TestCase):
-    """The side glass, asserted as GM's own rescue sheet draws it.
+    """The greenhouse, now that the body draws it.
 
-    The side glass was one pane the length of the cab with the B-pillar drawn
-    across it beside the front seat cushion, so the pane behind the pillar
-    was 1.62 m and the pane ahead of it 0.78 m. The owner said the rear
-    windows were twice the length of the front. They were.
-
-    The second attempt guessed 1.3:1 from photographs. The rescue sheet
-    (1GT-21101), scaled on the wheelbase, has the pillar 0.13 m behind the
-    wheelbase midpoint and the two panes within about 20 % of each other at
-    the beltline -- the front reads longer mostly because its top corner is
-    cut by the raked A-pillar. So the band here is tight around equal, with
-    the front never the shorter.
+    The box greenhouse was pinned here from GM's rescue sheet: the door glass
+    ratio, the B-pillar beside the seatback, the handles on their doors. The
+    body model carries those as drawn surfaces, so what is asserted now is
+    how this project's own parts sit against it: the seat beside the pillar,
+    the instrument panel against the glass, the windshield raked.
     """
 
     @classmethod
     def setUpClass(cls):
         cls.parts = {p["id"]: p for p in build_parts()}
 
-    def _length(self, pid):
-        return self.parts[pid]["s"][0]
-
-    def test_the_front_door_glass_is_not_shorter_than_the_rear(self):
-        for side in "lr":
-            with self.subTest(side=side):
-                front = self._length(f"glass-door-f-{side}")
-                rear = self._length(f"glass-door-r-{side}")
-                self.assertGreaterEqual(front, rear,
-                                        f"front {front:.2f} m, rear {rear:.2f} m")
-                self.assertLess(front / rear, 1.3)
-
-    def test_the_b_pillar_is_at_the_front_seatback_not_the_cushion(self):
-        pillar = self.parts["pillar-b-l"]
-        back = self.parts["seat-back-driver"]
-        cushion = self.parts["seat-base-driver"]
-        # Behind the cushion's centre, and no further aft than the seatback's
-        # rear face plus a hand's width: the sheet draws them side by side.
-        self.assertLess(pillar["t"][0], cushion["t"][0])
-        self.assertGreater(pillar["t"][0] + pillar["s"][0] / 2,
-                           back["t"][0] - back["s"][0] / 2 - 0.15)
-
-    def test_the_glass_panes_do_not_overlap_the_pillar_between_them(self):
-        front = self.parts["glass-door-f-l"]
-        rear = self.parts["glass-door-r-l"]
-        pillar = self.parts["pillar-b-l"]
-        self.assertGreaterEqual(front["t"][0] - front["s"][0] / 2,
-                                pillar["t"][0] + pillar["s"][0] / 2 - 1e-9)
-        self.assertLessEqual(rear["t"][0] + rear["s"][0] / 2,
-                             pillar["t"][0] - pillar["s"][0] / 2 + 1e-9)
-
-    def test_each_door_handle_sits_on_its_own_door(self):
-        front = self.parts["glass-door-f-l"]
-        rear = self.parts["glass-door-r-l"]
-        h0, h1 = self.parts["handle-l0"], self.parts["handle-l1"]
-        self.assertTrue(front["t"][0] - front["s"][0] / 2 < h0["t"][0] < front["t"][0] + front["s"][0] / 2)
-        self.assertTrue(rear["t"][0] - rear["s"][0] / 2 < h1["t"][0] < rear["t"][0] + rear["s"][0] / 2)
-
     def test_the_windshield_is_raked_not_vertical(self):
-        panes = sorted((p for i, p in self.parts.items() if i.startswith("glass-wind-")),
-                       key=lambda p: p["t"][1])
-        self.assertGreaterEqual(len(panes), 2)
-        self.assertLess(panes[-1]["t"][0], panes[0]["t"][0] - 0.10,
-                        "the top of the windshield is not behind its base")
+        pane = _windshield()
+        self.assertTrue(pane, "no windshield on the centreline")
+        base, top = min(pane, key=lambda p: p[1]), max(pane, key=lambda p: p[1])
+        self.assertLess(top[0], base[0] - 0.10, "the top of the windshield is not behind its base")
+
+    def test_the_instrument_panel_is_against_the_windshield_not_behind_it(self):
+        # The box dash stood behind a windshield at the rescue sheet's cowl,
+        # 0.21 m aft of where the body's glass meets it; drawn behind the
+        # body's glass it would have floated there in plain sight.
+        dash = self.parts["dash-pad"]
+        front = dash["t"][0] + dash["s"][0] / 2
+        base = min(_windshield(), key=lambda p: p[1])
+        self.assertGreater(base[0] - front, 0.0, "the dash goes through the glass")
+        self.assertLess(base[0] - front, 0.06, "the dash stops short of the glass")
+
+    def test_the_front_seatback_is_beside_the_b_pillar(self):
+        """The owner's complaint was a B-pillar beside the seat cushion.
+
+        The pillar is where, at shoulder height between the doors, the body
+        stands outboard of the side glass. The seatback must be beside it:
+        within a hand's width of the seatback, fore or aft.
+        """
+        glass = reference_skin.Extents([x for x in skin()["tris"] if x[0] == "glass"], 2)
+        body = reference_skin.Extents([x for x in skin()["tris"] if x[0] != "glass"], 2)
+        pillar = [x / 100 for x in range(-60, 61, 5)
+                  if body.at(x / 100, 1.60, "lo") is not None and glass.at(x / 100, 1.60, "lo") is not None
+                  and body.at(x / 100, 1.60, "lo") < glass.at(x / 100, 1.60, "lo") - 0.005]
+        self.assertTrue(pillar, "no B-pillar found between the doors")
+        centre = sum(pillar) / len(pillar)
+        back = self.parts["seat-back-driver"]
+        self.assertGreater(centre, back["t"][0] - back["s"][0] / 2 - 0.15, "the pillar is well behind the seatback")
+        self.assertLess(centre, back["t"][0] + back["s"][0] / 2 + 0.15, "the pillar is beside the cushion, not the seatback")
 
     def test_the_pack_is_where_the_rescue_sheet_draws_it(self):
         case = self.parts["pack-case"]
@@ -424,16 +450,29 @@ class UnderbodyStaysUnderTheBody(unittest.TestCase):
         cls.parts = build_parts()
         cls.by_id = {p["id"]: p for p in cls.parts}
 
-    def test_no_suspension_part_rises_through_the_bed_floor(self):
-        floor = self.by_id["bed-floor"]
-        floor_y = floor["t"][1] - floor["s"][1] / 2
-        x0 = floor["t"][0] - floor["s"][0] / 2
-        x1 = floor["t"][0] + floor["s"][0] / 2
-        tall = [(p["id"], round(p["t"][1] + p["s"][1] / 2, 3))
-                for p in self.parts
-                if p["layer"] == "suspension" and x0 <= p["t"][0] <= x1
-                and p["t"][1] + p["s"][1] / 2 > floor_y + 1e-6]
-        self.assertEqual(tall, [], f"through the bed floor at {floor_y:.3f}: {tall}")
+    def test_no_suspension_part_rises_through_the_bed(self):
+        """The bed is the body's now, and a strut may not stand up through it.
+
+        Over the bed the highest skin is the floor, or the wheelhouse where
+        the body rises over the rear wheels, so every top corner of a
+        suspension part under the bed must be below the skin above it.
+        """
+        top = skin()["y"]
+        tall = []
+        for p in self.parts:
+            if p["layer"] != "suspension":
+                continue
+            (x0, x1), _, (z0, z1) = [(p["t"][i] - abs(p["s"][i]) / 2, p["t"][i] + abs(p["s"][i]) / 2)
+                                     for i in range(3)]
+            if x1 < -2.76 or x0 > -1.234:
+                continue
+            y1 = p["t"][1] + abs(p["s"][1]) / 2
+            for x in (x0, x1):
+                for z in (z0, z1):
+                    above = top.at(x, z)
+                    if above is not None and y1 > above + 1e-6:
+                        tall.append((p["id"], round(y1, 3), round(above, 3)))
+        self.assertEqual(tall, [], f"through the bed: {tall}")
 
     def test_thermal_parts_are_only_where_something_sourced_puts_them(self):
         """Inside the pack, or at the nose. Nothing in between.
@@ -522,11 +561,13 @@ class FuseBlockTests(unittest.TestCase):
         # "Underhood Compartment Fuse Block"; the battery is on the passenger
         # side and the block's access cover is on the left.
         fb = self.parts["fusebox-underhood"]
-        hood = self.parts["shell-hood"]
         self.assertLess(fb["t"][2], -0.4, "not on the driver's side")
-        self.assertLess(fb["t"][1] + fb["s"][1] / 2, hood["t"][1] - hood["s"][1] / 2,
-                        "stands up through the hood")
-        self.assertGreater(fb["t"][0], 0.95, "not in the underhood compartment")
+        top = fb["t"][1] + fb["s"][1] / 2
+        for dx in (-1, 1):
+            for dz in (-1, 1):
+                hood = skin()["y"].at(fb["t"][0] + dx * fb["s"][0] / 2, fb["t"][2] + dz * fb["s"][2] / 2)
+                self.assertGreater(hood, top, "stands up through the hood")
+        self.assertGreater(fb["t"][0] - fb["s"][0] / 2, 1.165, "not ahead of the windshield")
 
     def test_the_two_panel_blocks_flank_the_instrument_panel(self):
         # Left: "driver side of the instrument panel, between the steering
@@ -606,11 +647,17 @@ class CabinSitsOnAFloor(unittest.TestCase):
         self.assertEqual(low, [], f"cabin parts inside the pack: {low}")
 
     def test_headrests_clear_the_headliner(self):
-        roof = self._bottom("shell-roof")
-        for i in self.parts:
+        # The body has no headliner, only its roof skin, so the allowance is
+        # 0.20 m under the skin above every corner of every headrest -- tight
+        # enough that the box seats' 1.86 m headrests would fail it.
+        top = skin()["y"]
+        for i, p in self.parts.items():
             if i.startswith("headrest"):
                 with self.subTest(part=i):
-                    self.assertLess(self._top(i), roof)
+                    for dx in (-1, 1):
+                        for dz in (-1, 1):
+                            roof = top.at(p["t"][0] + dx * p["s"][0] / 2, p["t"][2] + dz * p["s"][2] / 2)
+                            self.assertLess(self._top(i), roof - 0.20)
 
     def test_the_pedals_are_on_the_toe_board_ahead_of_the_driver(self):
         toe = self.parts["cabin-toeboard"]
@@ -619,3 +666,272 @@ class CabinSitsOnAFloor(unittest.TestCase):
                 p = self.parts[pid]
                 self.assertLess(abs(p["t"][0] - (toe["t"][0] - toe["s"][0] / 2)), 0.06)
                 self.assertLess(p["t"][2], 0, "pedals are not on the driver's side")
+
+
+@unittest.skipIf(NODE is None, "node is not installed on this machine")
+class ReferenceBodyTests(unittest.TestCase):
+    """The body is a third-party model. These hold it to what it was checked against.
+
+    "Hummer EV - Low Poly" by Ajay Gawde, CC-BY-4.0, rebuilt into the page by
+    scripts/build_reference_body.py. It was adopted because in plan it agrees
+    with GMC's published dimensions to 0.6 % (the front overhang to 1.1 %), and
+    its heights were fitted to two published figures; if a rebuild ever breaks
+    that, or anyone edits the embedded data by hand, these fail.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.parts = {p["id"]: p for p in build_parts()}
+        cls.tris = skin()["tris"]
+
+    def test_the_embedded_body_is_what_the_build_script_wrote(self):
+        # Every other test here reads REF_BODY through REF_PLACEMENTS, so a hand
+        # edit to either moves the whole body and every check moves with it.
+        # The digest the build script writes beside them is what cannot move.
+        self.assertIsNotNone(reference_skin.digest_parts(PAGE), "no REF_DIGEST beside REF_BODY")
+        self.assertTrue(reference_skin.digest_ok(PAGE),
+                        "REF_BODY or REF_PLACEMENTS differ from what the build script wrote")
+
+    @unittest.skipUnless((Path(__file__).resolve().parents[1] / "3d" / "hummer_ev_-_low_poly.glb").is_file(),
+                         "the downloaded model is not in 3d/ on this machine")
+    def test_the_build_script_still_reproduces_the_page(self):
+        try:
+            import numpy  # noqa: F401
+            import trimesh  # noqa: F401
+            from PIL import Image  # noqa: F401
+        except ImportError:
+            self.skipTest("numpy/trimesh/Pillow are not installed; see the script's docstring")
+        repo = Path(__file__).resolve().parents[1]
+        done = subprocess.run([sys.executable, str(repo / "scripts" / "build_reference_body.py"),
+                               str(repo / "3d" / "hummer_ev_-_low_poly.glb"), "--check"],
+                              capture_output=True, text=True, timeout=600)
+        self.assertEqual(done.returncode, 0, done.stderr[-800:])
+
+    def test_the_body_is_lit_with_its_own_surface_normals(self):
+        """The shader draws mat3(uModel) * aNormal, the stored normal times the
+        group's box size. That must face the way the drawn triangles do.
+
+        The first build divided the normals by the size squared; the digest
+        test cannot see a mistake like that once the page is rebuilt from it,
+        and the windshield was lit about 30 degrees off. Measured here against
+        the triangles' own face normals, weighted by area.
+        """
+        import base64
+        import math
+        import struct
+        placed = reference_skin.placements(PAGE)
+        for group in reference_skin.ref_groups(PAGE):
+            name = group["name"]
+            with self.subTest(group=name):
+                t, s = placed[name]
+                raw = {k: base64.b64decode(group[k]) for k in "vni"}
+                v = struct.unpack("<%dh" % (len(raw["v"]) // 2), raw["v"])
+                n = struct.unpack("<%db" % len(raw["n"]), raw["n"])
+                idx = struct.unpack("<%dH" % (len(raw["i"]) // 2), raw["i"])
+                pts = [[t[a] + v[k + a] / 65534 * s[a] for a in range(3)] for k in range(0, len(v), 3)]
+                drawn = [[n[k + a] * s[a] for a in range(3)] for k in range(0, len(n), 3)]
+                total = weight = 0.0
+                for k in range(0, len(idx), 3):
+                    a, b, c = (pts[i] for i in idx[k:k + 3])
+                    e1 = [b[i] - a[i] for i in range(3)]
+                    e2 = [c[i] - a[i] for i in range(3)]
+                    face = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2],
+                            e1[0] * e2[1] - e1[1] * e2[0]]
+                    area = math.hypot(*face)
+                    if area < 1e-12:
+                        continue
+                    for vi in idx[k:k + 3]:
+                        m = drawn[vi]
+                        cos = abs(sum(face[i] * m[i] for i in range(3))) / (area * (math.hypot(*m) or 1))
+                        total += area * math.degrees(math.acos(min(1.0, cos)))
+                        weight += area
+                self.assertLess(total / weight, 10.0, f"{name} lit {total / weight:.1f} degrees off its surface")
+
+    def test_every_group_is_drawn_on_its_own_bounding_box(self):
+        placed = reference_skin.placements(PAGE)
+        for group in reference_skin.ref_groups(PAGE):
+            name = group["name"]
+            with self.subTest(group=name):
+                pts = [p for g, *abc in self.tris if g == name for p in abc]
+                t, s = placed[name]
+                for a in range(3):
+                    self.assertAlmostEqual(min(p[a] for p in pts), t[a] - s[a] / 2, delta=2e-4)
+                    self.assertAlmostEqual(max(p[a] for p in pts), t[a] + s[a] / 2, delta=2e-4)
+                part = [p for p in self.parts.values() if p["id"].endswith(name.replace("body-", ""))
+                        and p["layer"] == "shell" and p["t"] == t]
+                self.assertEqual(len(part), 1, "not placed as exactly one part")
+                self.assertEqual(part[0]["s"], s)
+
+    def test_the_body_is_credited_where_it_is_shown_and_where_it_is_licensed(self):
+        credit = re.search(r'<p class="scene-credit">([\s\S]*?)</p>', PAGE)
+        self.assertIsNotNone(credit, "no credit under the 3D view")
+        for needed in ("Hummer EV - Low Poly", "Ajay Gawde", "CC BY 4.0",
+                       "https://creativecommons.org/licenses/by/4.0/",
+                       "https://sketchfab.com/3d-models/hummer-ev-low-poly-12622086af0449eda09f9d2ce5596090"):
+            with self.subTest(needed=needed):
+                self.assertIn(needed, credit.group(1))
+        # CC BY 4.0 s.3(a)(1)(B): say that it was modified.
+        self.assertIn("removed", credit.group(1))
+        rule = re.search(r"\.scene-credit\{([^}]*)\}", PAGE)
+        self.assertIsNotNone(rule, "no style for the credit")
+        for hidden in ("display:none", "visibility:hidden", "opacity:0"):
+            self.assertNotIn(hidden, rule.group(1).replace(" ", ""))
+        licence = (Path(__file__).resolve().parents[1] / "LICENSE").read_text(encoding="utf-8")
+        self.assertIn("THIRD-PARTY MATERIAL", licence)
+        self.assertIn("Ajay Gawde", licence)
+        self.assertIn("Changes made", licence)
+
+    def test_the_body_agrees_with_the_published_dimensions(self):
+        pts = [p for g, *abc in self.tris for p in abc]
+        body = [p for g, *abc in self.tris if not g.startswith("mirror") for p in abc]
+        mirrors = [p for g, *abc in self.tris if g.startswith("mirror") for p in abc]
+        length = max(p[0] for p in pts) - min(p[0] for p in pts)
+        self.assertLess(abs(length - 5.507) / 5.507, 0.005, f"length {length:.3f}")
+        self.assertLess(abs(max(p[0] for p in pts) - 2.603), 0.02, "nose")
+        self.assertLess(abs(min(p[0] for p in pts) + 2.903), 0.02, "tail")
+        self.assertAlmostEqual(max(p[1] for p in pts), 2.009, delta=0.003)
+        half = max(abs(p[2]) for p in body)
+        self.assertLessEqual(half, 1.101 + 1e-3, f"half-width {half:.3f}")
+        self.assertGreater(half, 1.101 * 0.99, f"half-width {half:.3f}")
+        self.assertLess(abs(max(abs(p[2]) for p in mirrors) - 1.190) / 1.190, 0.01)
+        top = skin()["y"]
+        depth = top.at(-2.2, 0.82) - top.at(-2.2, 0.0)
+        self.assertLess(abs(depth - 0.5512), 0.01, f"bed depth {depth:.3f}")
+
+    def test_the_body_carries_no_interior_or_wheel_hardware(self):
+        # The model came with seats, a wheel, discs, calipers and coil-overs.
+        # This page draws its own of all of those; two of each is a lie.
+        cabin = [p for g, *abc in self.tris for p in abc
+                 if -0.9 < p[0] < 0.6 and 0.9 < p[1] < 1.35 and abs(p[2]) < 0.7]
+        self.assertEqual(cabin, [], "body geometry inside the cabin")
+        hubs = [p for g, *abc in self.tris for p in abc for axle in (AXLE_X, -AXLE_X)
+                if (p[0] - axle) ** 2 + (p[1] - 0.447) ** 2 < 0.18 ** 2 and 0.5 < abs(p[2]) < 0.99]
+        self.assertEqual(hubs, [], "body geometry inside a wheel")
+
+
+AXLE_X = 3.444 / 2
+
+
+@unittest.skipIf(NODE is None, "node is not installed on this machine")
+class PartsAgainstTheBody(unittest.TestCase):
+    """What sits in the body is in it, and what sits on it is on it.
+
+    Before the body was a measured model, a dashboard 0.18 m wide of the door
+    glass, a battery in a wheel arch and a light bar 0.24 m above the lamps it
+    belongs between all passed every test here, because the only thing they
+    were checked against was other boxes. These check them against the drawn
+    skin.
+    """
+
+    TOL = 0.02
+    INSIDE_LAYERS = {"cabin", "radar"}
+    INSIDE_IDS = {"etrunk", "lv", "lv-terminal-0", "lv-terminal-1", "fusebox-underhood",
+                  "fusebox-ip-left", "fusebox-ip-right", "radiator", "condenser", "chiller",
+                  "tpim-1", "tpim-2", "tpim-3", "hv-rear-module",
+                  "headlamp-l", "headlamp-r", "shell-lightbar"}
+
+    #: The windshield's lower edge on the centreline; below it the cabin ends at it.
+    WIND_BASE = (1.165, 1.382)
+
+    @classmethod
+    def setUpClass(cls):
+        cls.parts = {p["id"]: p for p in build_parts()}
+        cls.x, cls.y, cls.z = skin()["x"], skin()["y"], skin()["z"]
+        cls.glass_x = reference_skin.Extents([x for x in skin()["tris"] if x[0] == "glass"], 0)
+
+    @staticmethod
+    def _box(p):
+        return [(p["t"][i] - abs(p["s"][i]) / 2, p["t"][i] + abs(p["s"][i]) / 2) for i in range(3)]
+
+    def _outside(self, x, y, z, top_only=False):
+        checks = [("top", self.y.near(x, z, "hi"), lambda s: y <= s + self.TOL)]
+        if not top_only:
+            checks += [("front", self.x.near(y, z, "hi"), lambda s: x <= s + self.TOL),
+                       ("rear", self.x.near(y, z, "lo"), lambda s: x >= s - self.TOL),
+                       ("left", self.z.near(x, y, "lo"), lambda s: z >= s - self.TOL),
+                       ("right", self.z.near(x, y, "hi"), lambda s: z <= s + self.TOL)]
+        return [name for name, s, ok in checks if s is None or not ok(s)]
+
+    def test_what_is_inside_the_body_is_inside_it(self):
+        out = []
+        for pid, p in self.parts.items():
+            inside = p["layer"] in self.INSIDE_LAYERS or pid in self.INSIDE_IDS
+            # The pack is the rescue sheet's, and its case's front corners
+            # reach 5 cm past the body's sill toward the front wheelhouse.
+            # The sheet wins that one; the pack is still held under the body.
+            pack = pid == "pack-case" or pid.startswith("mod-")
+            if not (inside or pack):
+                continue
+            (x0, x1), (y0, y1), (z0, z1) = self._box(p)
+            cabin = p["layer"] in self.INSIDE_LAYERS
+            for x in (x0, x1):
+                for y in (y0, y1):
+                    for z in (z0, z1):
+                        for side in self._outside(x, y, z, top_only=pack):
+                            out.append((pid, side, round(x, 3), round(y, 3), round(z, 3)))
+                        # The body's outline at dash height is the hood, so a
+                        # cabin part pushed through the windshield would still be
+                        # "inside" it. The cabin ends at the glass.
+                        if cabin:
+                            glass = self.glass_x.near(y, z, "hi") if y >= self.WIND_BASE[1] else None
+                            limit = glass if glass is not None else self.WIND_BASE[0]
+                            if x > limit + self.TOL:
+                                out.append((pid, "windshield", round(x, 3), round(y, 3), round(z, 3)))
+        self.assertEqual(out, [], f"parts poking out of the body: {out[:12]}")
+
+    #: part id, axis, which extreme of the skin the part's outward face is on
+    ON_SKIN = ([("lightbar-letter-%d" % i, 0, "hi") for i in range(6)]
+               + [("headlamp-%s-bar-%d" % (s, i), 0, "hi") for s in "lr" for i in range(8)]
+               + [("taillamp-l", 0, "lo"), ("taillamp-r", 0, "lo")]
+               + [("marker-f-%d" % i, 0, "hi") for i in range(3)]
+               + [("marker-r-%d" % i, 0, "lo") for i in range(3)]
+               + [("portlamp", 2, "lo")] + [("charge-%d" % i, 2, "lo") for i in range(6)]
+               + [("cam-front", 0, "hi"), ("cam-rear", 0, "lo"), ("cam-tailgate", 0, "lo"),
+                  ("cam-under-f", 1, "lo"), ("cam-under-r", 1, "lo"),
+                  ("cam-mirror-l", 1, "lo"), ("cam-mirror-r", 1, "lo")])
+
+    def test_lamps_and_cameras_sit_on_the_skin(self):
+        """On it: not buried anywhere across its face, and not standing off it.
+
+        The skin is sampled exactly over the part's whole footprint, not at one
+        point: its outward face must be at or proud of the skin's outermost
+        point there, and its inner face must reach back to it.
+        """
+        tris = skin()["tris"]
+        wrong = []
+        for pid, axis, which in self.ON_SKIN:
+            p = self.parts[pid]
+            box = self._box(p)
+            i, j = [a for a in range(3) if a != axis]
+            extent = reference_skin.extreme(tris, axis, which, box[i], box[j])
+            face = box[axis][1 if which == "hi" else 0]
+            depth = abs(p["s"][axis])
+            proud = None if extent is None else (face - extent if which == "hi" else extent - face)
+            if proud is None or proud < -0.002 or proud - depth > 0.002:
+                wrong.append((pid, None if proud is None else round(proud, 3)))
+        self.assertEqual(wrong, [], f"not on the skin (proud, m): {wrong}")
+
+    def test_what_is_mounted_in_the_bed_is_on_its_walls(self):
+        # The bed's inside is not the body's outline, so these are measured
+        # against the wall surfaces themselves: the bed lamps against the side
+        # walls' inner faces, the bed camera against the cab's back wall.
+        tris = skin()["tris"]
+        off = []
+        for pid, sign in (("bedlamp-l", -1), ("bedlamp-r", 1)):
+            p = self.parts[pid]
+            (x0, x1), (y0, y1), _ = self._box(p)
+            wall = reference_skin.extreme(
+                tris, 2, "lo" if sign < 0 else "hi", (x0, x1), (y0, y1),
+                where=lambda a, b, c, s=sign: all(0.70 < s * q[2] < 0.80 for q in (a, b, c)))
+            face = p["t"][2] + sign * abs(p["s"][2]) / 2
+            gap = sign * (wall - face) if wall is not None else None
+            if gap is None or not -0.002 <= gap <= 0.005:
+                off.append((pid, gap))
+        cam = self.parts["cam-bed"]
+        (x0, x1), (y0, y1), (z0, z1) = self._box(cam)
+        wall = reference_skin.extreme(tris, 0, "hi", (y0, y1), (z0, z1),
+                                      where=lambda a, b, c: all(-1.30 < q[0] < -1.20 for q in (a, b, c)))
+        proud = None if wall is None else wall - x0
+        if proud is None or proud < -0.002 or proud - (x1 - x0) > 0.002:
+            off.append(("cam-bed", proud))
+        self.assertEqual(off, [], f"not on the bed's walls: {off}")
