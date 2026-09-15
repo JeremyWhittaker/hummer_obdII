@@ -551,7 +551,8 @@ class ChargeStatusIndicatorTests(unittest.TestCase):
                 for b in bars:
                     self.assertTrue(z0 <= b["t"][2] - b["s"][2] / 2 and b["t"][2] + b["s"][2] / 2 <= z1,
                                     f"{b['id']} is outside its housing")
-                    # On the housing, not floating ahead of it.
+                    # On the housing, not floating ahead of it: within the lens's
+                    # own depth, which is up to 5 cm where a bar sits.
                     bz0, bz1 = b["t"][2] - b["s"][2] / 2, b["t"][2] + b["s"][2] / 2
                     under = [p["t"][0] + p["s"][0] / 2 for p in strips
                              if p["t"][2] - abs(p["s"][2]) / 2 < bz1 and bz0 < p["t"][2] + abs(p["s"][2]) / 2]

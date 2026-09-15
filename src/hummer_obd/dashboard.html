@@ -1341,8 +1341,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
          inner end to 2.34 at the corner, which a box cannot follow -- so the housing steps back with it in five
          strips, each 5 mm behind the lens across its width, and each bar
          stands 4 mm proud of the frontmost lens behind it, from LENS_X,
-         measured bar by bar. One flat plate behind the corner left the bars
-         floating 0.11-0.24 m ahead of it with the body off. The box model had a flat lamp at the nose plane,
+         measured bar by bar. The lens itself is 5-11 cm deep across each
+         strip, so the bars stand 2-4.5 cm ahead of the housing: as close as
+         a housing can come while staying behind the lens everywhere. One
+         flat plate behind the corner left them 0.11-0.24 m ahead of it with
+         the body off. The box model had a flat lamp at the nose plane,
          0.37 m ahead of the corner it belongs on. */
       var lampZ = side * 0.775, lampY = (LAMP_Y0 + LAMP_Y1) / 2, lampW = 0.35, BARS_PER_LAMP = 8,
           LENS_X = [2.347, 2.357, 2.377, 2.397, 2.416, 2.435, 2.454, 2.472];
@@ -1459,9 +1462,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     var cols = 12, rows = 1, mL = VEH.packLength / cols, mW = VEH.packWidth / rows,
         layerH = (VEH.packTop - VEH.packBottom) / 2;
     add({ id: "pack-case", mesh: "bev", layer: "pack", colour: [0.09, 0.11, 0.12],
-          /* The case's top is the module top plus 15 mm, where a 40 mm pad
-             stood 0.055 m above the body's pack tub and held the cabin floor
-             up with it. */
+          /* The case's top is VEH.packTop, 0.750: the modules stop at 0.735,
+             so that is 15 mm over them and level with the body's pack tub.
+             A 40 mm pad used to stand 0.055 m above the tub and held the
+             cabin floor up with it. */
           t: [VEH.packCentreX, (VEH.packTop + VEH.packBottom) / 2 - 0.02, 0],
           s: [VEH.packLength + 0.12, VEH.packTop - VEH.packBottom + 0.04,
               VEH.packWidth + 0.12], alpha: 0.28 });
