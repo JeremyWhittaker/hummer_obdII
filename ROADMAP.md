@@ -29,6 +29,22 @@ It stays read-only to the vehicle; it adds no write, control or session
 capability; it runs parked, paced, DTC-bracketed and person-started, on a gate
 no unattended path can reach. **This is the current front of the project.**
 
+### TODO: agent-operated recorder handover
+
+- [ ] Let the supervising agent stop and start **only** `hummer-drive.service`
+  for an explicitly authorized diagnostic run. Reuse the node's exact-command
+  passwordless service rights; do not add wildcard sudo or grant control of
+  unrelated services. The current no-sudo agent instruction still applies
+  until Jeremy explicitly approves this narrowly scoped policy exception.
+- [ ] Add a tested handover helper that verifies the recorder stopped and the
+  adapter port is free before scanning, records the prior recorder state, and
+  restores/verifies that state on normal completion, abort, or interruption.
+  Document recovery after disconnect or node power loss; never assume a
+  shell exit trap guarantees restoration.
+- [ ] Keep authorization, parked/speed checks, DTC bracketing, pacing and all
+  vehicle write/control prohibitions unchanged. Cover failed stop/start and
+  unexpected recorder restarts with offline tests before live use.
+
 ## Where this stands, 2026-09-04
 
 **Start with [the access matrix](docs/ACCESS_MATRIX.md).** It is generated from
