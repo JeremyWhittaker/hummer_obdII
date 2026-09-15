@@ -10,7 +10,9 @@ from hummer_obd.safety import (
     describe_command,
     is_safe,
     validate_command,
+    validate_scan_command,
 )
+from hummer_obd.transport import SerialTransport
 
 
 class TestAllowedCommands(unittest.TestCase):
@@ -86,6 +88,110 @@ class TestDescriptions(unittest.TestCase):
         self.assertIn("current data", safety.describe_command("010C"))
         self.assertIn("stored DTCs", safety.describe_command("03"))
         self.assertIn("adapter command", safety.describe_command("ATI"))
+
+
+class TestScanGate(unittest.TestCase):
+    """The DID scan gets one narrow gate that no ordinary path inherits."""
+
+    def test_every_two_byte_identifier_is_accepted_including_f190(self):
+        for did in range(0x10000):
+            command = f"22{did:04X}"
+            self.assertEqual(validate_scan_command(command), command)
+        self.assertEqual(validate_scan_command("22 f1 90"), "22F190")
+
+    def test_scan_gate_accepts_no_payload_or_malformed_identifier(self):
+        for command in (
+            "22", "2200", "2200000", "22000000", "22F19000", "22GGGG",
+            "22-0000", "", "   ", None, 0x220000, b"220000", ["220000"],
+        ):
+            with self.subTest(command=command):
+                with self.assertRaises(UnsafeCommandError):
+                    validate_scan_command(command)
+
+    def test_scan_gate_refuses_every_other_service(self):
+        for service in range(0x100):
+            if service == 0x22:
+                continue
+            command = f"{service:02X}0000"
+            with self.subTest(command=command):
+                with self.assertRaises(UnsafeCommandError):
+                    validate_scan_command(command)
+
+    def test_forbidden_services_hit_the_independent_barrier(self):
+        for service in FORBIDDEN_SERVICES:
+            with self.subTest(service=service):
+                with self.assertRaisesRegex(
+                    UnsafeCommandError, "permanently forbidden"
+                ):
+                    validate_scan_command(service + "0000")
+
+    def test_forbidden_services_reach_zero_transport_writes(self):
+        class Wire:
+            is_open = True
+
+            def __init__(self):
+                self.writes = []
+
+            def write(self, payload):
+                self.writes.append(payload)
+
+        class Log:
+            def log_tx(self, *args, **kwargs):
+                raise AssertionError("a refused command must not reach the raw log")
+
+            def log_rx(self, *args, **kwargs):
+                raise AssertionError("a refused command must not be read")
+
+            def write_event(self, *args, **kwargs):
+                raise AssertionError("a refused command must not reach I/O")
+
+        wire = Wire()
+        transport = SerialTransport(
+            "/dev/null", Log(), serial_module=object(),
+            validator=validate_scan_command,
+        )
+        transport._serial = wire
+        for service in FORBIDDEN_SERVICES:
+            with self.subTest(service=service):
+                with self.assertRaises(UnsafeCommandError):
+                    transport.send(service + "0000")
+        self.assertEqual(wire.writes, [])
+
+    def test_speed_and_dtc_reads_require_the_ordinary_gate(self):
+        for command in ("010D", "03", "07", "0A"):
+            with self.subTest(command=command):
+                self.assertEqual(validate_command(command), command)
+                with self.assertRaises(UnsafeCommandError):
+                    validate_scan_command(command)
+
+    def test_batching_is_refused(self):
+        for command in (
+            "220000;04", "220000\r04", "220000\n03", "220000\x00",
+            "220000;22FFFF", "220000\r\n22FFFF",
+        ):
+            with self.subTest(command=command):
+                with self.assertRaises(UnsafeCommandError):
+                    validate_scan_command(command)
+
+    def test_adapter_commands_delegate_to_the_ordinary_gate(self):
+        for command in ("ATZ", "ATRV", "ATSP7", "ATCP14", "ATFCSM1"):
+            with self.subTest(command=command):
+                self.assertEqual(
+                    validate_scan_command(command), validate_command(command)
+                )
+        for command in ("ATMA", "ATFOO", "STMA", "STCMM0"):
+            with self.subTest(command=command):
+                with self.assertRaises(UnsafeCommandError):
+                    validate_scan_command(command)
+
+    def test_ordinary_and_existing_supervised_gates_do_not_gain_scan_access(self):
+        self.assertNotIn("22", ALLOWED_OBD_MODES)
+        with self.assertRaises(UnsafeCommandError):
+            validate_command("2200FF")
+        with self.assertRaises(UnsafeCommandError):
+            safety.validate_enhanced_command("22F190")
+        with self.assertRaises(UnsafeCommandError):
+            safety.validate_supervised_command("22F190")
 
 
 class TestFreezeFrameAndMonitorServices(unittest.TestCase):

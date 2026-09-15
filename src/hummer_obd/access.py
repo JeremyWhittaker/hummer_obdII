@@ -53,6 +53,7 @@ from .safety import (
     validate_enhanced_command,
     validate_monitor_setup_command,
     validate_monitor_stream_command,
+    validate_scan_command,
     validate_supervised_command,
 )
 
@@ -81,7 +82,7 @@ DOC_PATH = "docs/ACCESS_MATRIX.md"
 
 # -- the gates ----------------------------------------------------------------
 #
-# There are five, not four, and the difference between them is the safety model.
+# There are six, not five, and the difference between them is the safety model.
 # Listing them in one place is the point: "the collector cannot send service 22"
 # is a claim about which gate a caller was constructed with, and it should be
 # readable as a row rather than traced through three files.
@@ -94,6 +95,10 @@ GATES: Final[tuple[tuple[str, Callable[[str], str], str], ...]] = (
     ("enhanced", validate_enhanced_command,
      "Supervised enhanced reads. Accepts service 22 for an exact enumerated "
      "identifier and nothing else; never guesses, increments or sweeps."),
+    ("scan", validate_scan_command,
+     "Bounded, parked, supervised identifier scan. Accepts exactly one service "
+     "22 request with any two-byte identifier; speed and DTC checks use a "
+     "separate ordinary-gate path on the same physical port."),
     ("recorder", validate_supervised_command,
      "`hummer-drive`, the unattended session recorder: the union of collector "
      "and enhanced. It runs for hours with nobody watching, which is why every "
@@ -555,7 +560,7 @@ UNREACHABLE: Final[tuple[Unreachable, ...]] = (
        "FORBIDDEN_SERVICES: 04, 08, 10, 11, 14, 27, 28, 2E, 2F, 31, 34, 35, 36, "
        "37, 38, 3B, 3D, 3E, 83, 84, 85 and 87. The node is structurally "
        "incapable of transmitting a command in the imperative sense, and the "
-       "gate matrix above shows each one refused by all five gates rather than "
+       "gate matrix above shows each one refused by all six gates rather than "
        "asserting it.",
        "Nothing. This is the invariant the whole project is built around, and "
        "it is not a tunable."),
@@ -642,7 +647,7 @@ def render_matrix() -> str:
 
     # -- the gates ------------------------------------------------------------
     out += ["## 1. What may be transmitted", "",
-            "Five gates, not one. Which gate a caller was built with *is* the "
+            "Six gates, not one. Which gate a caller was built with *is* the "
             "safety model, so it is shown as a table rather than described.", ""]
     for name, _gate, why in GATES:
         out.append(f"* **`{name}`** — {why}")

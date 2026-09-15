@@ -136,6 +136,14 @@ class TestTheGateMatrixShowsTheRealPolicy(unittest.TestCase):
                          "the unattended gate must refuse service 22 even for a "
                          "proven identifier")
         self.assertTrue(matrix["2227C6"]["enhanced"])
+        self.assertTrue(matrix["2227C6"]["scan"])
+        self.assertTrue(matrix["22F190"]["scan"])
+
+    def test_scan_gate_cannot_reach_routine_or_dtc_safety_checks(self):
+        matrix = self.matrix()
+        for command in ("010D", "03", "07", "0A"):
+            with self.subTest(command=command):
+                self.assertFalse(matrix[command]["scan"])
 
     def test_the_collector_cannot_reach_any_monitor_command(self):
         matrix = self.matrix()
@@ -226,7 +234,7 @@ class TestTheGateMatrixShowsTheRealPolicy(unittest.TestCase):
     def test_the_gate_list_is_the_whole_gate_list(self):
         """A matrix missing a gate is a matrix that cannot be trusted.
 
-        The document says "five gates, not one", and that number has to come
+        The document says "six gates, not one", and that number has to come
         from somewhere checkable: every ``validate_*`` callable exported by
         safety.py must appear as a column.
         """
@@ -241,7 +249,7 @@ class TestTheGateMatrixShowsTheRealPolicy(unittest.TestCase):
             exported - covered - {"validate_all"}, set(),
             f"safety.py exports gates the matrix does not show: "
             f"{sorted(exported - covered - {'validate_all'})}")
-        self.assertEqual(len(GATES), 5)
+        self.assertEqual(len(GATES), 6)
 
     def test_the_batch_wrapper_applies_the_collector_gate_and_nothing_softer(self):
         # It is the only validator not shown as a matrix column, so it gets its

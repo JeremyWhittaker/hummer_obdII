@@ -29,7 +29,7 @@ endorsed by General Motors, GMC, OBD Solutions, or Waveshare.
 > [the access matrix](docs/ACCESS_MATRIX.md).** It is the one page organised by
 > what is true now rather than by how it was found: every signal with its
 > module, identifier, CAN priority and evidence level; every command class
-> against all five safety gates; and 27 things that are out of reach, each with
+> against all six safety gates; and 27 things that are out of reach, each with
 > the *kind* of "no" it is and what would change it. Most of it is generated
 > from the code that enforces it, and every claim carries a command that checks
 > it — `PYTHONPATH=src python3 -m hummer_obd.access --check` fails if the page
@@ -327,6 +327,7 @@ has not been done.
 | `hummer-obd-probe` | Supervised one-shot probe, and offline replay | yes |
 | `hummer-obd-discover` | Per-module support census, J1979 bitmaps only | yes — no vendor identifier |
 | `hummer-obd-enhanced` | Supervised enhanced reads, one exact profile | yes — enumerated identifiers |
+| `hummer-obd-scan` | Bounded, parked-only service-22 identifier discovery; dry-run by default | only with `--confirm`; mandatory speed/DTC guards |
 | `hummer-obd-voltage` | 12 V watch that provably transmits nothing | yes — `ATRV` only |
 | `hummer-obd-passive` | Listens at the connector; the adapter does not even acknowledge | yes — adapter setup only, no request |
 | `hummer-obd-passive-diff` | Compares two passive captures offline; never replays anything | **no** |
@@ -341,6 +342,32 @@ column reads files the recorder already wrote, so it is safe alongside it —
 including while driving. Everything else needs `hummer-drive` stopped first,
 and the sessions pulled to a workstation before that. See the
 [runbook](docs/RUNBOOK.md#drive-recorder).
+
+### Supervised identifier discovery
+
+The scanner implements [DEEP_SCAN.md](docs/DEEP_SCAN.md). Start with a dry run
+from the checkout; this opens no device and creates no files:
+
+```bash
+PYTHONPATH=src python3 -m hummer_obd.scan --module 17 --priority 14 --start 2400 --end 24FF
+```
+
+Transmission requires `--confirm` **on every invocation**, including `--resume`.
+First live acceptance should be a single identifier, with the truck parked,
+plugged in, attended, and the recorder stopped by the operator. Never run a scan
+while driving. See the exact operating procedure and abort rules in
+[section 8](docs/DEEP_SCAN.md#8-operating-the-scan-on-the-node-read-only-no-secrets-here).
+
+Speed must positively read zero before every identifier. DTC reads from module
+45 bracket the run and every 16 identifiers (configurable from 1 to 32).
+Silence, malformed replies, the first busy response, a DTC, or motion stop the
+run. It never opens a diagnostic session or tries security access.
+
+Private state and byte-exact transcripts stay under `evidence/scans/`. Every
+hit is **unvalidated**; this tool adds no signals to the recorder. Resuming
+requires the same module, priority, identifier range and output directory.
+The guard traffic makes a full-space scan much slower than a bare DID loop;
+use small attended ranges rather than assuming it will finish in one charge.
 
 ### Hosting the page on Home Assistant
 
@@ -1315,6 +1342,8 @@ src/hummer_obd/
   policy.py          adaptive awake/parked/asleep collection policy
   enhanced.py        supervised enhanced (UDS service 22) reads, one identifier
                      at a time, from a fixed enumeration
+  scan.py            parked, paced, person-started service-22 discovery;
+                     isolated gate, speed/DTC guards and private resume state
   drive.py           automatic drive/charge session recorder; ATRV only while
                      the vehicle sleeps
   analyze.py         offline analysis of a recorded session; never opens the port

@@ -14,13 +14,15 @@ Design notes
   command cannot smuggle a second, unvalidated one behind it.
 * Mode ``22`` (enhanced read-by-identifier) is **refused by**
   :func:`validate_command`, which is the gate every unattended code path uses.
-  A second, deliberately narrower gate --
+  Two deliberately separate supervised gates --
   :func:`validate_enhanced_command` -- accepts service ``22`` for an *exact,
-  enumerated* set of identifiers with published provenance, and nothing else.
-  Keeping them as two functions is the point: the collector calls
+  enumerated* set of identifiers with published provenance, and
+  :func:`validate_scan_command` accepts exactly one arbitrary two-byte
+  identifier for the bounded scan described in ``docs/DEEP_SCAN.md``.
+  Keeping them as separate functions is the point: the collector calls
   ``validate_command``, so no configuration mistake, flag, or bug in the
-  experimental path can put an enhanced read on the wire during unattended
-  collection.  There is still no runtime bypass and no DID sweeping.
+  supervised paths can put an enhanced read on the wire during unattended
+  collection.  There is still no runtime bypass.
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ __all__ = [
     "normalize",
     "validate_command",
     "validate_enhanced_command",
+    "validate_scan_command",
     "validate_supervised_command",
     "is_safe",
     "describe_command",
@@ -486,6 +489,22 @@ assert "22" not in ALLOWED_OBD_MODES, (
 )
 
 
+def _ordinary_gate_refuses_scan_probe() -> bool:
+    """Evaluate the collector/scan separation at import time."""
+    try:
+        validate_command("2200FF")
+    except UnsafeCommandError:
+        return True
+    return False
+
+
+assert _ordinary_gate_refuses_scan_probe(), (
+    "validate_command('2200FF') must raise: scans use validate_scan_command(), "
+    "never the unattended gate"
+)
+del _ordinary_gate_refuses_scan_probe
+
+
 #: Receive-only CAN monitoring: the adapter listens and does not acknowledge.
 #:
 #: The vendor's *OBDLink Family Reference and Programming Manual* documents
@@ -631,6 +650,60 @@ def validate_enhanced_command(command: str) -> str:
             raw,
             f"identifier {did} is not in the supervised enhanced allowlist "
             f"{sorted(ENHANCED_READ_DIDS)}; identifiers are never guessed",
+        )
+    return cmd
+
+
+def validate_scan_command(command: str) -> str:
+    """Validate one command for the bounded, supervised identifier scan.
+
+    Adapter setup is delegated unchanged to :func:`validate_command`.  The
+    only vehicle request this gate adds is exactly one service ``22`` request
+    carrying exactly one two-byte identifier.  Unlike
+    :func:`validate_enhanced_command`, the identifier need not be enumerated;
+    unlike the ordinary and recorder gates, routine services are intentionally
+    unavailable here.  Speed and DTC bracketing therefore use a separate
+    ordinary-gate path on the same physical port.
+    """
+    if not isinstance(command, str):
+        raise UnsafeCommandError(
+            f"command must be a string, got {type(command)!r}"
+        )
+    raw = command
+    if any(ch in raw for ch in ("\r", "\n", ";", "\x00")):
+        raise _reject(raw, "command batching/termination characters are not allowed")
+
+    cmd = normalize(raw)
+    if not cmd:
+        raise _reject(raw, "empty command")
+
+    # Reuse the ordinary gate verbatim for adapter configuration.  The scan
+    # cannot acquire a broader AT/ST command set as a side effect of allowing
+    # arbitrary DIDs.
+    if cmd.startswith("AT") or cmd.startswith("ST"):
+        return validate_command(cmd)
+
+    if len(cmd) > MAX_COMMAND_LENGTH:
+        raise _reject(raw, f"longer than {MAX_COMMAND_LENGTH} characters")
+    if not _HEX_ONLY.fullmatch(cmd):
+        raise _reject(raw, "not a hexadecimal request")
+
+    mode = cmd[:2]
+    # This check is independent of the exact service-22 allow rule below.  A
+    # future refactor of that rule therefore cannot admit a known write,
+    # control, reset, security or clear service.
+    if mode in FORBIDDEN_SERVICES:
+        raise _reject(raw, f"service {mode} is permanently forbidden (write/control/clear)")
+    if mode != "22":
+        raise _reject(
+            raw,
+            "the scan gate only accepts service 22; speed and DTC safety "
+            "checks use validate_command() on a separate ordinary path",
+        )
+    if not re.fullmatch(r"22[0-9A-F]{4}", cmd):
+        raise _reject(
+            raw,
+            "service 22 takes exactly one two-byte identifier and no payload",
         )
     return cmd
 

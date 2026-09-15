@@ -65,63 +65,64 @@ kind of fact and are never presented as though they were.
 
 ## 1. What may be transmitted
 
-Five gates, not one. Which gate a caller was built with *is* the safety model, so it is shown as a table rather than described.
+Six gates, not one. Which gate a caller was built with *is* the safety model, so it is shown as a table rather than described.
 
 * **`collector`** — The unattended gate. `hummer-collector` uses it, and it is the DEFAULT `SerialTransport` validator -- so a caller that forgets to choose gets this one, which is why it is the narrow one.
 * **`enhanced`** — Supervised enhanced reads. Accepts service 22 for an exact enumerated identifier and nothing else; never guesses, increments or sweeps.
+* **`scan`** — Bounded, parked, supervised identifier scan. Accepts exactly one service 22 request with any two-byte identifier; speed and DTC checks use a separate ordinary-gate path on the same physical port.
 * **`recorder`** — `hummer-drive`, the unattended session recorder: the union of collector and enhanced. It runs for hours with nobody watching, which is why every identifier it may send is enumerated.
 * **`monitor-setup`** — `hummer-obd-passive` adapter configuration: the collector gate plus `STCMM0`, the receive-only CAN mode.
 * **`monitor-stream`** — `hummer-obd-passive` streaming: `STMA` alone. Not even `STCMM0`.
 
 Every cell below is produced by putting that command to that gate and recording what it said. Nothing here is asserted.
 
-| Command | What it is | `collector` | `enhanced` | `recorder` | `monitor-setup` | `monitor-stream` |
-|---|---|---|---|---|---|---|
-| `010D` | service 01: legislated live data (vehicle speed) | **yes** | no | **yes** | **yes** | no |
-| `0142` | service 01: control module supply voltage | **yes** | no | **yes** | **yes** | no |
-| `0101` | service 01: monitor status, malfunction lamp and fault count | **yes** | no | **yes** | **yes** | no |
-| `0202` | service 02: freeze frame | **yes** | no | **yes** | **yes** | no |
-| `03` | service 03: read stored fault codes | **yes** | no | **yes** | **yes** | no |
-| `07` | service 07: read pending fault codes | **yes** | no | **yes** | **yes** | no |
-| `0A` | service 0A: read permanent fault codes | **yes** | no | **yes** | **yes** | no |
-| `0601` | service 06: on-board monitor results | **yes** | no | **yes** | **yes** | no |
-| `0902` | service 09: vehicle information (VIN) | **yes** | no | **yes** | **yes** | no |
-| `2227C6` | service 22: an ENUMERATED enhanced identifier (state of charge) | no | **yes** | **yes** | no | no |
-| `2227C5` | service 22: one step BELOW an identifier that works | no | no | no | no | no |
-| `2227C7` | service 22: one step ABOVE it -- and separately sourced | no | **yes** | **yes** | no | no |
-| `22F190` | service 22: an identifier not in the enumerated set | no | no | no | no | no |
-| `ATRV` | adapter: read connector voltage -- reaches no vehicle module | **yes** | **yes** | **yes** | **yes** | no |
-| `ATCS` | adapter: CAN error counters | **yes** | **yes** | **yes** | **yes** | no |
-| `ATSP7` | adapter: pin the protocol | **yes** | **yes** | **yes** | **yes** | no |
-| `ATSP0` | adapter: auto-detect protocol -- detects BY TRANSMITTING | **yes** | **yes** | **yes** | **yes** | no |
-| `STCMM0` | adapter: receive-only CAN monitoring, no acknowledgements | no | no | no | **yes** | no |
-| `STCMM1` | adapter: CAN monitoring as a normal node -- ACKs, so it transmits | no | no | no | no | no |
-| `STMA` | adapter: start a monitor stream | no | no | no | no | **yes** |
-| `ATMA` | adapter: monitor all, the deprecated form | no | no | no | no | no |
-| `04` | service 04: CLEAR FAULT CODES | no | no | no | no | no |
-| `08` | service 08: on-board component control | no | no | no | no | no |
-| `2E1234` | service 2E: WriteDataByIdentifier | no | no | no | no | no |
-| `2701` | service 27: SecurityAccess | no | no | no | no | no |
-| `3101FF00` | service 31: RoutineControl | no | no | no | no | no |
-| `1101` | service 11: ECUReset | no | no | no | no | no |
-| `3E00` | service 3E: TesterPresent | no | no | no | no | no |
-| `2F1234` | service 2F: InputOutputControlByIdentifier | no | no | no | no | no |
-| `1003` | service 10: DiagnosticSessionControl | no | no | no | no | no |
-| `14FFFFFF` | service 14: ClearDiagnosticInformation | no | no | no | no | no |
-| `2803` | service 28: CommunicationControl -- can silence a bus | no | no | no | no | no |
-| `3400` | service 34: RequestDownload | no | no | no | no | no |
-| `3500` | service 35: RequestUpload | no | no | no | no | no |
-| `360001` | service 36: TransferData | no | no | no | no | no |
-| `37` | service 37: RequestTransferExit | no | no | no | no | no |
-| `3800` | service 38: RequestFileTransfer | no | no | no | no | no |
-| `3B01` | service 3B: SAE J1979 legacy write | no | no | no | no | no |
-| `3D01` | service 3D: WriteMemoryByAddress | no | no | no | no | no |
-| `8301` | service 83: AccessTimingParameter | no | no | no | no | no |
-| `8400` | service 84: SecuredDataTransmission | no | no | no | no | no |
-| `8502` | service 85: ControlDTCSetting | no | no | no | no | no |
-| `8701` | service 87: LinkControl | no | no | no | no | no |
-| `010D;04` | injection: a legal read with a clear-codes smuggled behind it | no | no | no | no | no |
-| `010D\r04` | injection: the same, separated by a carriage return | no | no | no | no | no |
+| Command | What it is | `collector` | `enhanced` | `scan` | `recorder` | `monitor-setup` | `monitor-stream` |
+|---|---|---|---|---|---|---|---|
+| `010D` | service 01: legislated live data (vehicle speed) | **yes** | no | no | **yes** | **yes** | no |
+| `0142` | service 01: control module supply voltage | **yes** | no | no | **yes** | **yes** | no |
+| `0101` | service 01: monitor status, malfunction lamp and fault count | **yes** | no | no | **yes** | **yes** | no |
+| `0202` | service 02: freeze frame | **yes** | no | no | **yes** | **yes** | no |
+| `03` | service 03: read stored fault codes | **yes** | no | no | **yes** | **yes** | no |
+| `07` | service 07: read pending fault codes | **yes** | no | no | **yes** | **yes** | no |
+| `0A` | service 0A: read permanent fault codes | **yes** | no | no | **yes** | **yes** | no |
+| `0601` | service 06: on-board monitor results | **yes** | no | no | **yes** | **yes** | no |
+| `0902` | service 09: vehicle information (VIN) | **yes** | no | no | **yes** | **yes** | no |
+| `2227C6` | service 22: an ENUMERATED enhanced identifier (state of charge) | no | **yes** | **yes** | **yes** | no | no |
+| `2227C5` | service 22: one step BELOW an identifier that works | no | no | **yes** | no | no | no |
+| `2227C7` | service 22: one step ABOVE it -- and separately sourced | no | **yes** | **yes** | **yes** | no | no |
+| `22F190` | service 22: an identifier not in the enumerated set | no | no | **yes** | no | no | no |
+| `ATRV` | adapter: read connector voltage -- reaches no vehicle module | **yes** | **yes** | **yes** | **yes** | **yes** | no |
+| `ATCS` | adapter: CAN error counters | **yes** | **yes** | **yes** | **yes** | **yes** | no |
+| `ATSP7` | adapter: pin the protocol | **yes** | **yes** | **yes** | **yes** | **yes** | no |
+| `ATSP0` | adapter: auto-detect protocol -- detects BY TRANSMITTING | **yes** | **yes** | **yes** | **yes** | **yes** | no |
+| `STCMM0` | adapter: receive-only CAN monitoring, no acknowledgements | no | no | no | no | **yes** | no |
+| `STCMM1` | adapter: CAN monitoring as a normal node -- ACKs, so it transmits | no | no | no | no | no | no |
+| `STMA` | adapter: start a monitor stream | no | no | no | no | no | **yes** |
+| `ATMA` | adapter: monitor all, the deprecated form | no | no | no | no | no | no |
+| `04` | service 04: CLEAR FAULT CODES | no | no | no | no | no | no |
+| `08` | service 08: on-board component control | no | no | no | no | no | no |
+| `2E1234` | service 2E: WriteDataByIdentifier | no | no | no | no | no | no |
+| `2701` | service 27: SecurityAccess | no | no | no | no | no | no |
+| `3101FF00` | service 31: RoutineControl | no | no | no | no | no | no |
+| `1101` | service 11: ECUReset | no | no | no | no | no | no |
+| `3E00` | service 3E: TesterPresent | no | no | no | no | no | no |
+| `2F1234` | service 2F: InputOutputControlByIdentifier | no | no | no | no | no | no |
+| `1003` | service 10: DiagnosticSessionControl | no | no | no | no | no | no |
+| `14FFFFFF` | service 14: ClearDiagnosticInformation | no | no | no | no | no | no |
+| `2803` | service 28: CommunicationControl -- can silence a bus | no | no | no | no | no | no |
+| `3400` | service 34: RequestDownload | no | no | no | no | no | no |
+| `3500` | service 35: RequestUpload | no | no | no | no | no | no |
+| `360001` | service 36: TransferData | no | no | no | no | no | no |
+| `37` | service 37: RequestTransferExit | no | no | no | no | no | no |
+| `3800` | service 38: RequestFileTransfer | no | no | no | no | no | no |
+| `3B01` | service 3B: SAE J1979 legacy write | no | no | no | no | no | no |
+| `3D01` | service 3D: WriteMemoryByAddress | no | no | no | no | no | no |
+| `8301` | service 83: AccessTimingParameter | no | no | no | no | no | no |
+| `8400` | service 84: SecuredDataTransmission | no | no | no | no | no | no |
+| `8502` | service 85: ControlDTCSetting | no | no | no | no | no | no |
+| `8701` | service 87: LinkControl | no | no | no | no | no | no |
+| `010D;04` | injection: a legal read with a clear-codes smuggled behind it | no | no | no | no | no | no |
+| `010D\r04` | injection: the same, separated by a carriage return | no | no | no | no | no | no |
 
 **7 OBD services** are permitted at all: `01`, `02`, `03`, `06`, `07`, `09`, `0A`. **22 services are permanently forbidden** and an import-time assertion fails the build if one is added to the allowed set: `04`, `08`, `10`, `11`, `14`, `27`, `28`, `2E`, `2F`, `31`, `34`, `35`, `36`, `37`, `38`, `3B`, `3D`, `3E`, `83`, `84`, `85`, `87`.
 
@@ -231,7 +232,7 @@ The kind of "no" matters more than the list, so it is stated first. These are no
 | Freeze frame data | **measured** | Service 02 is permitted and proven to work. There is no frame to read: a freeze frame exists only alongside a stored fault, and this vehicle has none. Worth stating how that is known, because it was recorded wrongly first: every DTC check before 2026-09-04 returned NO DATA and was written down as 'no codes', which is not what NO DATA means. Addressed to module 45 all three services answer positively -- 43 00, 47 00, 4A 00, count zero -- and that frame, not the silence, is the evidence. | PID 0101 now records the malfunction lamp and stored-fault count in every row, so a fault appearing mid-drive is caught with the speed and distance either side of it. | A fault occurring. This is a capability that is present and has nothing to show, which is a different thing from a capability that is absent. |
 | On-board monitor results (service 06) | **measured** | The service is permitted and proven. The vehicle advertises ZERO monitor IDs, so there is nothing to return. An EV with no combustion emissions monitors is the expected shape of that answer. | — | Nothing. This is the vehicle correctly reporting that it runs no such monitors. |
 | Clearing fault codes (service 04) | **forbidden** | Refused by every gate. Not a configuration option, and an import-time assertion fails the build if service 04 is added to the allowed set. | — | Nothing within this repository. Clearing codes destroys evidence and is outside a read-only telemetry node's remit by design. |
-| Writing, controlling, resetting or unlocking anything | **forbidden** | Every UDS write, control, security, reset and routine service is in FORBIDDEN_SERVICES: 04, 08, 10, 11, 14, 27, 28, 2E, 2F, 31, 34, 35, 36, 37, 38, 3B, 3D, 3E, 83, 84, 85 and 87. The node is structurally incapable of transmitting a command in the imperative sense, and the gate matrix above shows each one refused by all five gates rather than asserting it. | — | Nothing. This is the invariant the whole project is built around, and it is not a tunable. |
+| Writing, controlling, resetting or unlocking anything | **forbidden** | Every UDS write, control, security, reset and routine service is in FORBIDDEN_SERVICES: 04, 08, 10, 11, 14, 27, 28, 2E, 2F, 31, 34, 35, 36, 37, 38, 3B, 3D, 3E, 83, 84, 85 and 87. The node is structurally incapable of transmitting a command in the imperative sense, and the gate matrix above shows each one refused by all six gates rather than asserting it. | — | Nothing. This is the invariant the whole project is built around, and it is not a tunable. |
 | Remote commands: lock, unlock, precondition, remote start | **forbidden** | These are not diagnostic operations at all -- they belong to the telematics domain -- and even if they were reachable, every service that could express them is forbidden. | — | Nothing here. See the OnStar row for where such a thing would have to live. |
 | OnStar and GM cloud data | **scope** | Reachable in principle with GM account credentials, and deliberately not reached. It is a different trust domain from a read-only OBD reader: it needs stored credentials, it is bidirectional by design, and putting it here would replace a structural safety model with 'be careful'. | — | A separate repository with isolated credentials and its own command allowlist. The decision to keep this repo read-only was made deliberately, not by omission. |
 | Dealer-level diagnostics (MDI2 + GDS2) | **scope** | The only route that would definitively read everything, because it is what the dealer uses and it authenticates. It is subscription-priced, Windows-only, and -- decisively -- a bidirectional tool whose entire value is that it can command the vehicle. | — | A separate machine and a human driving it. Introducing it here would not extend this project; it would replace its safety model. |

@@ -209,27 +209,29 @@ confident unit and no cross-check is the thing to avoid, as `0x2429` (a
 
 ## 7. Concrete build checklist for the next agent
 
-- [ ] `safety.validate_scan_command` + import-time assertions + tests in
+- [x] `safety.validate_scan_command` + import-time assertions + tests in
       `tests/test_safety.py` (mirror the enhanced-gate tests: accepts `22XXXX`
       for arbitrary XXXX, refuses every forbidden service, refuses non-22,
       refuses batching; and `validate_command` still refuses `22XXXX`).
-- [ ] A new module `src/hummer_obd/scan.py` and entry point
+- [x] A new module `src/hummer_obd/scan.py` and entry point
       `hummer-obd-scan` in `pyproject.toml`. Reuse `drive.AddressGroup`
       addressing, `SerialTransport(validator=validate_scan_command)`,
       `RawLog`, `decode.parse_reply`, `enhanced.candidate_scalings`.
-- [ ] Args: `--module`, `--priority`, `--start`, `--end`, `--device`,
+- [x] Args: `--module`, `--priority`, `--start`, `--end`, `--device`,
       `--delay-ms`, `--resume`, `--output-dir evidence/scans`, `--confirm`
       (dry-run without it). Speed check + DTC bracketing built in.
-- [ ] Resume state file per module under `evidence/scans/`.
-- [ ] Tests for the scan runner against the PTY/ELM simulator
+- [x] Resume state file per module/priority/range under `evidence/scans/`.
+- [x] Tests for the scan runner against the PTY/ELM simulator
       (`tests/elm_simulator.py`) — assert it sends only `22XXXX` reads, stops
       on a non-zero speed, stops on a DTC, and resumes from state. No vehicle
       needed for the suite.
-- [ ] Regenerate `docs/ACCESS_MATRIX.md` from `access.py` after adding the gate
+- [x] Regenerate `docs/ACCESS_MATRIX.md` from `access.py` after adding the gate
       (it is generated — do not hand-edit it), and add a `scan` access level
       row describing the supervised scan path.
 - [ ] Update `confidence.py`/catalogue only when a scanned identifier is
       cross-validated on this truck — never on a bare positive response.
+      **Deferred:** no live scan or new cross-validated hit is claimed by the
+      scanner build. Offline simulator acceptance is not vehicle validation.
 
 ## 8. Operating the scan on the node (read-only, no secrets here)
 
@@ -248,11 +250,109 @@ services, never ships secrets or raw logs). Run the scan under the node's
 in to charge** during a scan so the multi-hour bus activity does not draw down
 the 12 V battery, and keep it **parked**.
 
+### Scanner operating procedure
+
+Run from the checkout, not an arbitrary working directory. The default is
+module `17`, priority `14`, range `2400–24FF`, 75 ms **additional** delay after
+each completed exchange, and a DTC chunk of 16 identifiers. `--priority` defaults
+to `18` for `40`/`45`, otherwise `14`. Only the eight census module addresses
+and priorities `14`/`18` are accepted; no automatic priority search occurs.
+
+```bash
+# Safe even while the recorder is running: no serial I/O or files created.
+PYTHONPATH=src python3 -m hummer_obd.scan --module 17 --priority 14 --start 2400 --end 2400
+```
+
+Only after offline acceptance, and with the vehicle **parked, plugged in and
+attended**, the operator can run this on the node. The first live check is ONE
+identifier; inspect its local transcript and guards before choosing a wider
+range. These privileged commands are for the operator, not agent execution:
+
+```bash
+cd /home/jeremy/hummer-obd || exit
+(
+    sudo systemctl stop hummer-drive || exit
+    trap 'sudo systemctl start hummer-drive' EXIT
+    PYTHONPATH=src python3 -m hummer_obd.scan \
+        --module 17 --priority 14 --start 2400 --end 2400 --confirm
+)
+```
+
+The exit trap attempts to restore the recorder after success or a normal
+scanner error; it cannot survive node power loss or SIGKILL. Always verify
+`systemctl is-active hummer-drive` afterward. Do not clear DTCs if a scan stops
+on one. Leave Bluetooth binding/watchdog services alone. Never use `--confirm`
+on a moving vehicle, even though the scanner also checks speed itself.
+
+Use the same command plus `--resume --confirm` to continue an interrupted
+range. An existing state cannot be overwritten by starting without `--resume`.
+Each module/priority/range has its own `.state.json` and `.raw.jsonl`; for example
+`module-17-priority-14-2400-24FF.state.json`. A different range is a separate
+experiment, not a continuation. Delay, timeout and chunk size can be changed on
+resume without changing the recorded scope.
+
+`--output-dir` may select a subdirectory **under the current checkout's
+`evidence/scans/` only**, with symlinks refused. New files are private (0600).
+The raw transcript is append-only and includes `did_result` events containing
+the full payload and candidate scalings, as well as byte-exact TX/RX records.
+Each result is flushed/fsynced before its atomic resume cursor advances. After
+a crash between those operations the last request may repeat; a completed
+result is never skipped merely because its decoded value looked uninteresting.
+Do not print/publish raw logs: a full scan includes identification DIDs such as
+`F190`, which may contain a VIN. Console output contains status, not payloads.
+
+Safety checks use the unchanged ordinary gate on the same locked physical
+port; the scan gate itself still refuses `010D`, `03`, `07` and `0A`.
+`010D` from `17` at `18` must return zero before every DID. Missing speed is
+not zero — service 01 can sleep even while charging (CAN_PRIORITY.md), in
+which case this scanner correctly refuses to proceed. No alternate speed
+source, ignition/session command or override is attempted.
+
+DTC checks address `45` at `18` before the range, every `--chunk-size` reads
+(1–32), and after normal completion or service-not-supported. Even an existing
+DTC prevents the scan. A completed all-zero response is required for all three
+services; absence or malformed counts are not a clean bill of health. On an
+unsafe stop (motion, bus failure, silence, DTC, interruption), **no further
+requests** are sent, including postflight reads. The aborted state explicitly
+records that final bracketing was not completed. Resume always re-establishes
+the guards; a durable `11` finding cannot resume into more DIDs at that module.
+
+Only complete, header-attributed classical-CAN responses are accepted. An
+unaccompanied `78` does not advance the cursor; up to three pending frames may
+precede a terminal response in the same adapter transaction. The first `21`
+(busyRepeatRequest) stops the run rather than retrying toward a storm. Locked
+or other-session responses are recorded, never pursued. `--delay-ms` is bounded
+to 50–2000 and `--timeout` to 0.1–10 seconds. Requests are strictly serial; the
+extra speed/addressing/DTC traffic is included in pacing. Measure throughput
+on the first small range rather than extrapolating a bare-loop request rate.
+
+### Acceptance and interpreting hits
+
+The hardware-free acceptance suite is `python3 -m pytest -q`; scanner-specific
+coverage is in `tests/test_scan.py` and gate isolation in `tests/test_safety.py`.
+Generated access documentation is checked with
+`PYTHONPATH=src python3 -m hummer_obd.access --check`.
+
+A positive response establishes only that a payload was returned at this
+module/priority/state. No units or new recorder fields are inferred. Keep
+separate timestamped observations for deliberate parked door/HVAC changes and
+repeat only the candidate DID in fresh, bounded experiments. Motor-speed
+correlation cannot be established by this parked-only scanner. Do not drive
+with it running to obtain variation.
+
+`hummer-obd-decode` currently consumes **session CSVs**, not scanner JSONL, and
+its current CSV reader preserves only known raw columns. Feeding it a raw scan
+log is not a validation workflow. New-hit ingestion/alignment and independent
+observable-state cross-validation remain a follow-up after actual hits exist;
+do not promote a DID to `ENHANCED_READ_DIDS`, `drive.py`, or the confidence
+catalogue before that work. Candidate scalings alone are not evidence.
+
 ## 9. What this does not change
 
-- The unattended collector and `hummer-drive` recorder still go through
-  `validate_command`, which still refuses service 22. Nothing that runs without
-  a person present gains any new capability.
+- The collector still uses `validate_command`, which refuses service 22.
+  The existing `hummer-drive` recorder uses `validate_supervised_command`, the
+  union of ordinary reads and the **exact** enhanced DID allowlist. Neither
+  acquires the new scan gate or any new identifier from this change.
 - `ENHANCED_READ_DIDS` still governs what the recorder *logs*; an identifier
   the scan discovers is added there (and decoded) only after it is
   cross-validated on this vehicle.
