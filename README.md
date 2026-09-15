@@ -369,6 +369,10 @@ requires the same module, priority, identifier range and output directory.
 The guard traffic makes a full-space scan much slower than a bare DID loop;
 use small attended ranges rather than assuming it will finish in one charge.
 
+Deploy just this feature with `scripts/deploy.sh --scan-only`, or preview it
+with `--scan-only --dry-run`. This preserves node-local dashboard/configuration
+changes, copies no runtime data, and never stops or restarts a service.
+
 ### Hosting the page on Home Assistant
 
 The node is a Pi Zero 2 W. Rendering a page for a browser it cannot see is not

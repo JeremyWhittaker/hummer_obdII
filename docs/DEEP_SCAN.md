@@ -244,8 +244,11 @@ session in progress (rows already written are kept); it does not touch the
 vehicle. The RFCOMM bind (`hummer-rfcomm.service`) and the Bluetooth watchdog
 (`hummer-btwatch`) stay as they are.
 
-Deploy code to the node with `scripts/deploy.sh` (rsyncs source; never restarts
-services, never ships secrets or raw logs). Run the scan under the node's
+Deploy this feature with `scripts/deploy.sh --scan-only` (preview with
+`--scan-only --dry-run`). Its explicit file list preserves node-local dashboard
+and configuration changes; it never deletes files, restarts services, or ships
+secrets/raw logs. The default, full `scripts/deploy.sh` remains available for a
+deliberate whole-source deployment. Run the scan under the node's
 `PYTHONPATH=…/src` the same way the other tools run. Keep the truck **plugged
 in to charge** during a scan so the multi-hour bus activity does not draw down
 the 12 V battery, and keep it **parked**.
@@ -330,6 +333,7 @@ on the first small range rather than extrapolating a bare-loop request rate.
 
 The hardware-free acceptance suite is `python3 -m pytest -q`; scanner-specific
 coverage is in `tests/test_scan.py` and gate isolation in `tests/test_safety.py`.
+The scanner-only deployment manifest is tested offline in `tests/test_scan_deploy.py`.
 Generated access documentation is checked with
 `PYTHONPATH=src python3 -m hummer_obd.access --check`.
 
