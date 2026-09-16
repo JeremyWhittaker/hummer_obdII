@@ -85,6 +85,21 @@ class ScanElm(ElmSimulator):
         return body
 
 
+class SilentAtzElm(ScanElm):
+    """Accept the first command but emit no bytes, as the pilot adapter did."""
+
+    def answer(self, command: str) -> str:
+        if command == "ATZ":
+            self.answers.append((command, ""))
+            # ElmSimulator calls answer() before writing its reply.  Waiting on
+            # its stop event therefore leaves the PTY completely silent until
+            # SerialTransport reaches its own bounded timeout; tearDown then
+            # releases this daemon thread without a late prompt reaching it.
+            self._stop.wait(1.0)
+            return ""
+        return super().answer(command)
+
+
 class ScanAcceptanceCase(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -215,6 +230,32 @@ class TestScanConfiguration(ScanAcceptanceCase):
 
 
 class TestWireSafetyAndLogging(ScanAcceptanceCase):
+    def test_silent_adapter_at_atz_aborts_without_follow_on_traffic(self):
+        sim = SilentAtzElm().start()
+        try:
+            state = self.run_aborted(sim, timeout=0.1)
+        finally:
+            sim.stop()
+
+        self.assertEqual(sim.received, ["ATZ"])
+        self.assertEqual(state["next_did"], 0x2400)
+        self.assertIsNone(state["last_did"])
+        self.assertEqual(state["completed_reads"], 0)
+        self.assertNotIn("010D", sim.received)
+        self.assertFalse(any(c in {"03", "07", "0A"} for c in sim.received))
+        self.assertFalse(any(c.startswith("22") for c in sim.received))
+
+        records = list(iter_records(self.raw_files()[0]))
+        io = [record for record in records if record.get("kind") == "io"]
+        self.assertEqual(
+            [decode_record(record) for record in io if record["dir"] == "tx"],
+            [b"ATZ\r"],
+        )
+        self.assertEqual(
+            [decode_record(record) for record in io if record["dir"] == "rx"],
+            [b""],
+        )
+
     def test_wire_contains_only_adapter_guards_and_selected_service_22(self):
         with self.simulator() as sim:
             state = self.run_scan(sim, start=0x2400, end=0x2402, chunk_size=2)

@@ -337,6 +337,14 @@ The scanner-only deployment manifest is tested offline in `tests/test_scan_deplo
 Generated access documentation is checked with
 `PYTHONPATH=src python3 -m hummer_obd.access --check`.
 
+The first on-node pilot stopped at adapter initialization: `ATZ` received no
+bytes before its timeout. It sent no speed, DTC or identifier requests, and
+saved an aborted state with the first identifier still pending. This establishes
+the fail-closed path, not module reachability or a clean DTC baseline. A PTY
+regression now reproduces the silent reset and asserts no follow-on traffic.
+Keep that transcript when resuming after a verified connection/state change;
+an adapter timeout does not justify disabling guards or extending a sweep.
+
 A positive response establishes only that a payload was returned at this
 module/priority/state. No units or new recorder fields are inferred. Keep
 separate timestamped observations for deliberate parked door/HVAC changes and
