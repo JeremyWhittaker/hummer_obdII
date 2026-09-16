@@ -34,6 +34,7 @@ MUST_GUARD = {
     "bt-grant.sh",
     "bt-recover.sh",
     "enable_service_control.sh",
+    "enable_agent_service_control.sh",
     "pair_obdlink.sh",
     "switch_wifi_profile.sh",
 }

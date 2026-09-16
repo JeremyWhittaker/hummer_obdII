@@ -236,10 +236,16 @@ confident unit and no cross-check is the thing to avoid, as `0x2429` (a
 ## 8. Operating the scan on the node (read-only, no secrets here)
 
 The recorder `hummer-drive.service` opens `/dev/rfcomm0` while the vehicle is
-awake, so it holds the port the scan needs. Stop it first and restart it after
-(the operator has passwordless rights for exactly these two, per the node's
-sudoers): `sudo systemctl stop hummer-drive` before a scan,
-`sudo systemctl start hummer-drive` after. Stopping the recorder ends the
+awake, so it holds the port the scan needs. Stop it first, then restore its
+intended state after the diagnostic process closes the adapter. The owner can
+install [sudo-free recorder control](../README.md#one-time-setup-recorder-control-without-sudo)
+once with `sudo bash /home/jeremy/hummer-obd/scripts/enable_agent_service_control.sh`.
+After that, the supervising agent can use
+`systemctl --no-ask-password stop hummer-drive.service` and
+`systemctl --no-ask-password start hummer-drive.service` directly as `jeremy`.
+Until it is installed and verified, the operator's existing `sudo systemctl`
+rights remain the manual fallback; agents must not invoke sudo.
+Stopping the recorder ends the
 session in progress (rows already written are kept); it does not touch the
 vehicle. The RFCOMM bind (`hummer-rfcomm.service`) and the Bluetooth watchdog
 (`hummer-btwatch`) stay as they are.
@@ -269,13 +275,18 @@ PYTHONPATH=src python3 -m hummer_obd.scan --module 17 --priority 14 --start 2400
 Only after offline acceptance, and with the vehicle **parked, plugged in and
 attended**, the operator can run this on the node. The first live check is ONE
 identifier; inspect its local transcript and guards before choosing a wider
-range. These privileged commands are for the operator, not agent execution:
+range. The example below assumes sudo-free permission is installed and the
+recorder was running beforehand. If it was already stopped, leave it stopped
+after the scan instead of using a start trap. Confirm stopped state and a free
+adapter before opening it; a successful stop request alone is not a port lock.
 
 ```bash
 cd /home/jeremy/hummer-obd || exit
 (
-    sudo systemctl stop hummer-drive || exit
-    trap 'sudo systemctl start hummer-drive' EXIT
+    systemctl --no-ask-password stop hummer-drive.service || exit
+    trap 'systemctl --no-ask-password start hummer-drive.service' EXIT
+    test "$(systemctl show --property=ActiveState --value hummer-drive.service)" = inactive || exit
+    test "$(systemctl show --property=MainPID --value hummer-drive.service)" = 0 || exit
     PYTHONPATH=src python3 -m hummer_obd.scan \
         --module 17 --priority 14 --start 2400 --end 2400 --confirm
 )
@@ -283,7 +294,8 @@ cd /home/jeremy/hummer-obd || exit
 
 The exit trap attempts to restore the recorder after success or a normal
 scanner error; it cannot survive node power loss or SIGKILL. Always verify
-`systemctl is-active hummer-drive` afterward. Do not clear DTCs if a scan stops
+`systemctl is-active hummer-drive.service` afterward and investigate a failed
+restoration rather than assuming the trap succeeded. Do not clear DTCs if a scan stops
 on one. Leave Bluetooth binding/watchdog services alone. Never use `--confirm`
 on a moving vehicle, even though the scanner also checks speed itself.
 

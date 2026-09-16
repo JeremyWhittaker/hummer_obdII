@@ -50,10 +50,13 @@ class TestScannerDeployment(unittest.TestCase):
         copied = {arg.split("/./", 1)[1] for arg in args if "/./" in arg}
         self.assertEqual(copied, {
             "src/hummer_obd/scan.py", "src/hummer_obd/safety.py", "src/hummer_obd/access.py",
-            "pyproject.toml", "pytest.ini", "README.md", "docs/DEEP_SCAN.md",
+            "pyproject.toml", "pytest.ini", "README.md", "ROADMAP.md", "docs/DEEP_SCAN.md",
             "docs/SAFETY.md", "docs/ACCESS_MATRIX.md", "tests/test_scan.py",
             "tests/test_safety.py", "tests/test_access.py", "tests/elm_simulator.py",
-            "scripts/deploy.sh",
+            "scripts/deploy.sh", "scripts/enable_agent_service_control.sh",
+            "scripts/lib/require-node.sh", "scripts/polkit/49-hummer-obd-recorder.rules",
+            "tests/test_agent_service_control.py", "tests/test_scan_deploy.py",
+            "tests/test_scripts_target_the_right_machine.py",
         })
         self.assertFalse(any("dashboard" in path or path.startswith(("config/", "evidence/", "logs/"))
                              for path in copied))

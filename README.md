@@ -1376,8 +1376,9 @@ Scripts here fall into three groups, and the difference matters because most
 of them run `sudo`:
 
 - **Run on the node.** `bootstrap_pi.sh`, `bt-grant.sh`, `bt-recover.sh`,
-  `enable_service_control.sh`, `pair_obdlink.sh`, `switch_wifi_profile.sh`.
-  These change systemd units, `/etc/sudoers.d`, `/etc/default`, kernel modules
+  `enable_service_control.sh`, `enable_agent_service_control.sh`,
+  `pair_obdlink.sh`, `switch_wifi_profile.sh`.
+  These change systemd units, `/etc/sudoers.d`, `/etc/polkit-1/rules.d`, `/etc/default`, kernel modules
   or Wi-Fi profiles on whatever machine invokes them. Each one sources
   `scripts/lib/require-node.sh` and calls `require_node` before touching
   anything; on a machine that is not a Raspberry Pi it prints what it would
@@ -1406,6 +1407,65 @@ into one of the three groups — a new script cannot be added without someone
 deciding which machine it may configure — and asserts the guard is called
 *before* the first mutation, since writing first and checking afterwards is
 the exact failure it replaces.
+
+### One-time setup: recorder control without sudo
+
+To let the supervising agent handle recorder handovers over SSH as `jeremy`,
+deploy with `scripts/deploy.sh --scan-only`, then have the **operator run this
+once on the Pi**:
+
+```bash
+sudo bash /home/jeremy/hummer-obd/scripts/enable_agent_service_control.sh
+```
+
+After installation, these are ordinary user commands, with no sudo or password
+prompt. Stop alone leaves the recorder stopped; do not run start until the
+diagnostic process has closed the adapter:
+
+```bash
+systemctl --no-ask-password stop hummer-drive.service
+systemctl is-active hummer-drive.service  # inactive is expected after stop (exit 3)
+# Only after the diagnostic run releases the port:
+systemctl --no-ask-password start hummer-drive.service
+```
+
+The opt-in polkit rule grants the `jeremy` account (including its SSH processes)
+only the `start` and `stop` verbs on the exact `hummer-drive.service` unit.
+It adds no direct restart, unit-editing, enable/disable, daemon-reload or
+other-unit authorization. Existing administrator/sudo policies are untouched.
+This is standard systemd unit/verb authorization, **not an exact-command
+sandbox**: systemd does not expose job-mode arguments to this rule, and normal
+dependency effects still apply (starting the recorder can start its required
+RFCOMM binding). Agents must use the plain commands above, never custom job
+modes or direct control of dependencies. See the
+[systemd authorization implementation](https://github.com/systemd/systemd/blob/v257/src/core/dbus-util.c)
+for the exposed unit/verb fields.
+
+The installer checks the Pi guard, root account, loaded recorder identity and
+its `User=jeremy`, active polkit, reviewed rule bytes and directory ownership.
+It atomically installs one root-owned `0644` rule, refuses symlinks or differing
+existing rules, and is a no-op when the same correctly owned rule is present.
+It never changes service state, vehicle permissions, configuration or sudoers.
+`bash scripts/enable_agent_service_control.sh --check` checks prerequisites
+without root or installation; it does **not** prove installed authorization.
+The shared `HUMMER_I_AM_THE_NODE=1` guard override exists for deliberate test
+use; leave it unset for the real installation. Polkit
+[reloads rule changes automatically](https://polkit.pages.freedesktop.org/polkit/polkit.8.html),
+so no reboot or restart is needed. This is separate from the older, broader
+`enable_service_control.sh`; do not use that script for this setup.
+
+To revoke this added permission, the operator can remove just its rule on the
+Pi; this does not stop or start the recorder or revoke pre-existing rights:
+
+```bash
+sudo rm -- /etc/polkit-1/rules.d/49-hummer-obd-recorder.rules
+```
+
+Permission installation is separate from vehicle testing: every scan still
+requires opt-in, confirmed zero speed, DTC checks and all fail-closed guards.
+Verify stop completion and a free adapter before scanning, and verify the
+recorder's intended state afterward. Automated prior-state restoration remains
+tracked in [ROADMAP.md](ROADMAP.md#todo-agent-operated-recorder-handover).
 
 ## Development quick start
 

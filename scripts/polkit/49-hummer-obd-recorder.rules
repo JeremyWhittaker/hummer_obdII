@@ -1,0 +1,11 @@
+// Opt-in, node-local permission for recorder handovers. Starting the recorder
+// initiates its existing reads; no new diagnostic-command or device permission
+// is granted here. Other users, units and verbs retain their existing policy.
+polkit.addRule(function(action, subject) {
+    if (action.id === "org.freedesktop.systemd1.manage-units" &&
+        subject.user === "jeremy" &&
+        action.lookup("unit") === "hummer-drive.service" &&
+        (action.lookup("verb") === "start" || action.lookup("verb") === "stop")) {
+        return polkit.Result.YES;
+    }
+});

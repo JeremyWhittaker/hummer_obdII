@@ -31,11 +31,14 @@ no unattended path can reach. **This is the current front of the project.**
 
 ### TODO: agent-operated recorder handover
 
-- [ ] Let the supervising agent stop and start **only** `hummer-drive.service`
-  for an explicitly authorized diagnostic run. Reuse the node's exact-command
-  passwordless service rights; do not add wildcard sudo or grant control of
-  unrelated services. The current no-sudo agent instruction still applies
-  until Jeremy explicitly approves this narrowly scoped policy exception.
+- [x] Build opt-in, sudo-free `hummer-drive.service` start/stop authorization
+  for the `jeremy` account: `scripts/enable_agent_service_control.sh` and its
+  exact-unit/verb polkit rule, with offline policy/installer tests. Jeremy
+  requested this setup and will perform the one root installation; the agent
+  must not install it with sudo. **Installation and real authorization still
+  require on-node verification.** No direct control of unrelated units is
+  added; normal dependencies and systemd job-mode limitations are documented
+  in [README.md](README.md#one-time-setup-recorder-control-without-sudo).
 - [ ] Add a tested handover helper that verifies the recorder stopped and the
   adapter port is free before scanning, records the prior recorder state, and
   restores/verifies that state on normal completion, abort, or interruption.
