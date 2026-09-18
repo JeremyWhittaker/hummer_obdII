@@ -360,6 +360,12 @@ while driving. See the exact operating procedure and abort rules in
 
 Speed must positively read zero before every identifier. DTC reads from module
 45 bracket the run and every 16 identifiers (configurable from 1 to 32).
+
+To turn hits into validated signals, `--watch DID[,DID...]` re-reads a candidate
+list over several passes while you deliberately change something parked (a
+door, the lights, the climate), and reports which identifiers changed at which
+pass, never their values. Startup waits out the adapter's late duplicate reset
+banner before any strict reply check; both are described in section 8.
 Silence, malformed replies, the first busy response, a DTC, or motion stop the
 run. It never opens a diagnostic session or tries security access.
 
