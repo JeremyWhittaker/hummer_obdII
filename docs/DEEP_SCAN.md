@@ -374,7 +374,8 @@ PYTHONPATH=src python3 -m hummer_obd.scan --module 40 \
 
 A DID that flips with the door and back again is a lead worth decoding; it is
 still unvalidated until the flip repeats in a fresh experiment and nothing else
-explains it.
+explains it. The first such leads, and the public labels checked against them,
+are in [SOURCING_2026-09-18.md](SOURCING_2026-09-18.md).
 
 ### Acceptance and interpreting hits
 
