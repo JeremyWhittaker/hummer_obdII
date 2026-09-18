@@ -357,6 +357,25 @@ and a second banner followed 0.83–0.91 s later — which, read as the answer t
 the scanner neither assumes a throwaway command is needed nor sends one. The
 recorder never tripped on this because it does not inspect its setup replies.
 
+**Watching candidates during a deliberate state change.** Once a range has
+produced hits, `--watch DID[,DID...]` re-reads up to 64 of them at one module
+over `--passes` (1–120), `--pass-interval` seconds apart (0–300), under the same
+gate, startup, speed-before-every-read and DTC bracketing. It has no resume
+cursor — an observation is repeated, never continued — and each run writes its
+own private `watch-<module>-<priority>-<label>-<utc>.raw.jsonl`. The console
+prints pass start times and which identifiers changed at which pass, never their
+values. For example, with the driver's door closed at pass 1, opened before
+pass 2 and closed again before pass 3:
+
+```bash
+PYTHONPATH=src python3 -m hummer_obd.scan --module 40 \
+    --watch 40E5,4127,434F --passes 3 --pass-interval 15 --label driver-door --confirm
+```
+
+A DID that flips with the door and back again is a lead worth decoding; it is
+still unvalidated until the flip repeats in a fresh experiment and nothing else
+explains it.
+
 ### Acceptance and interpreting hits
 
 The hardware-free acceptance suite is `python3 -m pytest -q`; scanner-specific

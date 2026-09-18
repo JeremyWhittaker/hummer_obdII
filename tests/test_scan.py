@@ -636,6 +636,92 @@ class TestStartupSynchronization(ScanAcceptanceCase):
         self.assertEqual(state["status"], "complete")
 
 
+class ChangingElm(ScanElm):
+    """One identifier's payload flips after *flip_after* reads of it."""
+
+    def __init__(self, did: int, flip_after: int, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.did, self.flip_after, self.reads = did, flip_after, 0
+
+    def answer(self, command: str) -> str:
+        if command == f"22{self.did:04X}":
+            self.reads += 1
+            payload = "AA" if self.reads <= self.flip_after else "BB"
+            self.did_answers[self.did] = _positive(self.did, payload)
+        return super().answer(command)
+
+
+class TestWatch(ScanAcceptanceCase):
+    DIDS = (0x2414, 0x2429, 0x242B)
+
+    def watch(self, sim, dids=DIDS, **kwargs):
+        kwargs.setdefault("passes", 3)
+        kwargs.setdefault("interval_s", 0)
+        config = self.config(sim.device)
+        return scan.run_watch(config, dids, say=lambda _m: None,
+                              sleeper=lambda _d: None, **kwargs)
+
+    def test_watch_reports_which_identifier_changed_and_when(self):
+        sim = ChangingElm(0x2429, flip_after=1).start()
+        try:
+            summary = self.watch(sim, label="driver-door")
+        finally:
+            sim.stop()
+        self.assertEqual(summary["status"], "complete")
+        self.assertEqual(summary["reads"], 9)
+        self.assertEqual(summary["changes"], {"2429": [2]})
+
+    def test_watch_sends_only_guards_adapter_and_listed_reads(self):
+        with self.simulator() as sim:
+            self.watch(sim, passes=2)
+        reads = [c for c in sim.received if c.startswith("22")]
+        self.assertEqual(reads, [f"22{d:04X}" for d in self.DIDS] * 2)
+        for command in sim.received:
+            with self.subTest(command=command):
+                self.assertTrue(command.startswith("AT") or command in scan.GUARD_READS
+                                or command in reads, command)
+        # speed before every read, plus before DTCs and postflight
+        self.assertEqual(sim.received.count("010D"), len(self.DIDS) * 2 + 2)
+
+    def test_watch_stops_on_motion_without_further_traffic(self):
+        speeds = ["18DAF11703410D00"] * 3 + ["18DAF11703410D05"]
+        sim = ScanElm(speed_answers=speeds).start()
+        try:
+            with self.assertRaises(scan.ScanAborted):
+                self.watch(sim)
+        finally:
+            sim.stop()
+        self.assertEqual(sim.received[-1], "010D")
+        records = list(iter_records(next((Path.cwd() / "evidence/scans").glob("watch-*.raw.jsonl"))))
+        aborted = [r for r in records if r.get("event") == "watch_aborted"]
+        self.assertEqual(len(aborted), 1)
+        self.assertIn("moving", aborted[0]["payload"]["reason"])
+
+    def test_invalid_watch_requests_are_refused_before_any_io(self):
+        with self.simulator() as sim:
+            for kwargs in ({"dids": ()}, {"dids": (0x2429, 0x2429)},
+                           {"dids": tuple(range(65))}, {"dids": (0x10000,)},
+                           {"passes": 0}, {"passes": 121}, {"interval_s": -1},
+                           {"label": "../x"}, {"label": ""}):
+                with self.subTest(kwargs=kwargs):
+                    with self.assertRaises(ValueError):
+                        self.watch(sim, **kwargs)
+            self.assertEqual(sim.received, [])
+
+    def test_watch_cli_dry_run_and_resume_refusal(self):
+        output = io.StringIO()
+        with mock.patch.object(scan, "ScanTransport") as serial:
+            with redirect_stdout(output), redirect_stderr(output):
+                rc = scan.main(["--module", "40", "--watch", "40E5,4127", "--label", "door"])
+        self.assertEqual(rc, 0)
+        serial.assert_not_called()
+        self.assertFalse((self.root / "evidence").exists())
+        self.assertIn("40E5 4127", output.getvalue())
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                scan.main(["--watch", "2414", "--resume"])
+
+
 class TestUnsolicitedBytes(unittest.TestCase):
     """Stray bytes are logged and refused, never silently discarded."""
 

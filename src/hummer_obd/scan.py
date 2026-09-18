@@ -542,6 +542,100 @@ def run_scan(config: ScanConfig, *, resume=False, say=print,
                 raise ScanAborted(state["reason"]) from exc
 
 
+MAX_WATCH_DIDS = 64
+MAX_WATCH_PASSES = 120
+_LABEL = re.compile(r"[A-Za-z0-9_-]{1,40}")
+
+
+def _watch_key(record: dict):
+    return record["status"], record.get("payload_hex") or record.get("nrc")
+
+
+def run_watch(config: ScanConfig, dids, *, passes: int = 3, interval_s: float = 5.0,
+              label: str = "watch", say=print,
+              sleeper: Callable[[float], None] = time.sleep) -> dict:
+    """Re-read explicit candidate identifiers across passes while a person
+    deliberately changes a parked state (DEEP_SCAN.md section 8).
+
+    Same gate, startup, speed-before-every-read and DTC bracketing as a scan;
+    no resume cursor, because an observation is repeated, never continued.
+    The console names which identifiers changed and at which pass -- never
+    their values. A change is a lead to cross-check, not a decoded signal.
+    """
+    dids = tuple(dids)
+    if not 1 <= len(dids) <= MAX_WATCH_DIDS or len(set(dids)) != len(dids):
+        raise ValueError(f"watch 1-{MAX_WATCH_DIDS} distinct identifiers")
+    if any(type(did) is not int or not 0 <= did <= 0xFFFF for did in dids):
+        raise ValueError("watch identifiers must be 0000-FFFF")
+    if type(passes) is not int or not 1 <= passes <= MAX_WATCH_PASSES:
+        raise ValueError(f"passes must be between 1 and {MAX_WATCH_PASSES}")
+    if not math.isfinite(interval_s) or not 0 <= interval_s <= 300:
+        raise ValueError("pass interval must be between 0 and 300 seconds")
+    if not isinstance(label, str) or not _LABEL.fullmatch(label):
+        raise ValueError("label must be 1-40 letters, digits, '-' or '_'")
+    directory = _directory(config)
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    raw_path = directory / f"watch-{config.module}-{config.priority}-{label}-{stamp}.raw.jsonl"
+    meta = {"schema": 1, "mode": "watch", "module": config.module,
+            "priority": config.priority, "dids": [f"{d:04X}" for d in dids],
+            "passes": passes, "label": label}
+    with _output_lock(directory):
+        fd = os.open(raw_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        os.close(fd)
+        summary = {**meta, "status": "running", "reads": 0, "changes": {}}
+        with RawLog(raw_path, f"watch-{uuid4().hex}", meta=meta) as log:
+            try:
+                with ScanTransport(config.device, log, read_timeout_s=min(0.1, config.timeout),
+                                   command_timeout_s=config.timeout) as transport:
+                    runner = _Runner(transport, config, log, sleeper)
+                    runner.startup()
+                    runner.speed()
+                    runner.dtcs("before")
+                    group = address_group(config.module, config.priority)
+                    header = next(c[5:] for c in group.address if c.startswith("ATCRA"))
+                    last = {}
+                    for number in range(1, passes + 1):
+                        log.write_event("watch_pass", {"pass": number})
+                        say(f"pass {number}/{passes} at {time.strftime('%H:%M:%S')}")
+                        changed = []
+                        for did in dids:
+                            runner.speed()
+                            runner.address(group)
+                            record = _classify(runner.send(f"22{did:04X}"), did, header)
+                            record["pass"] = number
+                            log.write_event("did_result", record)
+                            summary["reads"] += 1
+                            key = _watch_key(record)
+                            if did in last and last[did] != key:
+                                changed.append(f"{did:04X}")
+                                summary["changes"].setdefault(f"{did:04X}", []).append(number)
+                            last[did] = key
+                            if record["status"] == "unsupported":
+                                raise ScanAborted("module stopped serving service 22 (7F 22 11)")
+                            if summary["reads"] % config.chunk_size == 0:
+                                runner.speed()
+                                runner.dtcs("chunk")
+                        say(f"  changed since previous pass: {' '.join(changed) or 'none'}")
+                        if number < passes and interval_s:
+                            sleeper(interval_s)
+                    runner.speed()
+                    runner.dtcs("after")
+                    summary["status"] = "complete"
+                    log.write_event("watch_finished", summary)
+                    return summary
+            except (ScanAborted, TransportError, OSError, KeyboardInterrupt) as exc:
+                summary["status"] = "aborted"
+                summary["reason"] = ("operator interrupted" if isinstance(exc, KeyboardInterrupt)
+                                     else str(exc))
+                summary["postflight"] = "not completed; no further traffic after unsafe stop"
+                log.write_event("watch_aborted", summary)
+                raise ScanAborted(summary["reason"]) from exc
+
+
+def _hex_list(text):
+    return tuple(_hex_arg(part) for part in text.split(",") if part)
+
+
 def _hex_arg(text):
     if not re.fullmatch(r"(?:0[xX])?[0-9a-fA-F]{1,4}", text):
         raise argparse.ArgumentTypeError("expected a hexadecimal identifier (0000..FFFF)")
@@ -564,8 +658,16 @@ def main(argv=None) -> int:
                         help="receive-only quiet window after the reset (0.05-5 s)")
     parser.add_argument("--output-dir", type=Path, default=Path("evidence/scans"))
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--watch", type=_hex_list, metavar="DID[,DID...]",
+                        help="re-read these identifiers across passes instead of scanning a range")
+    parser.add_argument("--passes", type=int, default=3, help="watch passes (1-120)")
+    parser.add_argument("--pass-interval", type=float, default=5,
+                        help="seconds between watch passes (0-300)")
+    parser.add_argument("--label", default="watch", help="watch experiment name, e.g. driver-door")
     parser.add_argument("--confirm", action="store_true", help="transmit; parked, plugged in, attended only")
     args = parser.parse_args(argv)
+    if args.watch is not None and args.resume:
+        parser.error("--watch observations are repeated, never resumed")
     try:
         config = ScanConfig(module=args.module,
                             priority=args.priority or ("18" if args.module in {"40", "45"} else "14"),
@@ -573,6 +675,8 @@ def main(argv=None) -> int:
                             delay_ms=args.delay_ms, timeout=args.timeout,
                             chunk_size=args.chunk_size, output_dir=args.output_dir,
                             startup_timeout=args.startup_timeout, settle_s=args.settle)
+        if args.watch is not None:
+            return _watch_main(config, args)
         directory, state_path, _ = _paths(config)
         if not args.confirm:
             state = _load_state(config, state_path, True) if args.resume else None
@@ -598,6 +702,36 @@ def main(argv=None) -> int:
     except (ScanAborted, TransportError, OSError) as exc:
         print(f"STOPPED: {exc}. Recorder restart is the operator's responsibility.", file=sys.stderr)
         return 3
+
+
+def _watch_main(config, args) -> int:
+    """Watch-mode CLI body; main() owns the REFUSED/STOPPED exit codes."""
+    if not args.confirm:
+        # Validate everything a real run would, without touching the device.
+        if not 1 <= len(args.watch) <= MAX_WATCH_DIDS or len(set(args.watch)) != len(args.watch):
+            raise ValueError(f"watch 1-{MAX_WATCH_DIDS} distinct identifiers")
+        if not 1 <= args.passes <= MAX_WATCH_PASSES:
+            raise ValueError(f"passes must be between 1 and {MAX_WATCH_PASSES}")
+        if not math.isfinite(args.pass_interval) or not 0 <= args.pass_interval <= 300:
+            raise ValueError("pass interval must be between 0 and 300 seconds")
+        if not _LABEL.fullmatch(args.label):
+            raise ValueError("label must be 1-40 letters, digits, '-' or '_'")
+        directory = _directory(config)
+        print("DRY RUN: no device opened, no files written, nothing transmitted.")
+        print(f"Watch module {config.module}, priority {config.priority}: "
+              + " ".join(f"{d:04X}" for d in args.watch))
+        print(f"{args.passes} passes, {args.pass_interval:g} s apart, label {args.label}; "
+              f"private output: {directory}")
+        print("Guards: 010D before every read; 03/07/0A before/chunk/after. Add --confirm to transmit.")
+        return 0
+    summary = run_watch(config, args.watch, passes=args.passes,
+                        interval_s=args.pass_interval, label=args.label)
+    changed = summary["changes"]
+    print(f"Watch {summary['status']}: {summary['reads']} reads; "
+          + (("changed: " + ", ".join(f"{d} at pass {'/'.join(map(str, p))}"
+                                        for d, p in sorted(changed.items())))
+             if changed else "no identifier changed") + ". Changes are unvalidated leads.")
+    return 0
 
 
 if __name__ == "__main__":
