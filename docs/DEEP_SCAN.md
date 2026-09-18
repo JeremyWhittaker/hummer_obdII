@@ -321,7 +321,11 @@ port; the scan gate itself still refuses `010D`, `03`, `07` and `0A`.
 `010D` from `17` at `18` must return zero before every DID. Missing speed is
 not zero — service 01 can sleep even while charging (CAN_PRIORITY.md), in
 which case this scanner correctly refuses to proceed. No alternate speed
-source, ignition/session command or override is attempted.
+source, ignition/session command or override is attempted. On 2026-09-18 this
+stopped two ranges when the parked truck left its ready state while the rest
+of the vehicle stayed awake; a stop now names the guard and the adapter's
+status wording (for example `speed unavailable: adapter answered 'NO DATA'`),
+never payload bytes. Wake the truck to ready and resume.
 
 DTC checks address `45` at `18` before the range, every `--chunk-size` reads
 (1–32), and after normal completion or service-not-supported. Even an existing

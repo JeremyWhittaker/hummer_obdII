@@ -219,6 +219,11 @@ def _messages(response, header: str):
     for line in lines:
         compact = "".join(line.split()).upper()
         if not re.fullmatch(r"[0-9A-F]+", compact) or len(compact) % 2:
+            # Name adapter status wording (NO DATA, CAN ERROR, STOPPED...) so a
+            # stop says what happened; anything that could be payload is not echoed.
+            text = line.upper()
+            if re.fullmatch(r"[A-Z ?:.]{1,24}", text) and not re.fullmatch(r"[A-F]+", text):
+                raise ScanAborted(f"adapter answered '{text}'")
             raise ScanAborted("unexpected adapter text (error, silence, or malformed reply)")
         if not compact.startswith(header) or len(compact) < 12:
             raise ScanAborted("reply from wrong module/address or without a CAN header")
@@ -340,7 +345,11 @@ class _Runner:
     def speed(self):
         self.address(address_group("17", "18"))
         response = self.send("010D", guard=True)
-        _, messages = _messages(response, "18DAF117")
+        try:
+            _, messages = _messages(response, "18DAF117")
+        except ScanAborted as exc:
+            # Missing speed is not zero speed; say which guard could not be proven.
+            raise ScanAborted(f"speed unavailable: {exc}; parked state not established") from exc
         if len(messages) != 1 or len(messages[0]) != 3 or messages[0][:2] != b"\x41\x0d":
             raise ScanAborted("speed unavailable or malformed; parked state not established")
         speed = messages[0][2]
@@ -352,7 +361,11 @@ class _Runner:
         self.address(address_group("45", "18"))
         for mode in ("03", "07", "0A"):
             response = self.send(mode, guard=True)
-            reply, messages = _messages(response, "18DAF145")
+            try:
+                reply, messages = _messages(response, "18DAF145")
+            except ScanAborted as exc:
+                raise ScanAborted(f"DTC service {mode} unavailable: {exc}; "
+                                  "cannot prove clean") from exc
             if (len(messages) != 1 or len(messages[0]) < 2
                     or messages[0][0] != int(mode, 16) + 0x40):
                 raise ScanAborted(f"DTC service {mode} unavailable or malformed")

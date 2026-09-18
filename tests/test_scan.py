@@ -636,6 +636,37 @@ class TestStartupSynchronization(ScanAcceptanceCase):
         self.assertEqual(state["status"], "complete")
 
 
+class TestAbortReasons(ScanAcceptanceCase):
+    """A stop says which guard failed and what the adapter said, never payload."""
+
+    def test_sleeping_drive_unit_speed_names_the_guard_and_the_status(self):
+        # Measured 2026-09-18: the truck left ready mid-scan; 010D said NO DATA.
+        with self.simulator(speed_answers=["NO DATA"]) as sim:
+            state = self.run_aborted(sim)
+        self.assertIn("speed unavailable", state["reason"])
+        self.assertIn("'NO DATA'", state["reason"])
+        self.assertFalse(any(c.startswith("22") for c in sim.received))
+
+    def test_unavailable_dtc_service_names_the_service(self):
+        class NoDtc(ScanElm):
+            def answer(self, command):
+                return "CAN ERROR" if command == "07" else super().answer(command)
+
+        sim = NoDtc().start()
+        try:
+            state = self.run_aborted(sim)
+        finally:
+            sim.stop()
+        self.assertIn("DTC service 07 unavailable", state["reason"])
+        self.assertIn("'CAN ERROR'", state["reason"])
+
+    def test_payload_like_text_is_not_echoed_into_the_reason(self):
+        with self.simulator(speed_answers=["41 0D 00 ZZ"]) as sim:
+            state = self.run_aborted(sim)
+        self.assertIn("speed unavailable", state["reason"])
+        self.assertNotIn("41", state["reason"])
+
+
 class ChangingElm(ScanElm):
     """One identifier's payload flips after *flip_after* reads of it."""
 
