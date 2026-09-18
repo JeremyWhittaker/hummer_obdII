@@ -341,6 +341,22 @@ to 50–2000 and `--timeout` to 0.1–10 seconds. Requests are strictly serial; 
 extra speed/addressing/DTC traffic is included in pacing. Measure throughput
 on the first small range rather than extrapolating a bare-loop request rate.
 
+**Startup synchronization.** The adapter reset gets its own budget
+(`--startup-timeout`, default 10 s, bounded 0.1–30) and is followed by a
+receive-only settle window (`--settle`, default 1.5 s, bounded 0.05–5) in which
+the scanner writes nothing and logs every byte. Silence, or exactly one more
+identity banner (optionally after the `ATZ` echo) with one prompt, is accepted;
+anything else stops the run before the first `ATE0`. Every later reply keeps
+its strict check. Bytes that arrive unprompted before any other command are
+logged and stop the run, instead of being silently cleared and letting the next
+reply be attributed to the wrong command. This follows live measurements on
+2026-09-15/16: the first exchange after the tty opened took 4.24 s (recorder)
+and 4.44 s (scanner), returned an identity banner without the command's echo,
+and a second banner followed 0.83–0.91 s later — which, read as the answer to
+`ATE0`, aborted the run. Why the link produces two banners is not established;
+the scanner neither assumes a throwaway command is needed nor sends one. The
+recorder never tripped on this because it does not inspect its setup replies.
+
 ### Acceptance and interpreting hits
 
 The hardware-free acceptance suite is `python3 -m pytest -q`; scanner-specific
@@ -356,6 +372,9 @@ the fail-closed path, not module reachability or a clean DTC baseline. A PTY
 regression now reproduces the silent reset and asserts no follow-on traffic.
 Keep that transcript when resuming after a verified connection/state change;
 an adapter timeout does not justify disabling guards or extending a sweep.
+Later pilots on the same cursor produced a bare echo and then a duplicate
+banner on `ATE0`; `TestStartupSynchronization` reproduces the duplicate and
+fails against the pre-fix scanner.
 
 A positive response establishes only that a payload was returned at this
 module/priority/state. No units or new recorder fields are inferred. Keep

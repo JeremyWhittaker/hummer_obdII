@@ -33,6 +33,8 @@ MODULES = ("17", "1D", "1E", "40", "28", "CB", "45", "CD")
 GUARD_READS = frozenset({"010D", "03", "07", "0A"})
 INIT = ("ATZ", "ATE0", "ATL0", "ATS0", "ATH1", "ATAL", "ATSP7", "ATST96")
 NOTES = {0x22, 0x33, 0x34, 0x7E, 0x7F}
+IDENTITY = ("ELM327", "OBDLINK", "STN")
+assert INIT[0] == "ATZ", "startup synchronization assumes the reset comes first"
 
 
 class ScanAborted(RuntimeError):
@@ -50,6 +52,12 @@ class ScanConfig:
     timeout: float = 3.0
     chunk_size: int = 16
     output_dir: Path = Path("evidence/scans")
+    # The first exchange after the tty opens has measured 4.2-4.4 s on this
+    # link (DEEP_SCAN.md section 8), so the reset gets its own budget.
+    startup_timeout: float = 10.0
+    # Receive-only quiet window after the reset reply; a delayed second
+    # identity banner arrived 0.83-0.91 s after the first.
+    settle_s: float = 1.5
 
     def __post_init__(self):
         if self.module not in MODULES or self.priority not in {"14", "18"}:
@@ -63,6 +71,10 @@ class ScanConfig:
             raise ValueError("timeout must be finite and between 0.1 and 10 seconds")
         if type(self.chunk_size) is not int or not 1 <= self.chunk_size <= 32:
             raise ValueError("DTC chunk size must be between 1 and 32 identifiers")
+        if not math.isfinite(self.startup_timeout) or not 0.1 <= self.startup_timeout <= 30:
+            raise ValueError("startup timeout must be finite and between 0.1 and 30 seconds")
+        if not math.isfinite(self.settle_s) or not 0.05 <= self.settle_s <= 5:
+            raise ValueError("settle window must be finite and between 0.05 and 5 seconds")
 
 
 def address_group(module: str, priority: str) -> AddressGroup:
@@ -110,6 +122,7 @@ class ScanTransport(SerialTransport):
 
     def send(self, command, timeout=None):
         with self._send_lock:
+            self._refuse_unsolicited(command)
             return super().send(command, timeout)
 
     def send_guard(self, command, timeout=None):
@@ -117,12 +130,71 @@ class ScanTransport(SerialTransport):
         if safe not in GUARD_READS:
             raise UnsafeCommandError("scan guard permits only 010D, 03, 07, 0A")
         with self._send_lock:
+            self._refuse_unsolicited(safe)
             previous = self._validator
             self._validator = validate_command
             try:
                 return super().send(safe, timeout)
             finally:
                 self._validator = previous
+
+    def _refuse_unsolicited(self, command):
+        """Log bytes nobody asked for, then refuse to send after them.
+
+        SerialTransport.send() clears its input buffer before writing, which
+        is right for the recorder but would let a late reply vanish unlogged
+        here and the next reply be read as the answer to the wrong command.
+        Only the reset may follow them: ATZ is what resynchronizes.
+        """
+        waiting = getattr(self._serial, "in_waiting", 0) or 0
+        if not waiting:
+            return
+        stray = self._serial.read(waiting)
+        self.rawlog.log_rx(stray, note=f"unsolicited bytes before {command}")
+        if str(command).strip().upper() != "ATZ":
+            raise ScanAborted("unsolicited adapter output before a command; "
+                              "replies would be misattributed")
+
+    def observe(self, quiet_s, max_s, note):
+        """Receive, never transmit, until the line is quiet for *quiet_s*.
+
+        Every byte is logged before it is interpreted, as send() does.
+        Returns the bytes and whether the line went quiet within *max_s*.
+        """
+        with self._send_lock:
+            if not self.is_open:
+                raise TransportError("transport is not open")
+            buffer = bytearray()
+            started = last = time.monotonic()
+            quiet = False
+            while True:
+                now = time.monotonic()
+                if now - last >= quiet_s:
+                    quiet = True
+                    break
+                if now - started >= max_s:
+                    break
+                try:
+                    chunk = self._serial.read(1)
+                    waiting = getattr(self._serial, "in_waiting", 0) or 0
+                    if chunk and waiting:
+                        chunk += self._serial.read(waiting)
+                except Exception as exc:
+                    self.rawlog.log_rx(bytes(buffer), note=f"{note}: partial before read error")
+                    raise TransportError(f"read failed during {note}: {exc}") from exc
+                if chunk:
+                    buffer.extend(chunk)
+                    last = time.monotonic()
+            self.rawlog.log_rx(bytes(buffer), note=note if quiet else f"{note} (still receiving)")
+            return bytes(buffer), quiet
+
+
+def _reset_banner(data: bytes) -> bool:
+    """Exactly one adapter identity line, optionally after the ATZ echo, then one prompt."""
+    if data.count(b">") != 1 or not data.rstrip().endswith(b">"):
+        return False
+    lines = [line for line in parse_reply(data).lines if line.upper() != "ATZ"]
+    return len(lines) == 1 and lines[0].upper().startswith(IDENTITY)
 
 
 def _messages(response, header: str):
@@ -220,12 +292,37 @@ class _Runner:
         self.sleeper = sleeper
         self.sent = False
 
-    def send(self, command, *, guard=False):
+    def send(self, command, *, guard=False, timeout=None):
         if self.sent:
             self.sleeper(self.config.delay_ms / 1000)
         self.sent = True
         method = self.transport.send_guard if guard else self.transport.send
-        return method(command, timeout=self.config.timeout)
+        return method(command, timeout=timeout or self.config.timeout)
+
+    def startup(self):
+        """Reset the adapter and let the link settle before trusting replies.
+
+        Measured on this link: the first exchange after the tty opens took
+        4.2-4.4 s and returned an identity banner without the command's echo,
+        and a second banner followed ~0.9 s later -- which, read as the reply
+        to ATE0, aborted the run. So the reset gets its own budget and the
+        line is then observed, never written, until quiet. Silence or exactly
+        one more identity banner is accepted; anything else stops the run.
+        Every later reply keeps its strict check.
+        """
+        response = self.send("ATZ", timeout=self.config.startup_timeout)
+        if response.timed_out:
+            raise ScanAborted("adapter setup timed out")
+        if not _reset_banner(response.data):
+            raise ScanAborted("adapter rejected setup command ATZ")
+        extra, quiet = self.transport.observe(
+            self.config.settle_s, self.config.startup_timeout, "post-reset settle")
+        if not quiet:
+            raise ScanAborted("adapter output did not settle after reset")
+        if extra and not _reset_banner(extra):
+            raise ScanAborted("unexpected adapter output after reset")
+        for command in INIT[1:]:
+            self.adapter(command)
 
     def adapter(self, command):
         response = self.send(command)
@@ -233,11 +330,7 @@ class _Runner:
             raise ScanAborted("adapter setup timed out")
         reply = parse_reply(response.data)
         lines = [line for line in reply.lines if line.upper() != command]
-        if command == "ATZ":
-            valid = len(lines) == 1 and lines[0].upper().startswith(("ELM327", "OBDLINK", "STN"))
-        else:
-            valid = lines == ["OK"]
-        if not valid or not response.data.rstrip().endswith(b">"):
+        if lines != ["OK"] or not response.data.rstrip().endswith(b">"):
             raise ScanAborted(f"adapter rejected setup command {command}")
 
     def address(self, group):
@@ -398,8 +491,7 @@ def run_scan(config: ScanConfig, *, resume=False, say=print,
                 with ScanTransport(config.device, log, read_timeout_s=min(0.1, config.timeout),
                                    command_timeout_s=config.timeout) as transport:
                     runner = _Runner(transport, config, log, sleeper)
-                    for command in INIT:
-                        runner.adapter(command)
+                    runner.startup()
                     runner.speed()
                     runner.dtcs("before")
                     group = address_group(config.module, config.priority)
@@ -466,6 +558,10 @@ def main(argv=None) -> int:
     parser.add_argument("--delay-ms", type=float, default=75)
     parser.add_argument("--timeout", type=float, default=3)
     parser.add_argument("--chunk-size", type=int, default=16)
+    parser.add_argument("--startup-timeout", type=float, default=10,
+                        help="budget for the adapter reset reply (0.1-30 s)")
+    parser.add_argument("--settle", type=float, default=1.5,
+                        help="receive-only quiet window after the reset (0.05-5 s)")
     parser.add_argument("--output-dir", type=Path, default=Path("evidence/scans"))
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--confirm", action="store_true", help="transmit; parked, plugged in, attended only")
@@ -475,7 +571,8 @@ def main(argv=None) -> int:
                             priority=args.priority or ("18" if args.module in {"40", "45"} else "14"),
                             start=args.start, end=args.end, device=args.device,
                             delay_ms=args.delay_ms, timeout=args.timeout,
-                            chunk_size=args.chunk_size, output_dir=args.output_dir)
+                            chunk_size=args.chunk_size, output_dir=args.output_dir,
+                            startup_timeout=args.startup_timeout, settle_s=args.settle)
         directory, state_path, _ = _paths(config)
         if not args.confirm:
             state = _load_state(config, state_path, True) if args.resume else None
@@ -485,6 +582,8 @@ def main(argv=None) -> int:
             print("Addressing: " + " ".join((group.priority, *group.address)))
             print(f"Reads: 22XXXX only; {config.end - config.start + 1} identifiers; delay {config.delay_ms:g} ms")
             print("Guards: 010D from 17/18 before every DID; 03/07/0A from 45/18 before/chunk/after.")
+            print(f"Startup: ATZ budget {config.startup_timeout:g} s, then {config.settle_s:g} s "
+                  "receive-only settle; one late identity banner tolerated, nothing else.")
             print(f"DTC chunk: {config.chunk_size}; private output: {directory}")
             if state:
                 print(f"Resume cursor: {state['next_did']:04X}; status: {state['status']}")

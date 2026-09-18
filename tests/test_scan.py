@@ -11,6 +11,7 @@ import json
 import io
 import os
 import tempfile
+import threading
 import unittest
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -100,6 +101,35 @@ class SilentAtzElm(ScanElm):
         return super().answer(command)
 
 
+class LateBannerElm(ScanElm):
+    """Answer ATZ, then write *late* unprompted, as the adapter did live.
+
+    Measured 2026-09-16: the first reply after the tty opened was an identity
+    banner with no echo, and a second banner arrived 0.83 s later.  Read as
+    the reply to ATE0, it aborted the run.
+    """
+
+    def __init__(self, late: bytes, delay_s: float = 0.1, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.late = late
+        self.delay_s = delay_s
+
+    def answer(self, command: str) -> str:
+        if command == "ATZ":
+            timer = threading.Timer(self.delay_s, self._write_late)
+            timer.daemon = True
+            timer.start()
+            self.answers.append((command, "ELM327 v1.4b"))
+            return "ELM327 v1.4b"
+        return super().answer(command)
+
+    def _write_late(self) -> None:
+        try:
+            os.write(self.master, self.late)
+        except OSError:
+            pass
+
+
 class ScanAcceptanceCase(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -130,6 +160,8 @@ class ScanAcceptanceCase(unittest.TestCase):
             "timeout": 0.5,
             "chunk_size": 16,
             "output_dir": Path("evidence/scans"),
+            "startup_timeout": 0.5,
+            "settle_s": 0.05,
         }
         values.update(changes)
         return scan.ScanConfig(**values)
@@ -173,6 +205,9 @@ class TestScanConfiguration(ScanAcceptanceCase):
             {"start": 0x2401, "end": 0x2400},
             {"delay_ms": 49.999}, {"timeout": 0}, {"timeout": 301},
             {"chunk_size": 0}, {"chunk_size": 33},
+            {"startup_timeout": 0.05}, {"startup_timeout": 31},
+            {"startup_timeout": float("nan")},
+            {"settle_s": 0.01}, {"settle_s": 6}, {"settle_s": float("inf")},
         )
         for changes in invalid:
             with self.subTest(changes=changes):
@@ -299,8 +334,13 @@ class TestWireSafetyAndLogging(ScanAcceptanceCase):
         records = list(iter_records(self.raw_files()[0]))
         io = [record for record in records if record.get("kind") == "io"]
         tx = [decode_record(record) for record in io if record["dir"] == "tx"]
-        rx = [decode_record(record) for record in io if record["dir"] == "rx"]
+        settle = [decode_record(record) for record in io
+                  if record["dir"] == "rx" and record.get("note") == "post-reset settle"]
+        rx = [decode_record(record) for record in io
+              if record["dir"] == "rx" and record.get("note") != "post-reset settle"]
         self.assertEqual(tx, [(command + "\r").encode("ascii") for command in sim.received])
+        # The receive-only settle window is logged too, even when it is silent.
+        self.assertEqual(settle, [b""])
         self.assertEqual(rx, [(body + "\r\r>").encode("ascii") for _, body in sim.answers])
 
     def test_multiframe_positive_reply_is_accepted(self):
@@ -511,6 +551,140 @@ class TestResume(ScanAcceptanceCase):
                     say=lambda _m: None,
                 )
         serial.assert_not_called()
+
+
+class TestStartupSynchronization(ScanAcceptanceCase):
+    """The measured live failure, reproduced, and the strictness kept around it."""
+
+    BANNER = b"\r\rELM327 v1.4b\r\r>"
+
+    def run_late(self, late: bytes, **changes):
+        sim = LateBannerElm(late).start()
+        try:
+            return sim, self.run_scan(sim, settle_s=0.4, **changes)
+        finally:
+            sim.stop()
+
+    def rx_notes(self):
+        records = list(iter_records(self.raw_files()[0]))
+        return [(r.get("note"), decode_record(r)) for r in records
+                if r.get("kind") == "io" and r["dir"] == "rx"]
+
+    def test_late_duplicate_banner_is_absorbed_and_logged(self):
+        sim, state = self.run_late(self.BANNER)
+        self.assertEqual(state["status"], "complete")
+        self.assertEqual(sim.received[:2], ["ATZ", "ATE0"])
+        self.assertIn(("post-reset settle", self.BANNER), self.rx_notes())
+
+    def test_late_banner_with_reset_echo_is_absorbed(self):
+        late = b"ATZ\r\r\rELM327 v1.4b\r\r>"
+        _, state = self.run_late(late)
+        self.assertEqual(state["status"], "complete")
+        self.assertIn(("post-reset settle", late), self.rx_notes())
+
+    def test_quiet_line_after_reset_proceeds_normally(self):
+        with self.simulator() as sim:
+            state = self.run_scan(sim)
+        self.assertEqual(state["status"], "complete")
+        self.assertIn(("post-reset settle", b""), self.rx_notes())
+
+    def assert_stopped_after_reset(self, sim, state):
+        self.assertEqual(sim.received, ["ATZ"])
+        self.assertEqual(state["completed_reads"], 0)
+        self.assertIn("not completed", state["postflight"])
+
+    def test_anything_but_a_banner_after_reset_aborts_before_any_traffic(self):
+        for late in (b"?\r\r>", b"OK\r\r>", b"BUS ERROR\r\r>", b"ATZ\r",
+                     self.BANNER + self.BANNER, b"\r\rELM327 v1.4b\r\r"):
+            with self.subTest(late=late):
+                for path in (Path.cwd() / "evidence").rglob("*"):
+                    if path.is_file():
+                        path.unlink()
+                sim = LateBannerElm(late).start()
+                try:
+                    state = self.run_aborted(sim, settle_s=0.4)
+                finally:
+                    sim.stop()
+                self.assert_stopped_after_reset(sim, state)
+
+    def test_reset_reply_must_still_be_an_identity_banner(self):
+        class OkForReset(ScanElm):
+            def answer(self, command):
+                return "OK" if command == "ATZ" else super().answer(command)
+
+        sim = OkForReset().start()
+        try:
+            state = self.run_aborted(sim)
+        finally:
+            sim.stop()
+        self.assertEqual(sim.received, ["ATZ"])
+        self.assertIn("ATZ", state["reason"])
+
+    def test_reset_uses_its_own_budget_not_the_per_command_timeout(self):
+        # A late banner that would miss a 0.5 s budget completes within 2 s.
+        class SlowReset(ScanElm):
+            def answer(self, command):
+                if command == "ATZ":
+                    self._stop.wait(0.8)
+                return super().answer(command)
+
+        sim = SlowReset().start()
+        try:
+            state = self.run_scan(sim, timeout=0.5, startup_timeout=2.0)
+        finally:
+            sim.stop()
+        self.assertEqual(state["status"], "complete")
+
+
+class TestUnsolicitedBytes(unittest.TestCase):
+    """Stray bytes are logged and refused, never silently discarded."""
+
+    class FakeSerial:
+        is_open = True
+
+        def __init__(self, pending: bytes):
+            self.pending = pending
+            self.written = []
+
+        @property
+        def in_waiting(self):
+            return len(self.pending)
+
+        def read(self, n=1):
+            data, self.pending = self.pending[:n], self.pending[n:]
+            return data
+
+        def write(self, data):
+            self.written.append(data)
+
+    def transport(self, pending: bytes, log):
+        transport = scan.ScanTransport("/unused", log, serial_module=mock.Mock())
+        transport._serial = self.FakeSerial(pending)
+        return transport
+
+    def test_stray_bytes_before_a_command_abort_without_writing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "raw.jsonl"
+            with scan.RawLog(path, "t") as log:
+                for command, guard in (("ATE0", False), ("010D", True)):
+                    with self.subTest(command=command):
+                        transport = self.transport(b"\r\rELM327 v1.4b\r\r>", log)
+                        send = transport.send_guard if guard else transport.send
+                        with self.assertRaises(scan.ScanAborted):
+                            send(command)
+                        self.assertEqual(transport._serial.written, [])
+            rx = [decode_record(r) for r in iter_records(path)
+                  if r.get("kind") == "io" and r["dir"] == "rx"]
+        self.assertEqual(rx, [b"\r\rELM327 v1.4b\r\r>"] * 2)
+
+    def test_stray_bytes_before_the_reset_are_logged_not_fatal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "raw.jsonl"
+            with scan.RawLog(path, "t") as log:
+                transport = self.transport(b"junk", log)
+                transport._refuse_unsolicited("ATZ")
+            notes = [r.get("note") for r in iter_records(path) if r.get("kind") == "io"]
+        self.assertEqual(notes, ["unsolicited bytes before ATZ"])
 
 
 if __name__ == "__main__":  # pragma: no cover
