@@ -55,6 +55,13 @@ RESTART_AFTER = 6
 #: failed. Reloading the UART driver is the first rung that touches the layer
 #: the fault is at.
 RELOAD_AFTER = 9
+#: Once the top rung has fired, repeat it at most once per this many checks.
+RELOAD_EVERY = 30
+#: The kernel's own words for a controller that has stopped answering: HCI
+#: command transmit timeouts and opcodes failing with -110 (ETIMEDOUT).
+WEDGE_PATTERN = re.compile(r"hci0: (command 0x[0-9a-f]+ tx timeout|Opcode 0x[0-9a-f]+ failed: -110)",
+                           re.IGNORECASE)
+WEDGE_WINDOW_S = 600
 
 #: Nothing is attempted more often than this, whatever the timer does.
 MIN_INTERVAL_S = 45.0
@@ -118,6 +125,8 @@ class Health:
 
     #: True when the controller itself is not up, whatever the devices say.
     controller: Optional[bool] = None
+    #: True when the kernel logged HCI command timeouts in the last few minutes.
+    wedged: Optional[bool] = None
 
     @property
     def all_known_down(self) -> bool:
@@ -134,7 +143,8 @@ class Health:
         def say(value):
             return "?" if value is None else ("up" if value else "down")
         return (f"controller={say(self.controller)} obd={say(self.obd)} "
-                f"radar={say(self.radar)} rfcomm={self.rfcomm or '?'}")
+                f"radar={say(self.radar)} rfcomm={self.rfcomm or '?'}"
+                + (" kernel=hci-timeouts" if self.wedged else ""))
 
 
 def controller_up() -> Optional[bool]:
@@ -145,9 +155,19 @@ def controller_up() -> Optional[bool]:
     return "UP RUNNING" in out
 
 
+def controller_wedged(window_s: float = WEDGE_WINDOW_S) -> Optional[bool]:
+    """Whether the kernel logged HCI command timeouts recently, or None if unreadable."""
+    code, out = _run(["journalctl", "-k", "--since", f"-{int(window_s)}s",
+                      "--no-pager", "-o", "cat"], timeout=10.0)
+    if code != 0:
+        return None
+    return bool(WEDGE_PATTERN.search(out))
+
+
 def look(obd: str = OBD_ADAPTER, radar: str = RADAR_DETECTOR) -> Health:
     return Health(obd=connected(obd), radar=connected(radar),
-                  rfcomm=rfcomm_state(), controller=controller_up())
+                  rfcomm=rfcomm_state(), controller=controller_up(),
+                  wedged=controller_wedged())
 
 
 @dataclass
@@ -187,6 +207,26 @@ class Watchdog:
 
         self.strikes += 1
         self.say(f"both links down, strike {self.strikes} ({state.describe()})")
+
+        # Both devices switched off with the truck looks exactly like this, and
+        # reconnect attempts time out the same way either way (161 of 162 over
+        # four days). Past the reset rung, act only on evidence that the stack
+        # itself is at fault: a controller not reporting UP RUNNING, or the
+        # kernel's own command timeouts. The reset rung stays unconditional --
+        # harmless on a healthy chip, and on a wedged one it produces exactly
+        # that kernel evidence.
+        stack_fault = state.controller is not True or state.wedged is True
+        if self.strikes >= RESTART_AFTER and not stack_fault:
+            self.say("  no controller fault evidence; devices may simply be off -- reconnect only")
+            for address in (self.obd, self.radar):
+                self._act(f"connect {address}", ["bluetoothctl", "connect", address])
+            return state
+        if self.strikes > RELOAD_AFTER and (self.strikes - RELOAD_AFTER) % RELOAD_EVERY:
+            # The top rung has fired; repeating it every minute would fight
+            # the stack rather than repair it.
+            self.say(f"  top rung cooling down; next driver reload at strike "
+                     f"{self.strikes + RELOAD_EVERY - (self.strikes - RELOAD_AFTER) % RELOAD_EVERY}")
+            return state
 
         if self.strikes >= RELOAD_AFTER:
             # The controller is not answering its own reset. Everything above

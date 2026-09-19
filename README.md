@@ -1125,7 +1125,11 @@ rung at a time, only when *both* devices are known down. Each timer run is a
 fresh process, so it keeps its strike count in `/dev/shm/hummer-btwatch.json`
 (the unit's sandbox leaves `/dev` as the only persistent writable tree; the
 record is forgotten after five quiet minutes or a reboot, and only a root-owned,
-non-symlink file is trusted). Until 2026-09-18 it did not,
+non-symlink file is trusted). Remembering strikes exposed the other half: with
+the truck off both devices vanish every night, so past the controller reset it
+climbs only on evidence the stack itself is at fault (the controller not UP
+RUNNING, or the kernel's `hci0 ... tx timeout` / `-110`), and the driver reload
+repeats at most every 30 checks. Until 2026-09-18 it did not,
 and a wedged controller got an hour of "strike 1" reconnects instead of the
 reset the ladder exists for.
 

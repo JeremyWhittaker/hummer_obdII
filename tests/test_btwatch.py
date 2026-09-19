@@ -188,7 +188,9 @@ class SafetyTests(unittest.TestCase):
                        or isinstance(e, ast.Name) or isinstance(e, ast.Call)
                        for e in node.elts):
                     executables.add(first.value)
-        allowed = {"bluetoothctl", "rfcomm", "hciconfig", "systemctl", "modprobe"}
+        # journalctl only *reads* the kernel log for the wedge signature;
+        # test_journalctl_is_only_a_kernel_log_read pins that.
+        allowed = {"bluetoothctl", "rfcomm", "hciconfig", "systemctl", "modprobe", "journalctl"}
         stray = {e for e in executables if "/" in e or e.startswith("AT")}
         self.assertEqual(stray, set(), f"non-Bluetooth executable: {stray}")
         self.assertTrue(executables <= allowed | {"connected", "clean", "closed",
@@ -215,6 +217,55 @@ class SafetyTests(unittest.TestCase):
              patch.object(btwatch, "_run") as ran:
             btwatch.main(["--once", "--dry-run", "--json"])
         ran.assert_not_called()
+
+
+class DevicesOffRestraintTests(unittest.TestCase):
+    """With the truck off both devices vanish; a healthy stack must be left alone."""
+
+    def climb(self, steps, health):
+        dog = btwatch.Watchdog(say=lambda m: None)
+        done = []
+        with patch.object(dog, "_act",
+                          side_effect=lambda name, argv: done.append(name) or True):
+            for _ in range(steps):
+                dog.step(health)
+        return done
+
+    def test_a_healthy_controller_with_devices_off_never_passes_the_reset(self):
+        healthy = btwatch.Health(obd=False, radar=False, rfcomm="closed",
+                                 controller=True, wedged=False)
+        done = self.climb(3 * btwatch.RELOAD_AFTER, healthy)
+        self.assertIn("reset-controller", done)
+        for rung in ("restart-bluetoothd", "unload-hci-uart", "stop-bluetoothd"):
+            self.assertNotIn(rung, done)
+
+    def test_kernel_timeouts_are_evidence_even_when_the_controller_claims_up(self):
+        # 2026-09-18 strike 3: controller=up, kernel full of tx timeouts.
+        wedged = btwatch.Health(obd=False, radar=False, rfcomm="closed",
+                                controller=True, wedged=True)
+        self.assertIn("unload-hci-uart", self.climb(btwatch.RELOAD_AFTER, wedged))
+
+    def test_the_driver_reload_cools_down_instead_of_repeating_every_minute(self):
+        down = btwatch.Health(obd=False, radar=False, rfcomm="closed", controller=False)
+        done = self.climb(btwatch.RELOAD_AFTER + btwatch.RELOAD_EVERY, down)
+        self.assertEqual(done.count("unload-hci-uart"), 2)
+
+    def test_journalctl_is_only_a_kernel_log_read(self):
+        with patch.object(btwatch, "_run", return_value=(0, "")) as ran:
+            btwatch.controller_wedged()
+        argv = ran.call_args[0][0]
+        self.assertEqual(argv[:2], ["journalctl", "-k"])
+        for flag in ("--rotate", "--vacuum-time", "--vacuum-size", "--flush", "--sync"):
+            self.assertNotIn(flag, argv)
+
+    def test_the_kernel_log_is_read_for_the_wedge_signature(self):
+        log = "Bluetooth: hci0: command 0x0406 tx timeout\n"
+        with patch.object(btwatch, "_run", return_value=(0, log)):
+            self.assertTrue(btwatch.controller_wedged())
+        with patch.object(btwatch, "_run", return_value=(0, "usb 1-1: new device\n")):
+            self.assertFalse(btwatch.controller_wedged())
+        with patch.object(btwatch, "_run", return_value=(1, "")):
+            self.assertIsNone(btwatch.controller_wedged())
 
 
 class TimerPersistenceTests(unittest.TestCase):
