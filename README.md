@@ -1122,8 +1122,10 @@ rebinding needs privileges the recorder does not have and should not have.
 `hummer-obd-btwatch` runs as root on a timer and climbs a ladder — reconnect,
 reset the controller, restart the daemon, then reload the UART driver — one
 rung at a time, only when *both* devices are known down. Each timer run is a
-fresh process, so it keeps its strike count in `/run/hummer-btwatch.json`
-(forgotten after five quiet minutes or a reboot). Until 2026-09-18 it did not,
+fresh process, so it keeps its strike count in `/dev/shm/hummer-btwatch.json`
+(the unit's sandbox leaves `/dev` as the only persistent writable tree; the
+record is forgotten after five quiet minutes or a reboot, and only a root-owned,
+non-symlink file is trusted). Until 2026-09-18 it did not,
 and a wedged controller got an hour of "strike 1" reconnects instead of the
 reset the ladder exists for.
 

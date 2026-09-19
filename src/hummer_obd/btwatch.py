@@ -29,6 +29,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -225,9 +226,12 @@ class Watchdog:
 #: is a fresh process, so without this every check was "strike 1" and the
 #: ladder never climbed past reconnecting -- observed 2026-09-18 while the
 #: controller was wedged (``hci0: command tx timeout``, ``-110``) and every
-#: reconnect timed out, minute after minute. /run is cleared by a reboot, which
-#: is also the right moment to forget.
-STATE_FILE = "/run/hummer-btwatch.json"
+#: reconnect timed out, minute after minute. The unit runs under
+#: ProtectSystem=strict, ProtectHome=read-only and a per-run PrivateTmp, so
+#: /run, the checkout and /tmp are all unusable; /dev/shm is writable there
+#: and, like /run, is cleared by a reboot. It is shared and sticky, so the file
+#: is only trusted when this user owns it and is never followed as a symlink.
+STATE_FILE = "/dev/shm/hummer-btwatch.json"
 #: Strikes count *consecutive* unhealthy checks. If the last one is older than
 #: this, the timer was stopped or the node slept, and counting resumes at zero.
 STATE_STALE_S = 300.0
@@ -237,7 +241,12 @@ def load_strikes(path: str, now: Optional[float] = None) -> int:
     """Strikes saved by the previous check, or 0 if absent, stale or unreadable."""
     now = time.time() if now is None else now
     try:
-        with open(path, encoding="utf-8") as handle:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd, encoding="utf-8") as handle:
+            # A record another user could have planted would let them drive a
+            # root process up the ladder; only our own file counts.
+            if os.fstat(handle.fileno()).st_uid != os.geteuid():
+                return 0
             saved = json.load(handle)
         strikes, stamp = saved["strikes"], saved["ts"]
     except (OSError, ValueError, KeyError, TypeError):
@@ -251,14 +260,25 @@ def load_strikes(path: str, now: Optional[float] = None) -> int:
 def save_strikes(path: str, strikes: int, now: Optional[float] = None) -> bool:
     """Atomically record the strike count; a failure is reported, not raised."""
     now = time.time() if now is None else now
-    temporary = f"{path}.tmp"
+    directory, name = os.path.split(os.path.abspath(path))
+    temporary = None
     try:
-        with open(temporary, "w", encoding="utf-8") as handle:
+        # A fresh, exclusively created temporary cannot be a pre-planted
+        # symlink; the atomic rename then replaces only the directory entry.
+        fd, temporary = tempfile.mkstemp(prefix=f".{name}.", dir=directory)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump({"strikes": strikes, "ts": now}, handle)
         os.replace(temporary, path)
+        temporary = None
         return True
     except OSError:
         return False
+    finally:
+        if temporary is not None:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
 
 
 def main(argv: Optional[list[str]] = None) -> int:

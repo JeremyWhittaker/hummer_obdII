@@ -270,6 +270,28 @@ class TimerPersistenceTests(unittest.TestCase):
         ran.assert_not_called()
         self.assertFalse(pathlib.Path(self.state).exists())
 
+    def test_the_default_location_is_writable_under_the_units_sandbox(self):
+        # ProtectSystem=strict + ProtectHome=read-only + per-run PrivateTmp
+        # leave /dev as the only persistent writable tree.
+        self.assertTrue(btwatch.STATE_FILE.startswith("/dev/shm/"))
+
+    def test_a_planted_symlink_is_neither_read_nor_written_through(self):
+        import os
+        target = pathlib.Path(self._tmp.name) / "victim"
+        target.write_text('{"strikes": 8, "ts": 1e18}')
+        os.symlink(target, self.state)
+        self.assertEqual(btwatch.load_strikes(self.state), 0)
+        self.assertTrue(btwatch.save_strikes(self.state, 1))
+        self.assertEqual(target.read_text(), '{"strikes": 8, "ts": 1e18}')
+        self.assertFalse(pathlib.Path(self.state).is_symlink())
+
+    def test_a_record_owned_by_another_user_is_ignored(self):
+        import os
+        btwatch.save_strikes(self.state, 5)
+        with patch.object(os, "geteuid", return_value=os.geteuid() + 1):
+            self.assertEqual(btwatch.load_strikes(self.state), 0)
+        self.assertEqual(btwatch.load_strikes(self.state), 5)
+
     def test_an_unwritable_state_file_is_reported_not_raised(self):
         self.state = str(pathlib.Path(self._tmp.name) / "missing-dir" / "strikes.json")
         self.run_once()  # must not raise
