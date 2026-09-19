@@ -1129,7 +1129,10 @@ non-symlink file is trusted). Remembering strikes exposed the other half: with
 the truck off both devices vanish every night, so past the controller reset it
 climbs only on evidence the stack itself is at fault (the controller not UP
 RUNNING, or the kernel's `hci0 ... tx timeout` / `-110`), and the driver reload
-repeats at most every 30 checks. Until 2026-09-18 it did not,
+repeats at most every 30 checks. The recorder `Requires=` hummer-rfcomm, so
+every stack-level rung takes it down too; the watchdog notes whether it was
+running (or auto-restarting) and afterwards *starts* it again, never restarts it,
+and leaves a recorder stopped on purpose for a scan alone. Until 2026-09-18 it did not,
 and a wedged controller got an hour of "strike 1" reconnects instead of the
 reset the ladder exists for.
 

@@ -66,7 +66,7 @@ class RestraintTests(unittest.TestCase):
     """What it must NOT do."""
 
     def dog(self):
-        return btwatch.Watchdog(say=lambda m: None)
+        return btwatch.Watchdog(say=lambda m: None, recorder_check=lambda: False)
 
     def test_a_healthy_link_does_nothing_at_all(self):
         dog = self.dog()
@@ -111,7 +111,7 @@ class LadderTests(unittest.TestCase):
     """It climbs one rung at a time, and only when the rung below has failed."""
 
     def climb(self, steps):
-        dog = btwatch.Watchdog(say=lambda m: None)
+        dog = btwatch.Watchdog(say=lambda m: None, recorder_check=lambda: False)
         done = []
         with patch.object(dog, "_act",
                           side_effect=lambda name, argv: done.append(name) or True):
@@ -200,12 +200,14 @@ class SafetyTests(unittest.TestCase):
     def test_the_only_services_it_touches_are_the_nodes_own(self):
         source = pathlib.Path(btwatch.__file__).read_text(encoding="utf-8")
         import re as _re
-        units = set(_re.findall(r'"systemctl", "(?:restart|stop|start)", "([a-z0-9-]+)"',
-                                source))
-        self.assertEqual(units, {"bluetooth", "hummer-rfcomm"},
-                         "the watchdog restarts a service it was not meant to")
-        self.assertNotIn("hummer-drive", units,
-                         "restarting the recorder would discard a session in progress")
+        pairs = set(_re.findall(r'"systemctl", "(restart|stop|start)", "([a-z0-9-]+)"', source))
+        units = {unit for _, unit in pairs}
+        self.assertEqual(units, {"bluetooth", "hummer-rfcomm", "hummer-drive"},
+                         "the watchdog touches a service it was not meant to")
+        # The recorder may only be *started* (restoring it after systemd took
+        # it down with hummer-rfcomm); restarting or stopping it would discard
+        # a session in progress.
+        self.assertEqual({verb for verb, unit in pairs if unit == "hummer-drive"}, {"start"})
 
     def test_the_continuous_mode_refuses_to_spin(self):
         with self.assertRaises(SystemExit):
@@ -223,7 +225,7 @@ class DevicesOffRestraintTests(unittest.TestCase):
     """With the truck off both devices vanish; a healthy stack must be left alone."""
 
     def climb(self, steps, health):
-        dog = btwatch.Watchdog(say=lambda m: None)
+        dog = btwatch.Watchdog(say=lambda m: None, recorder_check=lambda: False)
         done = []
         with patch.object(dog, "_act",
                           side_effect=lambda name, argv: done.append(name) or True):
@@ -266,6 +268,48 @@ class DevicesOffRestraintTests(unittest.TestCase):
             self.assertFalse(btwatch.controller_wedged())
         with patch.object(btwatch, "_run", return_value=(1, "")):
             self.assertIsNone(btwatch.controller_wedged())
+
+
+class RecorderRestoreTests(unittest.TestCase):
+    """The recorder Requires= hummer-rfcomm; a repair must not leave it down.
+
+    2026-09-18 01:45Z: the driver reload stopped bluetooth, systemd stopped the
+    recorder with it, and the owner's next drive went unrecorded.
+    """
+
+    def run_rung(self, strikes, wanted):
+        dog = btwatch.Watchdog(say=lambda m: None, recorder_check=lambda: wanted)
+        dog.strikes = strikes - 1
+        done = []
+        with patch.object(dog, "_act",
+                          side_effect=lambda name, argv: done.append((name, argv)) or True):
+            dog.step(btwatch.Health(obd=False, radar=False, rfcomm="closed", controller=False))
+        return done
+
+    def test_every_stack_rung_restores_a_wanted_recorder_last(self):
+        for strikes in (btwatch.RESET_AFTER, btwatch.RESTART_AFTER, btwatch.RELOAD_AFTER):
+            with self.subTest(strikes=strikes):
+                done = self.run_rung(strikes, wanted=True)
+                self.assertEqual(done[-1], ("restore-recorder",
+                                            ["systemctl", "start", "hummer-drive"]))
+
+    def test_a_recorder_stopped_on_purpose_is_left_stopped(self):
+        # A supervised scan stops the recorder; the watchdog must not fight it.
+        for strikes in (btwatch.RESET_AFTER, btwatch.RELOAD_AFTER):
+            with self.subTest(strikes=strikes):
+                names = [n for n, _ in self.run_rung(strikes, wanted=False)]
+                self.assertNotIn("restore-recorder", names)
+
+    def test_reconnecting_never_touches_the_recorder(self):
+        names = [n for n, _ in self.run_rung(btwatch.RECONNECT_AFTER, wanted=True)]
+        self.assertNotIn("restore-recorder", names)
+
+    def test_the_recorder_state_is_read_from_systemd(self):
+        dog = btwatch.Watchdog(say=lambda m: None)
+        for out, wanted in (("active\n", True), ("activating\n", True),
+                            ("inactive\n", False), ("failed\n", False), ("", False)):
+            with self.subTest(out=out), patch.object(btwatch, "_run", return_value=(0, out)):
+                self.assertEqual(dog._recorder_wanted(), wanted)
 
 
 class TimerPersistenceTests(unittest.TestCase):

@@ -179,6 +179,15 @@ class Watchdog:
     say: Callable[[str], None] = lambda message: None
     strikes: int = 0
     actions: list = field(default_factory=list)
+    #: Injectable for tests; None means ask systemd.
+    recorder_check: Optional[Callable[[], bool]] = None
+
+    def _recorder_wanted(self) -> bool:
+        """Whether the recorder is running or trying to (auto-restart counts)."""
+        if self.recorder_check is not None:
+            return self.recorder_check()
+        code, out = _run(["systemctl", "is-active", "hummer-drive"], timeout=6.0)
+        return out.strip() in {"active", "activating", "reloading"}
 
     def _act(self, name: str, argv: list[str]) -> bool:
         code, out = _run(argv)
@@ -228,30 +237,38 @@ class Watchdog:
                      f"{self.strikes + RELOAD_EVERY - (self.strikes - RELOAD_AFTER) % RELOAD_EVERY}")
             return state
 
-        if self.strikes >= RELOAD_AFTER:
-            # The controller is not answering its own reset. Everything above
-            # the driver has been tried and failed, repeatedly, so reload the
-            # driver. Bluetooth has to be stopped first or the module is busy.
-            self._act("stop-bluetoothd", ["systemctl", "stop", "bluetooth"])
-            self._act("unload-hci-uart", ["modprobe", "-r", "hci_uart"])
-            self._act("load-hci-uart", ["modprobe", "hci_uart"])
-            self._act("start-bluetoothd", ["systemctl", "start", "bluetooth"])
-            self._act("bring-up-controller", ["hciconfig", "hci0", "up"])
-            self._act("rebind-rfcomm", ["systemctl", "restart", "hummer-rfcomm"])
-            return state
-
-        if self.strikes >= RESTART_AFTER:
-            # Last rung. Everything below it has failed repeatedly, so the
-            # daemon itself is the remaining suspect.
-            self._act("restart-bluetoothd", ["systemctl", "restart", "bluetooth"])
-            self._act("rebind-rfcomm", ["systemctl", "restart", "hummer-rfcomm"])
-            return state
-
         if self.strikes >= RESET_AFTER:
-            # The controller is up by its own account and still cannot carry a
-            # connection, which a reset does sometimes clear.
-            self._act("reset-controller", ["hciconfig", "hci0", "reset"])
-            self._act("rebind-rfcomm", ["systemctl", "restart", "hummer-rfcomm"])
+            # Every rung from here stops or restarts hummer-rfcomm (and the top
+            # rungs bluetooth), and the recorder Requires= hummer-rfcomm, so
+            # systemd takes the recorder down with them. On 2026-09-18 the
+            # driver reload left it stopped mid-drive. Note whether it was
+            # wanted, and afterwards *start* it -- never restart it: start is
+            # a no-op on a running unit, so no live session is discarded, and
+            # a recorder stopped on purpose (for a scan) is left stopped.
+            wanted = self._recorder_wanted()
+            if self.strikes >= RELOAD_AFTER:
+                # The controller is not answering its own reset. Everything
+                # above the driver has been tried and failed, repeatedly, so
+                # reload the driver. Bluetooth has to be stopped first or the
+                # module is busy.
+                self._act("stop-bluetoothd", ["systemctl", "stop", "bluetooth"])
+                self._act("unload-hci-uart", ["modprobe", "-r", "hci_uart"])
+                self._act("load-hci-uart", ["modprobe", "hci_uart"])
+                self._act("start-bluetoothd", ["systemctl", "start", "bluetooth"])
+                self._act("bring-up-controller", ["hciconfig", "hci0", "up"])
+                self._act("rebind-rfcomm", ["systemctl", "restart", "hummer-rfcomm"])
+            elif self.strikes >= RESTART_AFTER:
+                # Everything below has failed repeatedly, so the daemon itself
+                # is the remaining suspect.
+                self._act("restart-bluetoothd", ["systemctl", "restart", "bluetooth"])
+                self._act("rebind-rfcomm", ["systemctl", "restart", "hummer-rfcomm"])
+            else:
+                # The controller is up by its own account and still cannot
+                # carry a connection, which a reset does sometimes clear.
+                self._act("reset-controller", ["hciconfig", "hci0", "reset"])
+                self._act("rebind-rfcomm", ["systemctl", "restart", "hummer-rfcomm"])
+            if wanted:
+                self._act("restore-recorder", ["systemctl", "start", "hummer-drive"])
             return state
 
         if self.strikes >= RECONNECT_AFTER:
