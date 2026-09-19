@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -220,6 +221,46 @@ class Watchdog:
         return state
 
 
+#: Where a timer-driven ``--once`` check remembers its strikes. Each timer run
+#: is a fresh process, so without this every check was "strike 1" and the
+#: ladder never climbed past reconnecting -- observed 2026-09-18 while the
+#: controller was wedged (``hci0: command tx timeout``, ``-110``) and every
+#: reconnect timed out, minute after minute. /run is cleared by a reboot, which
+#: is also the right moment to forget.
+STATE_FILE = "/run/hummer-btwatch.json"
+#: Strikes count *consecutive* unhealthy checks. If the last one is older than
+#: this, the timer was stopped or the node slept, and counting resumes at zero.
+STATE_STALE_S = 300.0
+
+
+def load_strikes(path: str, now: Optional[float] = None) -> int:
+    """Strikes saved by the previous check, or 0 if absent, stale or unreadable."""
+    now = time.time() if now is None else now
+    try:
+        with open(path, encoding="utf-8") as handle:
+            saved = json.load(handle)
+        strikes, stamp = saved["strikes"], saved["ts"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return 0
+    if (type(strikes) is not int or not 0 <= strikes <= 1000
+            or not isinstance(stamp, (int, float)) or not 0 <= now - stamp <= STATE_STALE_S):
+        return 0
+    return strikes
+
+
+def save_strikes(path: str, strikes: int, now: Optional[float] = None) -> bool:
+    """Atomically record the strike count; a failure is reported, not raised."""
+    now = time.time() if now is None else now
+    temporary = f"{path}.tmp"
+    try:
+        with open(temporary, "w", encoding="utf-8") as handle:
+            json.dump({"strikes": strikes, "ts": now}, handle)
+        os.replace(temporary, path)
+        return True
+    except OSError:
+        return False
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Watch the node's Bluetooth links and restore them when both drop.")
@@ -231,6 +272,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help="print one JSON object per check instead of prose")
     parser.add_argument("--dry-run", action="store_true",
                         help="report what it would do and change nothing")
+    parser.add_argument("--state-file", default=STATE_FILE,
+                        help="where --once remembers strikes between timer runs")
     args = parser.parse_args(argv)
 
     if args.interval_s < MIN_INTERVAL_S and not args.once:
@@ -245,9 +288,14 @@ def main(argv: Optional[list[str]] = None) -> int:
             dog.actions.append({"action": name, "rc": None, "detail": "dry run"})
             or dog.say(f"  would run: {' '.join(argv_)}") or True)
 
+    if args.once:
+        dog.strikes = load_strikes(args.state_file)
+
     while True:
         dog.actions.clear()
         state = dog.step()
+        if args.once and not args.dry_run and not save_strikes(args.state_file, dog.strikes):
+            dog.say(f"  cannot record strikes in {args.state_file}; the ladder cannot climb")
         if args.json:
             print(json.dumps({
                 "utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),

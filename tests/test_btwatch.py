@@ -217,5 +217,63 @@ class SafetyTests(unittest.TestCase):
         ran.assert_not_called()
 
 
+class TimerPersistenceTests(unittest.TestCase):
+    """The timer runs --once as a fresh process; the ladder must still climb.
+
+    Observed 2026-09-18: with the controller wedged, every timer check logged
+    "strike 1" and retried the same reconnect for an hour.
+    """
+
+    DOWN = btwatch.Health(obd=False, radar=False, rfcomm="closed")
+
+    def setUp(self):
+        import tempfile
+        self._tmp = tempfile.TemporaryDirectory()
+        self.state = str(pathlib.Path(self._tmp.name) / "strikes.json")
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def run_once(self, health=None, *extra):
+        done = []
+        with patch.object(btwatch, "look", return_value=health or self.DOWN), \
+             patch.object(btwatch, "_run",
+                          side_effect=lambda argv, timeout=None: done.append(argv) or (0, "")):
+            btwatch.main(["--once", "--json", "--state-file", self.state, *extra])
+        return done
+
+    def test_consecutive_timer_runs_climb_to_the_controller_reset(self):
+        runs = [self.run_once() for _ in range(btwatch.RESET_AFTER)]
+        self.assertFalse(any(["hciconfig", "hci0", "reset"] == a for r in runs[:-1] for a in r))
+        self.assertIn(["hciconfig", "hci0", "reset"], runs[-1])
+        self.assertEqual(btwatch.load_strikes(self.state), btwatch.RESET_AFTER)
+
+    def test_recovery_between_runs_resets_the_count(self):
+        self.run_once()
+        self.run_once()
+        self.run_once(btwatch.Health(obd=True, radar=False, rfcomm="connected"))
+        self.assertEqual(btwatch.load_strikes(self.state), 0)
+
+    def test_a_stale_or_corrupt_record_starts_again_at_zero(self):
+        btwatch.save_strikes(self.state, 5, now=1000.0)
+        self.assertEqual(btwatch.load_strikes(self.state, now=1000.0 + btwatch.STATE_STALE_S + 1), 0)
+        self.assertEqual(btwatch.load_strikes(self.state, now=1010.0), 5)
+        pathlib.Path(self.state).write_text("{not json")
+        self.assertEqual(btwatch.load_strikes(self.state), 0)
+        pathlib.Path(self.state).write_text('{"strikes": -3, "ts": 0}')
+        self.assertEqual(btwatch.load_strikes(self.state, now=10.0), 0)
+
+    def test_a_dry_run_does_not_record_strikes(self):
+        with patch.object(btwatch, "look", return_value=self.DOWN), \
+             patch.object(btwatch, "_run") as ran:
+            btwatch.main(["--once", "--dry-run", "--json", "--state-file", self.state])
+        ran.assert_not_called()
+        self.assertFalse(pathlib.Path(self.state).exists())
+
+    def test_an_unwritable_state_file_is_reported_not_raised(self):
+        self.state = str(pathlib.Path(self._tmp.name) / "missing-dir" / "strikes.json")
+        self.run_once()  # must not raise
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
