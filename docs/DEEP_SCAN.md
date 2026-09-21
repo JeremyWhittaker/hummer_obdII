@@ -400,6 +400,29 @@ Later pilots on the same cursor produced a bare echo and then a duplicate
 banner on `ATE0`; `TestStartupSynchronization` reproduces the duplicate and
 fails against the pre-fix scanner.
 
+### The first full pass, 2026-09-18 to 2026-09-20
+
+Every range in the section 6 order was scanned to completion, parked and
+supervised, across several sessions (the truck leaves its ready state after
+about 40 minutes, and the scanner stops when `010D` no longer answers).
+
+| Module | Asked | Answered | Security-locked (`7F 22 33`) |
+|---|---|---|---|
+| `CB` battery manager | 1,024 | 357 | 2 |
+| `40` body/charging | 1,024 | 291 | 0 |
+| `17` front drive unit | 1,536 | 95 | 11 |
+| `1D` drive unit 2 | 1,536 | 70 | 11 |
+| `1E` drive unit 3 | 1,536 | 66 | 9 |
+| `28` brakes/chassis | 768 | 33 | 0 |
+| **total** | **7,424** | **912** | **33** |
+
+Speed read zero before all 7,424 reads and the DTC brackets stayed at zero
+throughout; no code was set. The locked identifiers are recorded and not
+pursued — reaching them needs service `27`, which is forbidden. `1E` had never
+been read before. **None of the 912 is a signal yet**: each is a payload at a
+known module, awaiting cross-validation. The first six behavioural leads are in
+[SOURCING_2026-09-18.md](SOURCING_2026-09-18.md).
+
 A positive response establishes only that a payload was returned at this
 module/priority/state. No units or new recorder fields are inferred. Keep
 separate timestamped observations for deliberate parked door/HVAC changes and
