@@ -421,7 +421,9 @@ throughout; no code was set. The locked identifiers are recorded and not
 pursued — reaching them needs service `27`, which is forbidden. `1E` had never
 been read before. **None of the 912 is a signal yet**: each is a payload at a
 known module, awaiting cross-validation. The first six behavioural leads are in
-[SOURCING_2026-09-18.md](SOURCING_2026-09-18.md).
+[SOURCING_2026-09-18.md](SOURCING_2026-09-18.md), and the per-module reading of
+what answered -- with the cheapest route from each to a signal -- is in
+[SCAN_RESULTS_2026-09-20.md](SCAN_RESULTS_2026-09-20.md).
 
 A positive response establishes only that a payload was returned at this
 module/priority/state. No units or new recorder fields are inferred. Keep
