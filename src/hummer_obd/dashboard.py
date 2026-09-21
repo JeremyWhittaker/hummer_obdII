@@ -77,12 +77,28 @@ CURRENT_FIELDS = {
     "pack_v": ("pack_v",), "pack_a": ("pack_a",),
     "pack_kw": ("pack_v", "pack_a"), "soc_pct": ("soc_pct",),
     "energy_kwh": ("energy_kwh",), "cell_avg_v": ("cell_avg_v",),
+    # The two bounds get the same gate as the average they bracket. The page
+    # no longer DRAWS them -- the marks that stood on a voltage axis are gone,
+    # see `cellEnvelope` in dashboard.html -- but it PRINTS all three to three
+    # decimal places in the caption under the model, and printing a millivolt
+    # is as much a claim as drawing one. `signals[c]["value"]` is nulled only
+    # for an INVALID reading and never for a merely STALE one, so read from
+    # there the caption would state hour-old voltages to the millivolt while
+    # the spread tint, gated here, correctly abstained.
+    "cell_min_v": ("cell_min_v",), "cell_max_v": ("cell_max_v",),
     "cell_spread_mv": ("cell_spread_mv", "cell_avg_v", "cell_min_v", "cell_max_v"),
     "series_cells": ("pack_v", "cell_avg_v"),
     "implied_kwh": ("energy_kwh", "soc_pct"),
     "speed_now_kph": ("speed_kph",),
     "volts_adapter": ("volts",), "volts_module": ("module_voltage",),
     "volts_dmc2": ("dmc2_v",),
+    # The tractive-effort pair. Unlike pack_kw these were absent from this
+    # table, so the staleness loop below never nulled them and `derived` would
+    # hand the page an hour-old torque reading with nothing to say it was old.
+    # They belong under the same "None when any contributing signal is stale
+    # or invalid" contract as everything else here rather than under a second
+    # freshness rule invented on the client.
+    "torque_counts": ("field_2429_raw",), "torque_dir": ("field_2429_raw",),
 }
 
 
@@ -147,9 +163,46 @@ def _valid(column: str, value) -> bool:
             and bool(re.fullmatch(r"[0-9A-Fa-f ]+", value)))
 
 
+#: Columns the history sends only when they CHANGE from the previous row.
+#:
+#: `array_2af1` is 24 bytes, so 48 hex characters plus its key name is about
+#: 63 bytes of every row, and the whole history is rebuilt, walked by
+#: `_clean` and re-serialised on every 5 s poll -- on a Pi Zero 2 W.
+#:
+#: Measured on the 600-row window of drive-20260903T200849Z.csv, the longest
+#: session in evidence/sessions that carries the array: serialised with the
+#: array on every row the history is 384,508 bytes; with only the rows that
+#: change it, 354,082. 30,426 bytes saved a poll, which is 7.9% of the whole
+#: payload and 77% of what this one column costs. Only 139 of those 600 rows
+#: state it. Across all 10,682 rows in evidence/sessions the array is
+#: byte-identical to the row before it 89% of the time, so this is the
+#: ordinary case and not a lucky session.
+#:
+#: THE ENCODING HAS TO KEEP "ABSENT" AND "UNCHANGED" APART, which is the
+#: whole reason this is a rule about keys rather than about values:
+#:   * key present, string  -- this row carries that array
+#:   * key present, null    -- this row carries NO array, and the one before
+#:                             it did (or had a different one)
+#:   * key missing          -- identical to the nearest earlier row that has
+#:                             the key
+#: A run of rows with nothing to report therefore emits one explicit null and
+#: then goes quiet, and the page can tell a pack that stopped answering from
+#: a pack that has not changed. Collapsing the two would paint the module
+#: blocks their base colour through a run where the array was in fact steady,
+#: which is the same class of lie this file exists to avoid.
+#:
+#: The first row of every window always carries the key, because there is no
+#: earlier row to have inherited it from.
+DELTA_RAW_COLUMNS = ("array_2af1",)
+
+
 def _history(rows: list[dict], *, location: bool = False) -> list[dict]:
     """Keep actual recent samples; no averaging across missing readings."""
     result = []
+    #: Last value emitted for each delta column, so a row can be left silent
+    #: when it would only repeat it. A fresh sentinel per call: the window
+    #: slides, and the first row in it has nothing behind it.
+    carried: dict[str, object] = {}
     for row in rows[-MAX_HISTORY:]:
         # Asked once for the row, not once for each of the five to seven
         # fields read out of it -- see the note in `_snapshot`.
@@ -179,15 +232,26 @@ def _history(rows: list[dict], *, location: bool = False) -> list[dict]:
             "pack_kw": v * a / 1000 if v is not None and a is not None else None,
             "soc_pct": reading("soc_pct"),
             "cell_spread_mv": reading("cell_spread_mv"),
-            # These five exist so the 3D view can follow a replay rather than
+            # The three bounds the spread is computed from. The spread says
+            # imbalance exists; these say where the envelope actually sits, on
+            # an axis that can be absolute because unlike the raw fields above
+            # these are decoded volts with a confirmed scale. `reading`, not
+            # `raw` -- they are numbers, not hex.
+            "cell_min_v": reading("cell_min_v"),
+            "cell_avg_v": reading("cell_avg_v"),
+            "cell_max_v": reading("cell_max_v"),
+            # These exist so the 3D view can follow a replay rather than
             # freezing on the session's last sample. Playing back a drive while
             # the model showed the state it ended in was the vehicle describing
             # the wrong moment -- the marker moved and nothing else did.
             #
-            # They are the fields the render actually consumes: brakes, front
-            # wheel angle, body roll and pitch, and the coolant tint. Adding
-            # anything else would grow the payload for no visible effect, and
-            # this list is bounded at MAX_HISTORY rows either way.
+            # The test for adding a column here is not payload size, which was
+            # the rule this comment used to state and which quietly kept three
+            # genuinely-drawn readings frozen. It is whether the render reads
+            # it PER FRAME: anything the scene paints from a per-row value
+            # belongs here, and anything it does not belongs in the current-
+            # value tiles instead. The list is bounded at MAX_HISTORY rows
+            # either way.
             "brake_kpa": reading("brake_kpa"),
             "steering_deg": reading("steering_deg"),
             "lateral_g": reading("lateral_g"),
@@ -202,6 +266,10 @@ def _history(rows: list[dict], *, location: bool = False) -> list[dict]:
             "coolant_1_raw": raw("coolant_1_raw"),
             "coolant_2_raw": raw("coolant_2_raw"),
             "compressor_temp_raw": raw("compressor_temp_raw"),
+            # The 24-byte module array is NOT here: it is the one column
+            # expensive enough to be worth sending only when it changes, and
+            # it is added below by DELTA_RAW_COLUMNS. See the note there for
+            # what a missing key means and why that is not the same as null.
             # What a replay needs to tell a drive from a charge AT THAT
             # MOMENT. Without these the page took charging, plugged and
             # coolant flow from the session's final state, so a trip that
@@ -211,6 +279,11 @@ def _history(rows: list[dict], *, location: bool = False) -> list[dict]:
             # whether energy is going in; the thermal accumulator's advance
             # between frames is what the coolant animation follows.
             "charger_5401_raw": raw("charger_5401_raw"),
+            # Tractive effort, as counts either side of a measured zero. Two
+            # hex bytes a row. The live view has had this in `derived` all
+            # along; the halfshafts now draw from it, so a replay needs the
+            # per-row value or they would sit at the effort the drive ended on.
+            "field_2429_raw": raw("field_2429_raw"),
             "thermal_energy_raw": raw("thermal_energy_raw"),
             "group_v1_raw": raw("group_v1_raw"),
             "pack_a": a,
@@ -224,6 +297,14 @@ def _history(rows: list[dict], *, location: bool = False) -> list[dict]:
         for wheel in ("wheel_fl_kph", "wheel_fr_kph",
                       "wheel_rl_kph", "wheel_rr_kph"):
             point[wheel] = reading(wheel)
+        for column in DELTA_RAW_COLUMNS:
+            value = raw(column)
+            # `carried` starts empty, so the first row of the window always
+            # states its value -- including stating it as null. Only a row
+            # that would repeat the row before it is left silent.
+            if column not in carried or carried[column] != value:
+                point[column] = value
+                carried[column] = value
         if location:
             # Only when the operator asked for it. The trail is what a map is
             # drawn from, so it carries the same decision as the coordinates.

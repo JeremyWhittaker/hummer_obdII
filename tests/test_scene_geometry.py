@@ -71,13 +71,20 @@ def _balanced(source: str, start: int) -> str:
     raise AssertionError("unbalanced braces in dashboard.html")
 
 
+#: The top-level declarations `buildScene` closes over. TYRE_DIFFUSE's line
+#: also declares SHAFT_DIFFUSE: both are the diffuse colours of parts whose
+#: legend swatch has to be shaded from the same array the scene is built with,
+#: so they live beside `swatchHex` rather than inside `buildScene`.
+SCENE_CONSTS = r"^  var (?:HALF_TRACK|AXLE|HALF_W|TYRE_DIFFUSE) = [^;]+;"
+
+
 def build_parts() -> list[dict]:
     """The parts list the page would build, as data."""
     source = _script()
     veh = re.search(r"var VEH = \{[\s\S]*?\n  \};", source)
     assert veh, "VEH literal not found"
-    consts = re.findall(r"^  var (?:HALF_TRACK|AXLE|HALF_W) = [^;]+;", source, re.M)
-    assert len(consts) == 3, f"expected 3 derived constants, found {len(consts)}"
+    consts = re.findall(SCENE_CONSTS, source, re.M)
+    assert len(consts) == 4, f"expected 4 derived constants, found {len(consts)}"
     scene = _balanced(source, source.index("function buildScene"))
     harness = (veh.group(0) + "\n" + "\n".join(consts) + "\n" + scene + """
 const parts = buildScene();
@@ -105,7 +112,7 @@ def build_parts_with_rot() -> list[dict]:
     """build_parts(), plus each part's rotation."""
     source = _script()
     veh = re.search(r"var VEH = \{[\s\S]*?\n  \};", source)
-    consts = re.findall(r"^  var (?:HALF_TRACK|AXLE|HALF_W) = [^;]+;", source, re.M)
+    consts = re.findall(SCENE_CONSTS, source, re.M)
     scene = _balanced(source, source.index("function buildScene"))
     harness = (veh.group(0) + "\n" + "\n".join(consts) + "\n" + scene + """
 const parts = buildScene();

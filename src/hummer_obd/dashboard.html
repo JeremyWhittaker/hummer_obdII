@@ -284,7 +284,12 @@ select:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid 
   background:rgba(238,82,26,.16);border-color:var(--ev-orange);color:#ffc9b3;
 }
 .legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;font-size:11.5px;color:var(--ink-3)}
-.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+/* The border is load-bearing. Every swatch here is the pixel the model
+   actually renders for that state (see `legendEntries`), and for a part with
+   no reading that is its bare diffuse under the ambient floor -- #030303 on
+   the tyre. An unbordered near-black square on a near-black panel is an entry
+   a reader cannot see is there. */
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--line)}
 .caveat{
   margin-top:12px;padding:9px 12px;border-left:2px solid var(--ev-orange);
   background:rgba(238,82,26,.06);border-radius:0 var(--r-sm) var(--r-sm) 0;
@@ -503,6 +508,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     </div>
     <div class="legend" id="legend"></div>
     <div class="caveat" id="module-caveat"></div>
+    <div class="caveat" id="cell-caveat"></div>
+    <div class="caveat" id="corner-caveat"></div>
+    <div class="caveat" id="effort-caveat"></div>
   </div>
 
   <div class="hero-side">
@@ -692,6 +700,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        hardware is idle is exactly the kind of lie a dashboard should not
        tell. */
     thermal: { value: null, at: null, rate: 0 },
+    /* The halfshaft glow's normaliser is NOT kept here. It was, as a running
+       maximum, and a running maximum is a page-lifetime fact wearing a
+       session's clothes: after a drive that peaked at 8631 counts, a gentle
+       one peaking at 400 drew every shaft at 4.6% with nothing on screen
+       saying why, and the same frame rendered differently depending on where
+       the scrub had already been. `effortScale` recomputes it from the
+       snapshot on every call instead, which is what `rawFraction` does and
+       what this comment used to claim without doing. */
     r8: null
   };
 
@@ -706,7 +722,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   function byId(id) { return document.getElementById(id); }
   [ "status-primary","status-secondary","banner","session-select","f-samples",
     "f-duration","f-period","f-age","vehicle-sub","legend",
-    "module-caveat","map","map-tiles","map-grid","trail","trail-head","map-empty","map-stats",
+    "module-caveat","cell-caveat","corner-caveat","effort-caveat","map","map-tiles","map-grid","trail","trail-head","map-empty","map-stats",
     "alert-marks","playback","play","scrub","play-time",
     "panel-places","stops-list","places-known","places-sub",
     "tiles","chart","chart-empty","chart-sub","tab-power","tab-soc","tab-speed",
@@ -809,6 +825,562 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     var clean = text.replace(/\s+/g, ""), out = [];
     if (clean.length % 2 !== 0 || !/^[0-9A-Fa-f]*$/.test(clean)) return [];
     for (var i = 0; i < clean.length; i += 2) out.push(parseInt(clean.substr(i, 2), 16));
+    return out;
+  }
+
+  /* ---------- readings the 3D view draws, and the rules for trusting them ----
+     Three small functions rather than three closures inside renderVehicle,
+     because each one encodes a rule this project has got wrong before and a
+     rule that cannot be run on its own is a rule nothing tests. */
+
+  /* WHERE A FRAME SITS IN THE HISTORY -- BY KEY, NEVER BY IDENTITY.
+
+     Four places in renderVehicle need the scrubbed frame's INDEX so they can
+     walk backwards from it: the delta-encoded module array, the nearest pack
+     sample within a plug-in, the charge-status walk and the thermal
+     accumulator's advance. Every one of them called `indexOf` on the frame
+     object.
+
+     That is object identity, and during a replay the two sides of the
+     comparison come from different objects by construction. `state.frame` is
+     handed out of `state.map.rows`, which is built once per TRACK (renderMap
+     returns early while the signature is unchanged, precisely so a replay in
+     progress is not torn down twice a minute). `state.snapshot` is replaced
+     wholesale on every 5 s poll. So the rows in `state.map.rows` belong to a
+     snapshot that has since been superseded, `indexOf` returns -1, the
+     backward walk never runs and every one of those four readings silently
+     becomes "absent".
+
+     For the module array that is the worst of the four: the array is
+     byte-identical to the row before it in 89% of rows, so 89% of frames omit
+     the key, so five seconds into any replay the 24 blocks drop to their base
+     colour and stay there -- the page asserting "the pack stopped answering"
+     about a pack that was steady, which is exactly the lie DELTA_RAW_COLUMNS
+     was designed not to tell.
+
+     `utc` is the stable key: dashboard.py writes it on every history row
+     verbatim from the recorder, at microsecond resolution, and it is unique
+     within a session in all 10,682 rows of all 63 CSVs under
+     evidence/sessions -- a test asserts that premise against the corpus
+     rather than assuming it. It can still be missing on a row the recorder
+     wrote without a clock, so `elapsed_s` is the second key and identity is
+     the last resort; that one still answers for the live view, where the
+     frame really is an object out of the current history.
+
+     A linear scan, deliberately: it runs at most four times per rendered
+     frame over a window capped at MAX_HISTORY rows, against a per-frame
+     budget that already includes rebuilding the whole scene, and a cache
+     keyed on the snapshot is the shape of the bug being fixed here. */
+  function frameIndex(frame, hist) {
+    if (!frame || !hist || !hist.length) return -1;
+    var i, key = frame.utc, elapsed;
+    if (typeof key === "string" && key) {
+      for (i = 0; i < hist.length; i++) if (hist[i].utc === key) return i;
+    }
+    elapsed = num(frame.elapsed_s);
+    if (elapsed !== null) {
+      for (i = 0; i < hist.length; i++) if (num(hist[i].elapsed_s) === elapsed) return i;
+    }
+    return hist.indexOf(frame);
+  }
+
+  /* The backward walk a delta-encoded column needs, given a starting index.
+     Separated from `carriedRaw` so it can be run on its own against a history
+     whose rows are NOT the frame's own objects -- the case that was broken.
+
+       * key present, non-empty string -- that row carries the value
+       * key present, anything else    -- that row has NO reading, and the
+                                          null is passed through rather than
+                                          walked past
+       * key missing                   -- identical to the nearest earlier row
+                                          that has the key
+
+     Reaching the start of the history without finding the key means the frame
+     is not in this window at all, because dashboard.py always states the
+     value on the first row it emits. */
+  function carriedFrom(hist, at, name) {
+    for (var back = Math.min(at, hist.length - 1); back >= 0; back--) {
+      if (Object.prototype.hasOwnProperty.call(hist[back], name)) {
+        var value = hist[back][name];
+        return typeof value === "string" && value ? value : null;
+      }
+    }
+    return null;
+  }
+
+  /* The measured zero of 0x2429, and the neutral band either side of it.
+     These are live.TORQUE_ZERO and the band live.py's derive() applies to it;
+     the page needs its own copy because a replay has no node answer for the
+     row being scrubbed and has to reach the verdict the node would have
+     reached. Two copies of a number is somewhere they drift apart, so a test
+     asserts these literals still equal the Python ones. */
+  var TORQUE_ZERO = 22534, TORQUE_BAND = 30;
+
+  /* 0x2429 is two bytes wide in all 2,756 samples in the session corpus, and
+     live.py's `_hex` reads the WHOLE hex string it is handed. Taking the
+     first two bytes of something longer would put the page and the node on
+     different numbers for the same instant with neither one complaining, so
+     anything that is not exactly two bytes is not read at all. */
+  function torqueCounts(text) {
+    var b = hexBytes(text);
+    if (b.length !== 2) return null;
+    return (b[0] * 256 + b[1]) - TORQUE_ZERO;
+  }
+
+  /* THE EFFORT SCALE: the largest excursion in the session now on screen.
+     Recomputed from state.snapshot.history on every call, which is exactly
+     what `rawFraction` does -- there is no published newtons-per-count for
+     this field, so the only honest normaliser is the one this drive actually
+     used, and "this drive" has to mean the drive being looked at. Held as a
+     running maximum it silently became a page-lifetime maximum: it survived
+     a session change, so a gentle drive after a hard one rendered dim for no
+     stated reason, and it grew as you scrubbed, so one frame rendered
+     differently depending on where you had already been. */
+  function effortScale(here) {
+    var snap = state.snapshot, hist = (snap && snap.history) || [], peak, i, c;
+    /* MEMOISED ON THE SNAPSHOT OBJECT ITSELF, not on `state` and not on a
+       lookup that outlives it. The history is byte-identical between scrub
+       frames -- a scrub replaces `state.frame`, never `state.snapshot` -- and
+       renderVehicle runs every 90 ms during playback and again on every
+       scrub input, so this loop was re-parsing up to 600 hex strings about
+       eleven times a second. Timed on a 600-row history in node: 138.2 us a
+       call uncached against 0.5 us cached, and the Pi Zero 2 W this page is
+       read on is roughly an order of magnitude slower again.
+       Keyed on the object's identity by construction: a new poll or a
+       session change builds a new snapshot, which cannot carry the old one's
+       peak, so the per-session semantics the tests assert are exactly what a
+       cache on the object gives. `here` is deliberately NOT part of the
+       cached value -- it is the frame's own reading and changes every frame.
+       Non-enumerable so it never reaches JSON.stringify or a for-in. */
+    if (snap && snap.effortPeak !== undefined) {
+      peak = snap.effortPeak;
+    } else {
+      peak = 0;
+      for (i = 0; i < hist.length; i++) {
+        c = torqueCounts(hist[i].field_2429_raw);
+        if (c !== null) peak = Math.max(peak, Math.abs(c));
+      }
+      if (snap) {
+        try {
+          Object.defineProperty(snap, "effortPeak",
+            { value: peak, enumerable: false, configurable: true, writable: true });
+        } catch (e) { /* a frozen snapshot is still correct, just slower */ }
+      }
+    }
+    if (here !== null && here !== undefined) peak = Math.max(peak, Math.abs(here));
+    /* A floor at the neutral band's own width times a few, so a drive that
+       never left the band does not get its quantisation noise stretched
+       across the whole brightness range. */
+    return Math.max(peak, 200);
+  }
+
+  /* ABSENT IS NOT NEUTRAL, and this is the pair of numbers that keeps them
+     apart on the halfshafts.
+
+     0x2429 is SPARSE. It answered in 2,756 of the 10,682 rows in
+     evidence/sessions -- 25.8% -- in only 20 of the 63 sessions, with runs of
+     up to 198 consecutive rows carrying nothing, about 18 s at the 90 ms
+     playback tick. So a replay of a real drive spends most of its time with
+     no effort reading at all, and it does it in the middle of acceleration.
+
+     Drawn as [0, 0, 0] that looked exactly like a measured neutral, which on
+     a halfshaft reads as "coasting" -- a confident statement about the truck
+     made out of a gap in the log. A measured neutral now has a colour of its
+     own: EFFORT_NEUTRAL, plainly lit and plainly neither amber nor green. An
+     absent reading leaves the shaft unlit, which is this page's established
+     way of saying nothing was measured (see the "no reading" swatch in the
+     legend), and the caption under the model says so in words whenever it
+     happens.
+
+     EFFORT_FLOOR is the bottom of the drive and regen ramps. Without it a
+     measured 31 counts against a session peaking at 8631 renders at 0.4%
+     brightness -- indistinguishable from unlit, so the least interesting way
+     of being wrong reappears at the other end of the scale. Direction is
+     itself a reading, so any direction is legible; the ramp above the floor
+     is what carries magnitude. */
+  var EFFORT_NEUTRAL = [0.24, 0.26, 0.30], EFFORT_FLOOR = 0.25;
+
+  /* THE HALFSHAFT COLOUR, as a function rather than as three lines buried
+     in draw(): it is the rule that keeps "no reading" and "measured neutral"
+     apart, and a rule that cannot be run on its own is a rule nothing
+     tests. */
+  function effortEmissive(effort) {
+    /* Absent: unlit, exactly like every other part with nothing to report,
+       and named in the caption under the model. */
+    if (!effort) return [0, 0, 0];
+    /* Measured, and inside the band: lit, and plainly neither amber nor
+       green. This is the state that used to be indistinguishable from the
+       one above. */
+    if (effort.dir === "neutral") return [EFFORT_NEUTRAL[0], EFFORT_NEUTRAL[1],
+                                          EFFORT_NEUTRAL[2]];
+    var em = EFFORT_FLOOR + (1 - EFFORT_FLOOR)
+           * Math.min(1, Math.abs(effort.counts) / effort.scale);
+    return effort.dir === "drive" ? [em * 0.62, em * 0.28, 0]
+                                  : [0, em * 0.55, em * 0.22];
+  }
+
+  /* EACH CORNER AGAINST THE MEAN OF THE FOUR, in km/h. These are level-3
+     decoded wheel speeds cross-validated against PID 010D, so the deviation
+     is a real quantity in real units and needs no relative normalising.
+
+     All four or nothing: a missing corner is missing, not zero, and averaging
+     three would move the reference out from under the other three. */
+  function cornerDeviation(frame, signals) {
+    var names = ["fl", "fr", "rl", "rr"], wheels = [], total = 0, i, s, v;
+    for (i = 0; i < 4; i++) {
+      if (frame) {
+        /* A history row is the reading taken at that instant; its age is
+           where the scrub is sitting and the page says so elsewhere. */
+        v = num(frame["wheel_" + names[i] + "_kph"]);
+      } else {
+        /* LIVE: fresh only. `signals[c].value` is nulled when the node judges
+           a reading INVALID and never when it judges it merely STALE, so a
+           corner that stopped answering keeps its last number for as long as
+           the page is open. A null test cannot catch that -- the value is a
+           number, just an old one -- and what it produces is not a missing
+           tint but an invented fault: three corners fresh at 60 km/h and one
+           stale at 20 from a hundred seconds ago tints the dead corner
+           "dragging" and all three healthy ones "spinning". */
+        s = signals && signals["wheel_" + names[i] + "_kph"];
+        v = (s && s.status === "fresh") ? num(s.value) : null;
+      }
+      if (v === null) return null;
+      wheels.push(v);
+      total += v;
+    }
+    var mean = total / 4, out = {};
+    /* Each corner is one byte in 1 km/h steps, so at walking pace the
+       quantisation is the whole signal and a parked truck would light all
+       four. */
+    if (mean < 5) return null;
+    for (i = 0; i < 4; i++) out[names[i]] = wheels[i] - mean;
+    return out;
+  }
+
+  /* THE CORNER RAMP, in km/h, measured rather than chosen -- the same lesson
+     as the spread ramp above, applied to the tyres.
+
+     It divided the deviation past the deadband by an uncited 3.0, which puts
+     full tint at 4.0 km/h from the four-corner mean. Nothing on this truck
+     has ever been near it. MEASURED, over the 10,682 rows in the 63 CSVs
+     under evidence/sessions: 7,480 rows carry all four corners and 1,425 of
+     those have a four-corner mean at or above the 5 km/h floor
+     `cornerDeviation` applies, which is 5,700 individual corner readings.
+     Of those the median deviation is 0.00 km/h, 58.8% are exactly zero, the
+     99th percentile is 1.50 and the largest ever recorded is 2.75. Against a
+     4.0 km/h top the largest reading on record sat 58% of the way up, so the
+     whole upper 42% of the ramp was unreachable, and only 83 of those 1,425
+     moving frames (5.8%) showed any tint on any corner at all.
+
+     THE TOP IS 1.75 km/h, a percentile of the record and not its maximum.
+     1.75 is the 99.9th percentile of all 5,700 corner readings, the 99th
+     percentile of the 1,425 rows taken at their worst corner, and the 95th
+     percentile of the 253 readings that clear the deadband and are therefore
+     the only ones this ramp ever colours. Those 253 are what has to traverse
+     it: against 4.0 km/h their mean position on the ramp is 7.3% and 0.4%
+     reach halfway; against 1.75 it is 27.7% and 26.9%, with 2.0% running past
+     the top. Anchoring on the once-ever 2.75 gives 12.5% and 2.0% with
+     nothing ever over-range, which is the unreachable anchor again in a
+     smaller size.
+
+     Those 2.0% are why over-range is FLAGGED and not pinned, exactly as the
+     spread is: a tyre pinned at full amber says "1.75 km/h" over a corner
+     2.75 km/h out, and the caption prints the number instead.
+
+     THE DEADBAND IS NOT PART OF THE RAMP. Each corner is one byte in 1 km/h
+     steps, so a deviation under one whole step is inside the sensor's own
+     quantisation; the readings bear that out, clustering on exact multiples
+     of 0.25 km/h (the mean of four one-km/h corners). A step is not a
+     finding -- but it IS a measurement, and it gets its own colour below
+     rather than the black that also means "nothing was read". */
+  var CORNER_DEADBAND_KPH = 1.0, CORNER_HIGH_KPH = 1.75,
+      CORNER_MAX_SEEN_KPH = 2.75;
+
+  /* ABSENT, MEASURED-AGREEMENT, MEASURED-SIGNAL: three states, three
+     pictures, the same rule the halfshafts now follow.
+
+     `cornerDeviation` returns null when a corner is missing from the row,
+     when any corner is not fresh, or when the four-corner mean is under
+     5 km/h -- and that used to leave the tyre at emissive [0, 0, 0], which is
+     pixel-identical to a corner measured squarely inside the deadband. It is
+     the COMMON case: 9,257 of the 10,682 recorded rows (86.7%) produce no
+     four-corner deviation at all, 3,202 of them because a corner is missing
+     and 6,055 because the truck is below walking pace. The freshness gate
+     made it worse, because one stale corner untints all four, and four
+     untinted tyres read as the affirmative claim "the corners agree".
+
+     CORNER_AGREE is that claim's own colour: plainly lit, plainly neutral,
+     neither the warm nor the cool end. Absent stays unlit, which is this
+     page's established way of saying nothing was measured, and the caption
+     under the model names it in words with its frequency.
+
+     CORNER_FLOOR is the bottom of both ramps, and it is not cosmetic.
+     draw() puts a contrast floor under any part whose emissive sums to less
+     than 0.06 once the body is hidden, and REPLACES the colour outright. A
+     corner measured 1.05 km/h out sat 1.7% up the old 4.0 km/h ramp, an
+     emissive sum of 0.014 -- so the faintest real finding was overwritten
+     with the untinted colour and became "no reading" again. Rescaling alone
+     does not fix it: 1.05 km/h is 5.9% up the ramp below, sum 0.057, still
+     under that floor. Direction is itself a reading, so any direction has to
+     be legible; the ramp above the floor is what carries magnitude. */
+  var CORNER_AGREE = [0.30, 0.31, 0.32], CORNER_FLOOR = 0.30;
+
+  /* Past the top of the ramp. Both keep their direction -- faster is still
+     warm, slower still cool -- and both carry a green channel the ramp never
+     produces (its warm end is [0.55, 0.30, 0] and its cool end
+     [0, 0.30, 0.55]), so an over-range tyre reads as OFF the scale rather
+     than far along it. The legend names both and the caption prints the
+     number, because "1.75 km/h out" and "somewhere past 1.75 km/h out" are
+     different readings and a pinned ramp cannot tell them apart. */
+  var CORNER_OVER_FAST = [0.88, 0.82, 0.24], CORNER_OVER_SLOW = [0.24, 0.82, 0.88];
+
+  /* THE TYRE COLOUR, as a function rather than as four lines buried in
+     draw(), for the same reason as effortEmissive: this is the rule that
+     keeps "no reading", "measured and agreeing" and "measured and differing"
+     apart, and a rule that cannot be run on its own is a rule nothing tests. */
+  function cornerEmissive(dev) {
+    /* Absent: unlit, exactly like every other part with nothing to report. */
+    if (typeof dev !== "number") return [0, 0, 0];
+    var dm = Math.abs(dev);
+    /* Measured, and inside one sensor step: lit, and plainly neither warm nor
+       cool. This is the state that used to be indistinguishable from the one
+       above. */
+    if (dm < CORNER_DEADBAND_KPH) {
+      return [CORNER_AGREE[0], CORNER_AGREE[1], CORNER_AGREE[2]];
+    }
+    if (dm > CORNER_HIGH_KPH) {
+      return dev > 0 ? [CORNER_OVER_FAST[0], CORNER_OVER_FAST[1], CORNER_OVER_FAST[2]]
+                     : [CORNER_OVER_SLOW[0], CORNER_OVER_SLOW[1], CORNER_OVER_SLOW[2]];
+    }
+    var cm = CORNER_FLOOR + (1 - CORNER_FLOOR)
+           * ((dm - CORNER_DEADBAND_KPH)
+              / (CORNER_HIGH_KPH - CORNER_DEADBAND_KPH));
+    return dev > 0 ? [cm * 0.55, cm * 0.30, 0] : [0, cm * 0.30, cm * 0.55];
+  }
+
+  /* THE SPREAD RAMP, in millivolts, measured rather than chosen.
+     It used to run 10 mV to 70 mV and present that as calibrated. It was not:
+     70 was a divisor picked to make a ramp, and on this truck the reading
+     never gets near it, so the visual sat permanently in the bottom sixth of
+     its range and could not move enough to be read. That is this project's
+     cardinal sin -- see the note beside identifier 2429 in drive.py.
+
+     MEASURED, from the 10,349 rows carrying `cell_spread_mv` in 52 of the 63
+     session CSVs under evidence/sessions: minimum 0.0 mV, median 3.4, 90th
+     percentile 5.0, 99th percentile 7.6, 99.9th 12.3, maximum 19.7 -- and
+     19.7 occurs exactly once in the whole corpus.
+
+     THE TOP IS THE 99TH PERCENTILE AND NOT THE MAXIMUM, which is the second
+     half of the same lesson. Anchored at that once-ever 19.7 the ramp could
+     not move either: of those 10,349 readings 50.2% sat exactly on the green
+     floor, 92.4% inside the bottom tenth of the ramp, 0.17% ever reached
+     halfway, and the mean position was 3.9% -- an amber end no drive can
+     reach is the 70 mV divisor with a citation stapled to it. Against 7.6
+     the same readings traverse the ramp: mean position 14.6%, 4.5% reach
+     halfway or beyond, and 1.0% run past the top.
+
+     Those 1.0% are why there is an over-range flag rather than a clamp. A
+     band pinned at full amber would say "7.6 mV" when the reading is 12, and
+     that gets its own colour and the number printed in the caption.
+
+     What green means is stated rather than implied: 3.4 mV is this pack's
+     MEDIAN, so green covers the bottom half of every reading on record and
+     the caption says so in those words. GM publishes no imbalance limit for
+     this pack, and citing one from another chemistry would be inventing a
+     scale again. tests/test_dashboard.py recomputes all three numbers from
+     that corpus, and separately checks that the ramp is still traversable by
+     the readings in it -- so a corpus that grows past the ramp says so
+     rather than the ramp going quietly out of date. */
+  var CELL_SPREAD_TYPICAL_MV = 3.4, CELL_SPREAD_HIGH_MV = 7.6,
+      CELL_SPREAD_MAX_SEEN_MV = 19.7;
+
+  /* The colour of a spread that has run past the top of the ramp above.
+     Deliberately not on the green-amber ramp and not the modules' red: a
+     band in this colour is not "far along the scale", it is "off it", and
+     the legend and the caption both say so. Full amber cannot: "at 7.6 mV"
+     and "somewhere above 7.6 mV" are different readings and a pinned ramp
+     tells them apart in neither direction. */
+  var CELL_SPREAD_OVER = [0.72, 0.20, 0.95];
+
+  /* THE SPREAD BAND'S TINT, from the spread in millivolts. Extracted for the
+     same reason as effortEmissive: the interesting cases are "no reading"
+     and "past the top of the ramp", and both need to be runnable rather than
+     eyeballed. */
+  function cellSpreadEmissive(spreadMv) {
+    /* THERE IS NO "NO READING" COLOUR HERE, and that is the point. This used
+       to answer a non-number with [0.35, 0.38, 0.40], which was unreachable:
+       draw() returns before the band is drawn at all when `live.spreadMv` is
+       not a number, so the only way to reach that line was to call it from a
+       test. A resting colour kept alive by its own assertion is the reading
+       nobody took, sitting one edit away from being rendered again. The rule
+       this function states is now "colour from a spread", and having no
+       spread is the caller's business -- see the withholding in draw(). */
+    if (spreadMv > CELL_SPREAD_HIGH_MV) {
+      return [CELL_SPREAD_OVER[0], CELL_SPREAD_OVER[1], CELL_SPREAD_OVER[2]];
+    }
+    var sp = Math.max(0, Math.min(1,
+          (spreadMv - CELL_SPREAD_TYPICAL_MV)
+          / (CELL_SPREAD_HIGH_MV - CELL_SPREAD_TYPICAL_MV)));
+    return [sp * 0.85, 0.55 - sp * 0.10, 0.22 - sp * 0.22];
+  }
+
+  /* THE THREE BOUNDS, or nothing at all. They are no longer DRAWN -- see the
+     note where the three marks used to be built -- but they are still
+     PRINTED, in volts, in the caption under the model, and printing them is
+     as much a claim as drawing them was. So the same rule applies: all three
+     or none.
+
+     There is no axis any more and therefore no "off the axis": text can say
+     2.400 V as easily as 3.980 V, and a reader of digits needs no flag to
+     know which is which. What text cannot fix is an IMPOSSIBLE triple, so
+     that check stays. */
+  function cellEnvelope(lo, av, hi) {
+    if (typeof lo !== "number" || typeof av !== "number" || typeof hi !== "number") {
+      return null;
+    }
+    /* No pack can have its lowest cell above its average. Three numbers in
+       that order are a torn read or a decode fault, and printing them states
+       a pack condition that cannot exist, with nothing saying so. */
+    if (!(lo <= av && av <= hi)) return null;
+    return { min: lo, avg: av, max: hi };
+  }
+
+  /* THE CONTRAST FLOOR, AND THE PARTS IT MUST NOT TOUCH.
+
+     With the body hidden an internal part with nothing to report is lifted to
+     a dim grey so it is still legible against the void. That is DECORATION
+     and not information, which is why a part already lit by a measurement --
+     a glowing motor, a warm pipe -- keeps its own colour.
+
+     Hidden is the DEFAULT: `layers.shell` is 0 at init and nothing turns it
+     on, so this ran on the ordinary frame and not on some corner of the view
+     menu. And it ran LAST, after the tyre and halfshaft emissive assignments,
+     and REPLACED them. A tyre with no corner reading rendered this floor
+     instead of [0, 0, 0]; so did a halfshaft with no effort reading. Against
+     a measured neutral -- CORNER_AGREE [0.30, 0.31, 0.32] on the tyre,
+     EFFORT_NEUTRAL [0.24, 0.26, 0.30] on the shaft -- that left absent and
+     measured-neutral as two neutral greys separated by brightness alone, and
+     on the tyre that separation is attenuated by its own 0.38 alpha to 0.076
+     of the output pixel. There is no lit sibling to read it against either:
+     `cornerDeviation` is all-or-nothing across all four tyres and the effort
+     reading is all-or-nothing across both shafts, so the frame never holds
+     one of each at the same time.
+
+     Three states, three pictures is the standard the cell-voltage marks were
+     DELETED for -- see the note where they stood. A fifth of a grey behind
+     38% alpha, with nothing on screen to compare it to, does not meet it.
+
+     SO THE READING PARTS ARE EXEMPT. It is the same decision the spread band
+     already gets by being withheld outright: where a part's emissive IS the
+     reading, absent state included, decoration may not overwrite it. Exempt
+     rather than withheld because a tyre and a halfshaft are GEOMETRY that
+     exists whether or not anything was measured -- taking them off the truck
+     would be a bigger lie than the one being fixed -- and exempt rather than
+     recoloured because CORNER_AGREE and EFFORT_NEUTRAL are deliberately
+     neither end of their ramps, and a hue that is "not a finding" is exactly
+     what a ramp with two ends does not have left.
+
+     What the exemption buys, as rendered: unlit really is unlit, which is
+     what the legend swatch and the caption under the model already say in
+     words, and the gap to a measured neutral becomes the whole of
+     CORNER_AGREE -- 0.32 * 0.38 = 0.12 of the output pixel through the
+     tyre's alpha, and 0.30 on the opaque shaft. The brightness step also
+     stops being a step on the same grey as everything else: the rest of the
+     scene still carries the floor, so an unlit tyre is the DARKEST thing in
+     a view where every other internal part sits at 0.10, and a measured
+     neutral is brighter than all of them. The reference the four tyres
+     cannot give each other is given by everything around them.
+
+     Extracted from draw() for the reason every other rule in this section
+     was: a rule that cannot be RUN on its own is a rule nothing tests, and
+     this is the pass that has the last word over three earlier ones. */
+  var CONTRAST_FLOOR = [0.10, 0.11, 0.12], CONTRAST_FLOOR_SUM = 0.06;
+
+  function contrastFloor(emissive, part, shellHidden) {
+    /* With the body on there is no void to be lost against. */
+    if (!shellHidden) return emissive;
+    /* The body and the cabin are what is being seen THROUGH; lighting them
+       would put back the thing the viewer asked to take away. */
+    if (part.layer === "shell" || part.layer === "cabin") return emissive;
+    /* The reading parts. See above: their unlit state is a measurement. */
+    if (part.cornerTint || part.effort || part.spreadBand) return emissive;
+    /* Already lit by something it measured: that is information, this is
+       only contrast. */
+    if (emissive[0] + emissive[1] + emissive[2] >= CONTRAST_FLOOR_SUM) {
+      return emissive;
+    }
+    return [CONTRAST_FLOOR[0], CONTRAST_FLOOR[1], CONTRAST_FLOOR[2]];
+  }
+
+  /* ---------- the legend's swatches, through the page's own shading rule ---
+
+     A swatch beside a legend entry is a claim about a PIXEL: "this state of
+     this part looks like this". So it has to be computed the way the pixel
+     is, and every entry in a set has to be the same computed quantity, or the
+     entries are not comparable with each other and the set teaches an order
+     the screen does not have.
+
+     THE RULE, from the fragment shader verbatim:
+
+         vec3 lit = uColour * (0.20 + kd * 0.85 + fd) + vec3(spec);
+         lit += uEmissive;
+         lit += uColour * rim * 0.55;
+
+     `kd`, `fd`, `spec` and `rim` are all functions of where the surface faces
+     and where the camera is. They are properties of the VIEW, not of the
+     state, so no legend can quote them. The 0.20 is not: it is the ambient
+     floor every fragment gets whatever it faces, so
+
+         uColour * SWATCH_AMBIENT + uEmissive
+
+     is exactly what this part in this state looks like AT ITS DARKEST, in
+     every frame and from every angle. That lower bound is the one quantity
+     all of these entries can honestly share, and sharing it is the point.
+
+     WHAT THIS REPLACES, twice over. The tyre and halfshaft "unlit" entries
+     first quoted the part's raw DIFFUSE (#0e0f11 and #525a5e) while every
+     other entry in their sets quoted a raw EMISSIVE -- two quantities in one
+     set, and #525a5e is brighter than the measured-neutral swatch beside it
+     while on screen the measured neutral is the brighter of the two, so the
+     legend inverted the one relationship it exists to teach. The repair for
+     that set both entries to #000000 on the premise that an unlit part
+     renders black. It does not: `uColour` is the diffuse and it is multiplied
+     into the output on the shader's first line for every non-textured part,
+     every frame, so an unlit halfshaft renders its own grey under the
+     lighting term and a black swatch understates it -- the same inversion,
+     pointing the other way. Neither reading was wrong about the OTHER
+     entries; both were wrong to quote a raw component of the sum instead of
+     the sum.
+
+     ORDER WITHIN A SET IS BY PEAK CHANNEL -- the largest of the three -- and
+     not by any weighted sum. These states differ in DIRECTION as much as in
+     magnitude: warm puts its light in red, cool puts it in blue. Relative
+     luminance weights blue at 0.0722, so it ranks a tyre at full cool tint
+     BELOW the pale grey of a measured agreement, though on screen the cool
+     tint is plainly the stronger mark. A plain sum does the same. The peak
+     channel is hue-blind, which is what ordering states that differ in hue
+     needs. */
+  var SWATCH_AMBIENT = 0.20;
+
+  /* The two diffuse colours the swatches have to shade, hoisted out of
+     buildScene so the legend can reach the same array the scene is built
+     from. Written down twice is where they drift apart. */
+  var TYRE_DIFFUSE = [0.055, 0.06, 0.065], SHAFT_DIFFUSE = [0.32, 0.35, 0.37];
+
+  function swatchRgb(diffuse, emissive) {
+    var out = [], i, c;
+    for (i = 0; i < 3; i++) {
+      c = diffuse[i] * SWATCH_AMBIENT + emissive[i];
+      out.push(c < 0 ? 0 : c > 1 ? 1 : c);
+    }
+    return out;
+  }
+  function swatchHex(diffuse, emissive) {
+    var rgb = swatchRgb(diffuse, emissive), out = "#", i, n;
+    for (i = 0; i < 3; i++) {
+      n = Math.round(rgb[i] * 255).toString(16);
+      out += n.length < 2 ? "0" + n : n;
+    }
     return out;
   }
 
@@ -1197,7 +1769,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         BODY  = [0.34, 0.38, 0.41],
         TRIM  = [0.11, 0.13, 0.14],
         GLASS = [0.14, 0.22, 0.27],
-        TYRE  = [0.055, 0.06, 0.065],
+        TYRE  = TYRE_DIFFUSE,
         RIM   = [0.42, 0.45, 0.47];
     function add(o) { parts.push(o); return o; }
     function slab(id, x0, x1, y0, y1, z0, z1, colour, opts) {
@@ -1469,6 +2041,43 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           t: [VEH.packCentreX, (VEH.packTop + VEH.packBottom) / 2 - 0.02, 0],
           s: [VEH.packLength + 0.12, VEH.packTop - VEH.packBottom + 0.04,
               VEH.packWidth + 0.12], alpha: 0.28 });
+
+    /* --- THE CELL SPREAD BAND ------------------------------------------
+       WHAT USED TO BE HERE, AND WHY IT IS NOT. Three marks stood on the pack
+       case's own height as a fixed 3.0-4.2 V axis: the lowest cell, the
+       average and the highest. The decode was sound; the GEOMETRY could not
+       carry it. That axis maps 1.2 V onto 0.320 model units, so 1 mV is
+       0.000267 units, while each mark was 0.020 units thick. The widest
+       imbalance this truck has ever recorded, 19.7 mV, separated the lowest
+       mark from the highest by 26% of one mark's own thickness; the median
+       reading, 3.4 mV, by 4.5% of it -- about a tenth of a pixel on screen.
+       On every reading in the corpus the three marks were one bar, under a
+       caption saying they showed lowest, average and highest. A visual that
+       cannot express its own claim must not ship, so the marks are gone and
+       the three voltages are printed as TEXT in the caption under the model,
+       where digits can express millivolts and geometry cannot.
+
+       WHAT STAYS is the reading geometry CAN carry: one band whose COLOUR is
+       the pack's imbalance in millivolts, on a ramp measured from the
+       sessions on disk and flagged when a reading runs past it (see
+       CELL_SPREAD_TYPICAL_MV). Colour resolves a few mV where 0.0003 model
+       units cannot. The band makes no claim about position -- it stands
+       still, and nothing about where it sits is a reading.
+
+       Drawn outboard of the case: the case is packWidth + 0.12 across, so
+       its face is at +0.77, and the band sits at packWidth / 2 + 0.09 --
+       +0.80 on the published 1.420 m pack -- which is 0.03 of clearance
+       rather than z-fighting against it. */
+    var envZ = VEH.packWidth / 2 + 0.09, envX = VEH.packCentreX;
+    add({ id: "cell-spread-band", mesh: "bev", layer: "pack",
+          colour: [0.20, 0.22, 0.24],
+          /* `spreadBand` so draw() can withhold it outright: with no spread
+             reading there is no tint to draw, and a band left in some
+             resting colour would be a reading nobody took. */
+          spreadBand: true,
+          t: [envX, VEH.packBottom + 0.11, envZ],
+          s: [0.90, 0.040, 0.024] });
+
     for (var layer = 0; layer < 2; layer++) {
       for (var r = 0; r < rows; r++) {
         for (var c = 0; c < cols; c++) {
@@ -1581,7 +2190,13 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     driveUnit("motor-rear-a", -AXLE, -0.24, 0.44, { noHousing: true });
     driveUnit("motor-rear-b", -AXLE, 0.24, 0.44, { noHousing: true });
     [["f", AXLE], ["r", -AXLE]].forEach(function (a) {
-      add({ id: "shaft-" + a[0], mesh: "cyl", layer: "drive", colour: [0.32, 0.35, 0.37],
+      /* Lit by tractive effort and its direction, which is a different
+         quantity from the bus power the motor housings glow with. They are
+         kept on separate parts deliberately: effort and bus power diverge,
+         and collapsing them onto one part would turn two witnesses into what
+         looks like one agreeing with itself. */
+      add({ id: "shaft-" + a[0], mesh: "cyl", layer: "drive", colour: SHAFT_DIFFUSE,
+            effort: true,
             t: [a[1], VEH.wheelRadius, 0], s: [0.10, 0.10, VEH.width - 0.34],
             rot: "z" });
     });
@@ -1596,6 +2211,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            you cannot see past is the one part of a wheel with nothing to
            report. */
         add({ id: "tyre-" + w[0], mesh: "tyre", layer: "wheels", colour: TYRE,
+              /* Tinted by how far this corner is from the four-corner mean.
+                 On the tyre rather than the rim precisely because the tyre is
+                 the translucent one: at alpha 0.38 the disc and caliper
+                 behind it still read through the tint. */
+              cornerTint: true,
               alpha: 0.38, spin: true, corner: w[0], steer: front,
               t: [w[1], VEH.wheelRadius, z],
               s: [d, d, VEH.wheelWidth], rot: "z", flip: w[2] < 0 });
@@ -2608,7 +3228,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                  roll: 0, pitch: 0,
                  fill: null, packTemp: null, lv: null, port: false,
                  fault: false, chargeKw: 0, regenKw: 0, radar: [0, 0, 0],
-                 awake: false },
+                 awake: false, cornerDev: null, effort: null,
+                 spreadMv: null },
         angle = { fl: 0, fr: 0, rl: 0, rr: 0 }, lastFrame = 0,
         /* Rotor angles per axle, integrated the same way the wheels are. */
         motorAngle = { f: 0, r: 0 }, MOTOR_RATIO = { f: 13.3, r: 10.5 };
@@ -2924,6 +3545,13 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
               along = ((now * 0.001 * speed + p.travel.phase) % 1);
           p.t[axis] = p.travel.from + (p.travel.to - p.travel.from) * along;
         }
+        /* NO SPREAD READING, NO BAND. The band's whole content is its
+           colour, so with nothing to colour it there is nothing to draw:
+           a band left in some resting colour is a reading nobody took.
+           The caption says so in words. Nothing here MOVES the band --
+           its position is not a reading and never becomes one, which is
+           the difference between it and the three marks it replaced. */
+        if (p.spreadBand && typeof live.spreadMv !== "number") return;
         var mesh = meshes[p.mesh] || meshes.box;
         gl.bindBuffer(gl.ARRAY_BUFFER, mesh.position);
         gl.enableVertexAttribArray(loc.pos);
@@ -2990,6 +3618,37 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         if (p.index !== undefined && live.modules.length === 24) {
           colour = live.modules[p.index] || p.colour;
         }
+        if (p.cornerTint) {
+          /* How far this corner is from the mean of the four, in km/h. Warm
+             is faster than its siblings, cool is slower, a measured
+             agreement is its own pale neutral and no reading at all is
+             unlit.
+
+             THREE STATES, THREE PICTURES, the same rule the halfshafts
+             follow. A corner measured squarely inside the sensor's own step
+             and a corner nobody read were both [0, 0, 0], and since 86.7% of
+             recorded rows produce no four-corner deviation, four black tyres
+             were the page's most common frame and read as "the corners
+             agree". See CORNER_AGREE for the measurements. */
+          emissive = cornerEmissive(live.cornerDev ? live.cornerDev[p.corner] : null);
+        }
+        if (p.effort) {
+          /* Counts either side of a measured zero, against this session's own
+             largest excursion. NO UNIT: the fitted constant is 2.30-2.42 N
+             per count, which is not a divisor a designer picks, so no
+             equation is claimed and nothing here says newton-metres. The
+             amber is deliberately the motor branch's drive amber and the
+             green the regen parts' green, so the same event reads the same
+             way wherever it appears on the truck.
+
+             THREE STATES, THREE PICTURES. A measured neutral and no reading
+             at all were both [0, 0, 0] and therefore the same shaft, and on
+             a field that answers in a quarter of recorded rows that meant a
+             replay went "coasting" for seconds at a time in the middle of an
+             acceleration. See EFFORT_NEUTRAL for the measurements behind
+             that. */
+          emissive = effortEmissive(live.effort);
+        }
         if (p.id && p.id.indexOf("motor") === 0) {
           var m = Math.min(1, Math.abs(live.kw) / 180);
           emissive = live.kw < 0 ? [0, m * 0.55, m * 0.18] : [m * 0.62, m * 0.20, 0];
@@ -3030,15 +3689,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           emissive = [0.06 + 0.20 * live.compressor, 0.24 * live.compressor + 0.08,
                       0.34 * live.compressor + 0.10];
         }
-        if (layers.shell <= 0 && p.layer !== "shell" && p.layer !== "cabin"
-            && emissive[0] + emissive[1] + emissive[2] < 0.06) {
-          /* A floor under the internals once the body is gone, so a part
-             with nothing to report is still legible against the void. Only
-             where the part is not already lit by a measurement -- a glowing
-             motor or a warm pipe keeps its own colour, because that is
-             information and this is only contrast. */
-          emissive = [0.10, 0.11, 0.12];
-        }
+        /* The last word over the three assignments above: a floor under the
+           parts with nothing to report, so they stay legible once the body
+           is gone, and NOTHING at all over the parts whose "nothing to
+           report" is itself the reading -- the tyres, the halfshafts and the
+           spread band. That exemption is why an unlit tyre is unlit on
+           screen and not a dim grey a shade off the measured neutral; the
+           whole argument is beside `contrastFloor`. */
+        emissive = contrastFloor(emissive, p, layers.shell <= 0);
         if (p.hairpin) {
           /* Copper carrying current glows; copper sitting idle is just
              copper. Driving and regenerating both heat the windings, so this
@@ -3144,6 +3802,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
               t01 = (p.t[pax] - p.travel.from) / (p.travel.to - p.travel.from),
               lit = Math.sin(Math.max(0, Math.min(1, t01)) * Math.PI);
           emissive = [0.10 * lit, 0.75 * lit, 0.85 * lit];
+        }
+        if (p.spreadBand) {
+          /* The pack's imbalance in millivolts, and nothing else: green at
+             the corpus median or under, amber at the 99th percentile, its
+             own flag colour past that -- see `cellSpreadEmissive` and
+             CELL_SPREAD_TYPICAL_MV. The band is not drawn at all when there
+             is no reading (above), so this is always a measurement. */
+          emissive = cellSpreadEmissive(live.spreadMv);
         }
         if (p.id === "pack-case") {
           /* Two readings on one part: how full it is, and how warm. The tint
@@ -3589,16 +4255,6 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
   function renderVehicle(vs) {
     if (!viewer) return;
-    var bytes = hexBytes(sig("array_2af1") ? sig("array_2af1").value : null),
-        usable = bytes.length >= 24, median = 0, spread = 0, colours = [];
-    if (usable) {
-      var sorted = bytes.slice(0, 24).sort(function (a, b) { return a - b; });
-      median = sorted[12];
-      var devs = bytes.slice(0, 24).map(function (v) { return Math.abs(v - median); })
-                      .sort(function (a, b) { return a - b; });
-      spread = devs[12] || 1;
-      for (var i = 0; i < 24; i++) colours.push(moduleColour(bytes[i], median, spread));
-    }
 
     /* Coolant flow from whether the thermal accumulator is actually
        advancing, so a system that has stopped stops the animation rather
@@ -3637,6 +4293,48 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       var value = f[name];
       return typeof value === "string" && value ? value : null;
     }
+    /* The delta columns, which the history sends only when they CHANGE (see
+       DELTA_RAW_COLUMNS in dashboard.py). A row that says nothing about one
+       of them is a row identical to the last row that did, so the value is
+       carried forward from there; a row that carries an explicit null is a
+       row with NO reading, and that null is passed through. Those two cases
+       are the reason the encoding turns on whether the key is PRESENT and
+       not on whether the value is truthy -- collapsing them would paint the
+       module blocks "no reading" through a run where the pack was in fact
+       steady, and paint them steady through a run where it had gone quiet. */
+    function carriedRaw(name, fallback) {
+      if (!f) return fallback;
+      if (Object.prototype.hasOwnProperty.call(f, name)) {
+        return atFrameRaw(name, fallback);
+      }
+      /* BY KEY, NOT BY IDENTITY -- see `frameIndex`. `f` comes out of
+         `state.map.rows`, which survives the 5 s poll that replaces
+         `state.snapshot`, so the two are different objects describing the
+         same instant and `indexOf` answered -1 on ~89% of replayed frames. */
+      var hist = (state.snapshot && state.snapshot.history) || [];
+      return carriedFrom(hist, frameIndex(f, hist) - 1, name);
+    }
+    /* THE 24 MODULE BLOCKS. This used to sit at the top of the function,
+       above `f`, and read the array through `sig()` alone -- so scrubbing a
+       past drive left every block painted the colour the pack ended the trip
+       in while the marker moved through it. It reads the frame first now,
+       which is why it lives below `atFrameRaw` rather than where it was.
+
+       The fallback is the live signal and is reached only when `f` is falsy,
+       i.e. when nothing is being scrubbed. A frame that carries no array must
+       yield null and draw uncoloured blocks; handing it the live value
+       instead IS the bug this move exists to fix. */
+    var bytes = hexBytes(carriedRaw("array_2af1", sig("array_2af1") ? sig("array_2af1").value : null)),
+        usable = bytes.length >= 24, median = 0, spread = 0, colours = [];
+    if (usable) {
+      var sorted = bytes.slice(0, 24).sort(function (a, b) { return a - b; });
+      median = sorted[12];
+      var devs = bytes.slice(0, 24).map(function (v) { return Math.abs(v - median); })
+                      .sort(function (a, b) { return a - b; });
+      spread = devs[12] || 1;
+      for (var i = 0; i < 24; i++) colours.push(moduleColour(bytes[i], median, spread));
+    }
+
     var kpa = atFrame("brake_kpa", sigValue("brake_kpa")),
         speed = atFrame("speed_kph", num(derived("speed_now_kph")));
 
@@ -3669,7 +4367,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
              in one session -- while the charger's state byte keeps
              answering, so the window is generous and the boundary is the
              state byte, not the clock. */
-          var hist = (state.snapshot && state.snapshot.history) || [], at = hist.indexOf(f),
+          var hist = (state.snapshot && state.snapshot.history) || [],
+              /* By key: `f` belongs to the snapshot the map was built from,
+                 not to the one this poll delivered. See `frameIndex`. */
+              at = frameIndex(f, hist),
               pluggedNow = (f.charger_5401_raw || "00") !== "00",
               open = [true, true];
           for (var d = 1; d <= 60 && (open[0] || open[1]); d++) {
@@ -3691,6 +4392,13 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           rl: atFrame("wheel_rl_kph", sigValue("wheel_rl_kph")),
           rr: atFrame("wheel_rr_kph", sigValue("wheel_rr_kph"))
         },
+        /* The tint reads the four corners for itself rather than taking
+           `wheelsHere`, because the two want different things from the same
+           columns. Rotation wants a number, and an old one still turns a
+           wheel at about the right rate; the tint is a comparison BETWEEN the
+           corners, so one corner's number being older than the others' three
+           is the whole failure. `cornerDeviation` applies that rule. */
+        cornerDev = cornerDeviation(f, state.snapshot && state.snapshot.signals),
         rolling = (speed !== null && speed > 0.5)
           || ["fl", "fr", "rl", "rr"].some(function (c) {
                return wheelsHere[c] !== null && wheelsHere[c] > 0.5; }),
@@ -3714,7 +4422,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       if (!pluggedHere) return "off";
       if (chargingHere) return "charging";
       var hist = (state.snapshot && state.snapshot.history) || [],
-          at = f ? hist.indexOf(f) : hist.length - 1;
+          at = f ? frameIndex(f, hist) : hist.length - 1;
       if (at < 0) return "solid";
       function rowPlugged(r) { return (r.charger_5401_raw || "00") !== "00"; }
       function rowCharging(r) {
@@ -3735,7 +4443,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     var flowHere;
     if (f) {
       var hist = (state.snapshot && state.snapshot.history) || [],
-          at = hist.indexOf(f), advance = 0, hvacHere = false;
+          at = frameIndex(f, hist), advance = 0, hvacHere = false;
       if (at > 0) {
         var back = Math.max(0, at - 6), here = hexBytes(f.thermal_energy_raw || null),
             prev = null;
@@ -3758,6 +4466,68 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       flowHere = (state.thermal.rate > 0.5 || hvacActive) ? 1 : 0;
     }
 
+    /* Worked out here rather than inside the update literal because the
+       caption below has to describe the same three marks the model draws --
+       including saying nothing is drawn, when nothing is. A caption that
+       names an axis while the axis is not on screen is the same defect in
+       words. */
+    var spreadHere = atFrame("cell_spread_mv", num(derived("cell_spread_mv"))),
+        cellsHere = cellEnvelope(
+          f ? atFrame("cell_min_v", null) : num(derived("cell_min_v")),
+          f ? atFrame("cell_avg_v", null) : num(derived("cell_avg_v")),
+          f ? atFrame("cell_max_v", null) : num(derived("cell_max_v")));
+
+    /* TRACTIVE EFFORT ON THE HALFSHAFTS, in counts from a measured zero.
+       Live, the node's own band decides the direction and the page just
+       draws it -- re-deciding it here would let the two disagree about the
+       same instant. In a replay there is no node answer for that row, so
+       TORQUE_ZERO and TORQUE_BAND -- the page's copy of live.py's two
+       numbers, kept equal to them by a test -- are applied to the raw
+       column, which is where the node got its own answer from.
+
+       Deliberately NOT falling back to the sign of live.kw when this is
+       absent: that is the other reading, on the other parts, and
+       substituting it would make two witnesses look like agreement when
+       one of them never spoke.
+
+       Nor is it carried forward from a nearby sample the way pack_kw is.
+       The two fields fail differently: the pack goes quiet for minutes at a
+       stretch on a charge, where the last sample before it went quiet is
+       still broadly true, and effort changes inside a second, where a
+       sample from 18 s ago is not. Absent stays absent -- null here -- and
+       the shafts go unlit while the caption below names it in words. */
+    var effortHere = (function () {
+      var counts, dir;
+      if (f) {
+        /* ONE BIG-ENDIAN u16, which is also how live.py reads it -- the
+           same two bytes taken the other way round would put the page and
+           the node on different numbers for the same instant. Exactly two
+           bytes: `torqueCounts` refuses anything else, because live.py's
+           `_hex` parses the whole string and taking a prefix of a wider
+           field would let the two diverge in silence.
+
+           The endianness is not assumed. Across the 2,756 samples in the
+           session corpus the big-endian value has its median exactly on
+           the 22534 zero and 73% of samples inside the neutral band; read
+           little-endian the median sits 20,910 counts away and not one
+           sample lands in the band at all. (The low byte is 0x06 in about
+           72% of samples, not all of them, so it is the clustering and not
+           a pinned byte that settles this.) */
+        counts = torqueCounts(atFrameRaw("field_2429_raw", null));
+        if (counts === null) return null;
+        dir = counts > TORQUE_BAND ? "drive"
+            : counts < -TORQUE_BAND ? "regen" : "neutral";
+      } else {
+        counts = num(derived("torque_counts"));
+        dir = derived("torque_dir");
+      }
+      if (counts === null || counts === undefined) return null;
+      if (dir === null || dir === undefined) return null;
+      /* Recomputed from the session on screen, never accumulated: see
+         `effortScale`. */
+      return { counts: counts, dir: dir, scale: effortScale(counts) };
+    })();
+
     viewer.update({
       modules: colours,
       kw: atFrame("pack_kw", num(derived("pack_kw"))) || 0,
@@ -3774,6 +4544,19 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         if (e === null) return null;
         return Math.max(0, Math.min(1, e / (cap && cap > 20 ? cap : 205)));
       })(),
+      /* THE CELL SPREAD, which is the only part of the pack's imbalance the
+         MODEL still carries -- the three bounds are printed in the caption
+         instead, because a millivolt cannot be drawn at this scale. In a
+         replay this is the frame's own column, so the band follows the drive
+         rather than resting on the value it finished at.
+
+         Live, the node's gated `derived` value and NOT `sigValue`:
+         `signals[c].value` is nulled when the node judges a reading INVALID
+         and survives when it judges it merely STALE, whereas `derived` is
+         emptied by either. The same gate covers the three bounds the caption
+         prints -- an hour-old voltage printed to three decimals is the same
+         assertion the marks used to make with their height. */
+      spreadMv: spreadHere,
       packTemp: atFrame("temp_f", sigValue("temp_f")),
       lv: sigValue("module_voltage") !== null ? sigValue("module_voltage")
           : sigValue("volts"),
@@ -3854,7 +4637,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                  X: [0.20, 0.55, 0.90], LASER: [0.80, 0.16, 0.75]
                }[alert.band] || [0.55, 0.55, 0.55];
       })(),
+      effort: effortHere,
       corners: wheelsHere,
+      cornerDev: cornerDev,
       charging: chargingHere,
       csi: csiHere,
       /* Plugged in but not necessarily taking current -- the two are
@@ -3880,6 +4665,171 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
          animate a charge cable during a drive. */
       regenKw: kwHere !== null && kwHere < 0 && !chargingHere ? -kwHere : 0
     });
+
+    /* --- the pack's cell readings, IN DIGITS, plus what the band means ---
+       THE NUMBERS ARE THE VISUAL NOW. Three marks on a fixed 3.0-4.2 V axis
+       used to stand here; that axis put 1 mV at 0.000267 model units against
+       marks 0.020 units thick, so this pack's widest-ever imbalance moved the
+       lowest mark 26% of one mark's thickness away from the highest, and its
+       median imbalance moved it 4.5% -- around a tenth of a pixel. The marks
+       were one bar on every reading ever recorded, captioned as three. What
+       the reading needs is digits, so digits is what it gets; the model keeps
+       only the part colour can carry, which is the spread. */
+    var seriesCells = num(derived("series_cells")),
+        cellNote = cellsHere
+          /* The three bounds and nothing computed from them: the spread is
+             printed below from `cell_spread_mv`, which the node derives from
+             the raw counts rather than from these rounded volts, and a
+             second subtraction here would be a second answer to the same
+             question that can disagree with the first. */
+          ? "Cells right now: lowest " + cellsHere.min.toFixed(3)
+            + " V, average " + cellsHere.avg.toFixed(3) + " V, highest "
+            + cellsHere.max.toFixed(3) + " V. These are printed rather than "
+            + "drawn: on the pack's own height a millivolt is about a tenth "
+            + "of a pixel, so three marks would be one bar under a caption "
+            + "calling them three. "
+          : "There are no cell voltages to print for this moment: the lowest, "
+            + "average and highest readings are not all current, or do not "
+            + "order themselves the way a pack must. Nothing is shown for them "
+            + "rather than a stale or impossible triple. ";
+    /* --- what the band on the pack is saying, in the band's own numbers ---
+       The ramp is measured, and saying so is half of it; saying what a green
+       band therefore covers is the other half. 3.4 mV is the MEDIAN of the
+       recorded readings, so "green" is "the ordinary bottom half of this
+       pack's record" and not "balanced" -- the colour cannot make that
+       distinction and the sentence can.
+
+       The same value the model is tinted from, not a second read of the same
+       column: the caption exists to describe what is on screen, and two reads
+       are two chances to describe something else. */
+    if (spreadHere === null) {
+      cellNote += "There is no cell-spread reading for this moment, so the "
+        + "band on the pack is not drawn at all rather than resting in some "
+        + "colour that would read as a measurement. ";
+    } else {
+      cellNote += "The band on the pack's flank is the spread as a colour, "
+        + spreadHere.toFixed(1) + " mV. Green is "
+        + CELL_SPREAD_TYPICAL_MV.toFixed(1) + " mV or under, which is this "
+        + "pack's median — so green covers the bottom half of every reading "
+        + "on record, and means ordinary rather than balanced. Full amber "
+        + "is " + CELL_SPREAD_HIGH_MV.toFixed(1) + " mV, the 99th "
+        + "percentile of 10,349 recorded readings; the widest ever seen is "
+        + CELL_SPREAD_MAX_SEEN_MV.toFixed(1) + " mV, once. Its position is "
+        + "not a reading — only its colour is. ";
+      if (spreadHere > CELL_SPREAD_HIGH_MV) {
+        cellNote += "This reading is past the top of that ramp, so the band is "
+          + "flagged rather than pinned at full amber: read this number, not "
+          + "the colour's place on the ramp. ";
+      }
+    }
+    /* The count only when the node actually derived one and it is a plausible
+       series count. A wrong number here would be worse than none, and the
+       sentence reads correctly without it. */
+    if (seriesCells !== null && seriesCells >= 80 && seriesCells <= 120) {
+      cellNote += "This session puts about " + Math.round(seriesCells)
+        + " cells in series. ";
+    }
+    cellNote += "The topology is validated at about 96 in series "
+      + "(96 × 3.9963 V = 383.6 V, against 383.9 V measured separately). "
+      + "Per-cell voltages are NOT available on this truck — the per-cell "
+      + "array was searched for across four identifier ranges in the battery "
+      + "manager and not found. Three numbers are three numbers.";
+    /* Written only when it CHANGES. This string is about 700 characters,
+       renderVehicle runs roughly eleven times a second during playback and
+       again on every scrub input, and assigning textContent tears down and
+       rebuilds the node's text every time -- style, layout and paint for a
+       sentence that is usually identical to the one already there. On a Pi
+       Zero 2 W that is not free. */
+    if (el["cell-caveat"].textContent !== cellNote) {
+      el["cell-caveat"].textContent = cellNote;
+    }
+
+    /* --- what the tyres are saying, including when they say nothing ---
+       A four-corner deviation needs all four corners, all of them fresh, and
+       a mean at or above walking pace, and most recorded rows do not have
+       that: 9,257 of 10,682 (86.7%) produce no deviation at all -- 3,202
+       because a corner is missing from the row and 6,055 because the truck
+       is under 5 km/h. Four unlit tyres are therefore the page's ordinary
+       frame, and four unlit tyres with no sentence beside them are a viewer
+       reading "the corners agree" out of an absent measurement. */
+    var cornerNote = "The tyres are tinted by how far each corner is from the "
+      + "mean of the four, in km/h — amber turning faster than its siblings, "
+      + "blue turning slower, a pale neutral grey when the corner is measured "
+      + "and within one sensor step of the mean, and unlit when there is no "
+      + "reading at all. A tint reports a difference, not a fault: the "
+      + "outside of a turn covers more ground than the inside, so a corner is "
+      + "expected to differ there and the tint is the geometry working. Full "
+      + "tint is " + CORNER_HIGH_KPH.toFixed(2) + " km/h, measured from the "
+      + "sessions on disk — the 99.9th percentile of 5,700 recorded corner "
+      + "readings, of which the widest ever seen is "
+      + CORNER_MAX_SEEN_KPH.toFixed(2) + " km/h. ";
+    if (!cornerDev) {
+      cornerNote += "There is no corner deviation for this moment, so all "
+        + "four tyres are unlit. That is “nothing was measured here”, not "
+        + "“the four corners agree” — an agreeing corner is drawn in pale "
+        + "grey instead, so the two are never the same picture. It needs all "
+        + "four corners, each of them fresh, and a mean at or above 5 km/h, "
+        + "because each corner is one byte in 1 km/h steps and at walking "
+        + "pace the steps are the whole signal: 9,257 of 10,682 recorded rows "
+        + "(86.7%) meet none of that — 3,202 missing a corner and 6,055 below "
+        + "5 km/h.";
+    } else {
+      /* Over-range corners by name and by number. A flagged tyre says "off
+         this ramp" and cannot say how far off; this can. */
+      var far = ["fl", "fr", "rl", "rr"].filter(function (c) {
+        return Math.abs(cornerDev[c]) > CORNER_HIGH_KPH;
+      });
+      cornerNote += far.length
+        ? far.map(function (c) {
+            return c.toUpperCase() + " is "
+              + Math.abs(cornerDev[c]).toFixed(2) + " km/h "
+              + (cornerDev[c] > 0 ? "faster" : "slower") + " than the mean";
+          }).join(", ")
+          + " — past the top of the ramp, so " + (far.length > 1 ? "those "
+            + "tyres are" : "that tyre is") + " flagged rather than pinned at "
+          + "full tint: read these numbers, not the colour's place on the "
+          + "ramp."
+        : "All four corners are being measured right now, the widest of them "
+          + Math.max.apply(null, ["fl", "fr", "rl", "rr"].map(function (c) {
+              return Math.abs(cornerDev[c]); })).toFixed(2) + " km/h from the "
+          + "mean.";
+    }
+    if (el["corner-caveat"].textContent !== cornerNote) {
+      el["corner-caveat"].textContent = cornerNote;
+    }
+
+    /* --- what the halfshafts are saying, including when they say nothing ---
+       0x2429 answered in 2,756 of the 10,682 rows recorded in
+       evidence/sessions -- 25.8%, and in only 20 of 63 sessions, with runs of
+       up to 198 rows carrying nothing, about 18 s of playback. An unlit shaft
+       is therefore the COMMON case on a replay, and an unlit shaft with no
+       sentence beside it is a page letting the viewer read "coasting" out of
+       a gap in the log. */
+    var effortNote = "The halfshafts carry tractive effort — amber driving, "
+      + "green regenerating, a pale grey when the reading is inside the "
+      + "neutral band either side of the measured zero, and unlit when there "
+      + "is no reading at all. Brightness is relative to this session's own "
+      + "largest excursion: 0x2429 counts have no established unit, so no "
+      + "newtons and no newton-metres are claimed. ";
+    if (!effortHere) {
+      effortNote += "There is no effort reading for this moment, so the "
+        + "shafts are unlit. That is “nothing was sampled here”, not “the "
+        + "truck is coasting” — a measured neutral is drawn in pale grey "
+        + "instead, so the two are never the same picture. This field is "
+        + "sparse: it answered in 2,756 of 10,682 recorded rows (25.8%), in "
+        + "20 of 63 sessions, with gaps of up to 198 rows — about 18 seconds "
+        + "of playback.";
+    } else {
+      effortNote += "Right now: " + ({ drive: "driving", regen: "regenerating",
+                                       neutral: "inside the neutral band"
+                                     }[effortHere.dir] || effortHere.dir)
+        + ", " + Math.round(effortHere.counts) + " counts from the measured "
+        + "zero, against " + Math.round(effortHere.scale) + " for this "
+        + "session.";
+    }
+    if (el["effort-caveat"].textContent !== effortNote) {
+      el["effort-caveat"].textContent = effortNote;
+    }
 
     /* --- what is happening at the cord, in numbers -------------------
        Pack-side DC, and said to be pack-side. The wall end of this is AC and
@@ -4682,31 +5632,82 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     /* --- traction pack --- */
     soc_pct:        ["headlamp-*-bar-*", "charge status indicator fill while plugged in"],
     energy_kwh:     ["pack-case", "pack charge level (the one that moves smoothly)"],
-    range_mi:       ["pack-case", "pack charge level"],
-    dist_since_chg_mi: ["pack-case", "pack charge level"],
+    /* The cluster, not the pack case: the case's fill reads energy_kwh (see
+       the entry above) and nothing anywhere reads range_mi into it. The
+       figure on the driver's screen is the only place this reaches the
+       viewer, and that is what the index now says. */
+    range_mi:       ["cluster-screen", "the estimated-range figure on the "
+                                     + "driver's cluster"],
     temp_f:         ["pack-case", "pack temperature tint"],
-    cell_avg_v:     ["pack-case", "cell envelope"],
-    cell_min_v:     ["pack-case", "cell envelope"],
-    cell_max_v:     ["pack-case", "cell envelope"],
-    cell_spread_mv: ["pack-case", "cell envelope spread"],
+    /* PRINTED, NOT DRAWN, and the index says so rather than naming geometry
+       that no longer exists. Three marks stood on the pack case's height as
+       a 3.0-4.2 V axis until the arithmetic was done on it: 1 mV is 0.000267
+       model units there against marks 0.020 units thick, so every reading
+       this truck has produced drew the three as one bar. Digits can express
+       a millivolt; that geometry could not, so the numbers go in the caption
+       under the model and the marks are gone. */
+    cell_avg_v:     ["#cell-caveat", "the average cell, printed in volts in "
+                                   + "the caption under the model"],
+    cell_min_v:     ["#cell-caveat", "the lowest cell, printed in volts in "
+                                   + "the caption under the model"],
+    cell_max_v:     ["#cell-caveat", "the highest cell, printed in volts in "
+                                   + "the caption under the model"],
+    cell_spread_mv: ["cell-spread-band", "the band on the pack's flank, "
+                                 + "coloured by the pack's imbalance in "
+                                 + "millivolts; its position is not a "
+                                 + "reading. Green at this pack's median "
+                                 + "3.4 mV \u2014 so green is the bottom half "
+                                 + "of every reading on record, not "
+                                 + "\u201cbalanced\u201d \u2014 full amber at the "
+                                 + "99th percentile of 7.6 mV, and flagged "
+                                 + "past that. Measured from the sessions on "
+                                 + "disk, not a published limit"],
     pack_v:         ["pack-case", "HV bus"],
     pack_a:         ["pack-case", "HV bus flow, direction from the sign"],
-    array_2af1:     ["mod-*", "24 module blocks, shaded by deviation from their median"],
+    array_2af1:     ["mod-*", "24 module blocks, shaded by deviation from their "
+                              + "median \u2014 relative, no unit; follows a replay"],
 
     /* --- drive units: shared bus power only --- */
     hv_power_kw:    ["motor-*", "all three drive units together — the bus is shared"],
     power_kw:       ["motor-*", "all three drive units together — the bus is shared"],
-    field_2429_raw: ["motor-*", "drive/regen torque, whole driveline"],
+
+    /* --- the halfshafts: effort, which is not the same as bus power --- */
+    field_2429_raw: ["shaft-*", "drive or regen direction and relative effort "
+                              + "\u2014 counts from a measured zero (0x5806), "
+                              + "no unit established"],
 
     /* --- wheels and brakes --- */
     speed_kph:      ["wheel-*", "wheel rotation"],
-    wheel_fl_kph:   ["tyre-fl", "corner rotation (corner label is a source label)"],
-    wheel_fr_kph:   ["tyre-fr", "corner rotation (corner label is a source label)"],
-    wheel_rl_kph:   ["tyre-rl", "corner rotation (corner label is a source label)"],
-    wheel_rr_kph:   ["tyre-rr", "corner rotation (corner label is a source label)"],
+    wheel_fl_kph:   ["tyre-fl", "corner rotation (corner label is a source label), "
+                              + "and tinted by this corner's deviation from the "
+                              + "four-corner mean, in km/h \u2014 full tint at the "
+                              + "measured 1.75 km/h and flagged past it. Under "
+                              + "1 km/h is inside the sensor's own step and takes "
+                              + "a pale neutral, which is a MEASUREMENT; a tyre "
+                              + "with no reading is unlit instead"],
+    wheel_fr_kph:   ["tyre-fr", "corner rotation (corner label is a source label), "
+                              + "and tinted by this corner's deviation from the "
+                              + "four-corner mean, in km/h \u2014 full tint at the "
+                              + "measured 1.75 km/h and flagged past it. Under "
+                              + "1 km/h is inside the sensor's own step and takes "
+                              + "a pale neutral, which is a MEASUREMENT; a tyre "
+                              + "with no reading is unlit instead"],
+    wheel_rl_kph:   ["tyre-rl", "corner rotation (corner label is a source label), "
+                              + "and tinted by this corner's deviation from the "
+                              + "four-corner mean, in km/h \u2014 full tint at the "
+                              + "measured 1.75 km/h and flagged past it. Under "
+                              + "1 km/h is inside the sensor's own step and takes "
+                              + "a pale neutral, which is a MEASUREMENT; a tyre "
+                              + "with no reading is unlit instead"],
+    wheel_rr_kph:   ["tyre-rr", "corner rotation (corner label is a source label), "
+                              + "and tinted by this corner's deviation from the "
+                              + "four-corner mean, in km/h \u2014 full tint at the "
+                              + "measured 1.75 km/h and flagged past it. Under "
+                              + "1 km/h is inside the sensor's own step and takes "
+                              + "a pale neutral, which is a MEASUREMENT; a tyre "
+                              + "with no reading is unlit instead"],
     brake_kpa:      ["brake-*", "all four discs equally. GM measures this in the "
                                  + "brake control module, not at a corner"],
-    regen_field_raw: ["brake-*", "regen indication"],
     steering_deg:   ["tyre-fl", "front wheel angle (the ratio is assumed, not measured)"],
     odometer_km:    ["wheel-*", "distance travelled"],
 
@@ -4723,7 +5724,6 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     coolant_1_raw:       ["coolant-manifold-r", "coolant tint, relative ramp — the unit is unknown"],
     coolant_2_raw:       ["radiator", "on/off only"],
     group_v1_raw:        ["radiator", "HVAC actuator command"],
-    field_4127_raw:      ["shell", "powertrain awake/asleep — wakes or dims the whole model"],
     compressor_temp_raw: ["chiller", "compressor activity"],
 
     /* --- 12 V and charging --- */
@@ -4733,9 +5733,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     mod17_v:        ["lv", "12 V rail, module 17 again by the enhanced route — "
                          + "it is here to disagree with module_voltage, not to "
                          + "be read on its own"],
-    pack_v_1d:      ["hv", "pack voltage as module 1D measures it, beside "
+    pack_v_1d:      ["hv-run-front", "pack voltage as module 1D measures it, beside "
                          + "module 17's — two modules, one busbar"],
-    charger_5401_raw: ["charge", "charge port lit when the state byte is non-zero"],
+    charger_5401_raw: ["portlamp", "charge port lit when the state byte is non-zero"],
 
     /* --- fault lamp --- */
     mil_on:         ["shell", "warning lamp (module 17's view of it)"],
@@ -4743,6 +5743,13 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
     /* --- recorded, deliberately not drawn --- */
     array_2b43:     [null, "26 values against 24 modules; the gap is unexplained"],
+    dist_since_chg_mi: [null, "the pack's fill comes from energy_kwh, which "
+                            + "moves smoothly where this one steps"],
+    regen_field_raw: [null, "a tick accumulator, level 2 — behaviour "
+                          + "established, no unit and no magnitude; the regen "
+                          + "parts already follow pack current"],
+    field_4127_raw: [null, "vehicle power-state word, level 3 by behaviour; "
+                         + "the two screens follow the session, not this"],
     cell_extra_raw: [null, "four bytes, unattributed"],
     evse_current_raw: [null, "not EVSE current — falsified twice, independently"],
     group_v2_raw:   [null, "not a group voltage; six distinct values, always equal to v3"],
@@ -5071,11 +6078,110 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       : "No alerts recorded yet.";
   }
 
-  /* ---------- legend + caveat ---------- */
+  /* ---------- legend + caveat ----------
+
+     THE SWATCH TABLE IS A FUNCTION, so a test can RUN it. Every colour below
+     is `swatchHex` applied to the part's own diffuse and to the emissive the
+     page's own draw rule returns for that state -- `moduleColour`,
+     `cornerEmissive`, `effortEmissive` and `contrastFloor`, CALLED here
+     rather than transcribed. A hand-written hex beside a label is a second
+     source of truth for a colour nobody can check by eye against the model,
+     and every one of them in this legend had drifted from the value it
+     claimed: the module entries by a unit or two each, and the two "unlit"
+     entries by the whole distance between a raw component and the rendered
+     sum.
+
+     Read the SWATCH_AMBIENT block beside `contrastFloor` for the shading
+     rule these all share, for why the 0.20 ambient term is the honest one to
+     assume, and for why the entries are ordered by peak channel. */
+  function legendEntries() {
+    /* A MODULE CELL states its reading in its DIFFUSE colour and carries no
+       emissive of its own, so what lights it in the default body-off view is
+       draw()'s contrast floor -- run here rather than written down. The
+       first argument to `moduleColour` against a median of 0 and a spread of
+       1 is the standardised distance its bands are cut on, so passing z
+       walks its own ramp. */
+    var packFloor = contrastFloor([0, 0, 0], { layer: "pack" }, true);
+    function cell(z) { return swatchHex(moduleColour(z, 0, 1), packFloor); }
+    /* A TYRE and a HALFSHAFT state their reading in EMISSIVE over a fixed
+       diffuse, and draw() exempts both from the contrast floor precisely so
+       that an unlit one stays unlit. */
+    function tyre(dev) { return swatchHex(TYRE_DIFFUSE, cornerEmissive(dev)); }
+    function shaft(eff) { return swatchHex(SHAFT_DIFFUSE, effortEmissive(eff)); }
+    /* Full tint, for the ramps that have a top: the label names the top of
+       the ramp, so the swatch shows the top of the ramp. `counts / scale` of
+       1 puts effortEmissive at the top of its own. */
+    function pulling(dir) { return { dir: dir, counts: 1, scale: 1 }; }
+    return [
+     [cell(0), "typical"], [cell(2), "above the pack"],
+     [cell(3), "well above"], [cell(-2), "below the pack"],
+     /* THE SIXTH MODULE STATE. `moduleColour` cuts the cool side at -1.1 AND
+        at -2.2, exactly as it cuts the warm side at +1.1 and +2.2, so it
+        draws six colours; the legend named five and left the far cool one
+        unexplained -- a block the page has painted "this module is a long
+        way BELOW its siblings", which is the shape of a cell group that has
+        dropped, with nothing anywhere saying so.
+        As rendered the two cool bands are very nearly the same colour. That
+        is a property of `moduleColour`'s own ramp ([0.50, 0.83, 0.91]
+        against [0.33, 0.85, 0.93]) and not of this legend; computing the
+        swatches rather than writing them out is what makes it visible at
+        all, and the ramp itself is not this change's to widen. */
+     [cell(-3), "well below"], [cell(null), "no reading"],
+     /* THE TYRES, all five states -- a different quantity in different units
+        from the module blocks above, so labelled as its own set rather than
+        folded into that ramp. The third and fourth are the point: a corner
+        measured inside the sensor's own step and a corner nobody read were
+        the same black tyre, on a page where 86.7% of recorded rows carry no
+        four-corner deviation at all. */
+     [tyre(CORNER_HIGH_KPH),
+      "tyre: turning faster than the other three (full tint at 1.75 km/h, "
+      + "the measured 99.9th percentile)"],
+     [tyre(-CORNER_HIGH_KPH), "tyre: turning slower"],
+     [tyre(0), "tyre: measured, within one sensor step of the other three"],
+     /* UNLIT IS NOT BLACK. The tyre carries no emissive with no reading
+        behind it and `contrastFloor` is forbidden from lifting it -- but
+        `uColour` is still multiplied through the ambient term on the
+        shader's first line, so what is on screen is the tyre's own dark
+        rubber and not nothing. This swatch says that, and it is the same
+        computed quantity as the four above it, so the five are comparable
+        and rank the way the model draws them. */
+     [tyre(null), "tyre: unlit — no corner reading for this moment"],
+     /* Past the top of the ramp is not at the top of it, so these two are
+        off the warm/cool pair above rather than brighter versions of it. */
+     [tyre(CORNER_MAX_SEEN_KPH),
+      "tyre: faster, past 1.75 km/h (read the caption, not the colour)"],
+     [tyre(-CORNER_MAX_SEEN_KPH), "tyre: slower, past 1.75 km/h"],
+     /* Past the top of the spread ramp is not at the top of it either. The
+        band is a one-entry flag with no sibling state in this legend, so
+        there is no within-set comparison for a raw quotation to invert, and
+        it is left as the emissive it is drawn with. */
+     ["#b833f2","pack band: spread past 7.6 mV, the top of its tint (read "
+              + "the caption, not the colour)"],
+     /* THE HALFSHAFTS, all four states. The last two are the point: a
+        measured neutral and no reading at all used to be the same shaft, and
+        on a field that answers in a quarter of recorded rows that meant a
+        replay reading "coasting" out of a gap in the log. */
+     [shaft(pulling("drive")),
+      "halfshaft: drive effort (brighter is harder, for this session)"],
+     [shaft(pulling("regen")), "halfshaft: regen effort"],
+     [shaft({ dir: "neutral" }),
+      "halfshaft: measured, inside the neutral band"],
+     /* The entry that has now been wrong twice, in opposite directions. It
+        was the shaft's raw diffuse #525a5e, BRIGHTER than the
+        measured-neutral swatch beside it while the model draws the measured
+        neutral brighter; then it was #000000, DARKER than the shaft can ever
+        render, on the premise that the diffuse never reaches the screen. It
+        does, on the shader's first line. Shaded, it is the shaft's own grey
+        under the ambient floor: dimmer than the measured neutral, which is
+        the relationship that matters, and not a black square claiming the
+        part left the scene. */
+     [shaft(null), "halfshaft: unlit — no effort reading for this moment"]
+    ];
+  }
+
   function renderLegend() {
     clear(el.legend);
-    [["#4e9c68","typical"],["#ffb454","above the pack"],["#ff5c5c","well above"],
-     ["#7fd3e8","below the pack"],["#262b2e","no reading"]].forEach(function (pair) {
+    legendEntries().forEach(function (pair) {
       var span = h("span"), swatch = h("i");
       swatch.style.background = pair[0];
       span.appendChild(swatch); span.appendChild(document.createTextNode(pair[1]));

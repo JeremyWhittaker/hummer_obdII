@@ -357,6 +357,13 @@ def snapshot(rows: list[dict]) -> dict:
 #: counts from zero and nothing more.
 TORQUE_ZERO: int = 22534
 
+#: Counts either side of ``TORQUE_ZERO`` that are called neutral rather than
+#: drive or regen.  Named because the dashboard has to apply the same band to a
+#: replayed row -- there is no node answer for a row being scrubbed -- and two
+#: unnamed copies of a number are two places it can drift.  A test asserts the
+#: page's literal still equals this one.
+TORQUE_BAND: int = 30
+
 #: Consecutive-sample current steps smaller than this are not used for the
 #: resistance fit.  The estimator is dV/dI between adjacent samples, so a small
 #: step divides sensor noise by a small number and the result explodes.
@@ -543,6 +550,16 @@ def derive(rows: list[dict]) -> dict:
         else None
     )
     out["cell_avg_v"] = cell_avg
+    # The two bounds, beside the average they bracket.  They are here rather
+    # than read off the raw signals by the consumer because the dashboard
+    # PRINTS all three in volts to three decimal places, and three decimals is
+    # as much a claim as the marks that used to be drawn from them were -- a
+    # signal's `value` survives going stale where a derived value does not.
+    # An hour-old voltage printed to the millivolt is a confident wrong
+    # number; routed through here it gets the same "None when the contributing
+    # signal is not current" contract as everything else in this dict.
+    out["cell_min_v"] = _last(good, "cell_min_v")
+    out["cell_max_v"] = _last(good, "cell_max_v")
     out["cell_spread_mv"] = _last(good, "cell_spread_mv")
     out["soc_pct"] = soc
     out["energy_kwh"] = energy
@@ -633,8 +650,8 @@ def derive(rows: list[dict]) -> dict:
     if torque is not None:
         out["torque_counts"] = torque - TORQUE_ZERO
         out["torque_dir"] = (
-            "drive" if torque > TORQUE_ZERO + 30
-            else "regen" if torque < TORQUE_ZERO - 30
+            "drive" if torque > TORQUE_ZERO + TORQUE_BAND
+            else "regen" if torque < TORQUE_ZERO - TORQUE_BAND
             else "neutral"
         )
 

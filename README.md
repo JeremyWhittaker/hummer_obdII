@@ -493,6 +493,25 @@ brakes, suspension, armour, thermal, electrical, cabin and radar groups one at a
 time. The body is off by default, so the page opens on the hardware (see *Body
 off means gone* below).
 
+**Four channels now carry a reading, and three pictures each.** The pack's 24
+module blocks shade by how far each sits from its siblings' median; the tyres
+tint by each corner's deviation from the four-corner mean; the halfshafts light
+with drive and regen effort; and a band on the pack flank colours with cell
+spread. Every one distinguishes three states, because two would let the page
+lie: *absent* renders unlit, *measured and unremarkable* gets its own colour,
+and *measured signal* rides a ramp anchored on a percentile measured from the
+recorded sessions, with over-range flagged rather than pinned at the top. The
+captions say which state you are looking at and how often the absent one
+happens. All of it follows a replay scrub rather than freezing at the last live
+sample, and every colour in the legend is computed through the page's own
+shading rule, so the swatch is the colour the model draws.
+
+A fifth was built and cut: three marks for lowest, average and highest cell
+voltage on a fixed 3.0-4.2 V axis. The axis maps a millivolt to 0.000267 model
+units while each mark is 0.020 thick, so at the widest imbalance this pack has
+ever recorded the three render as one bar. The numbers are printed instead --
+digits can express a millivolt where that geometry cannot.
+
 It is hand-written WebGL with **no library**: the CSP forbids external scripts,
 so three.js was never available, and WebGL being a canvas API rather than a
 fetch is what makes raw GL possible at all. The matrix maths, shaders and
