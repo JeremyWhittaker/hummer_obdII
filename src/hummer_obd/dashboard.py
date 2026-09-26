@@ -193,7 +193,20 @@ def _valid(column: str, value) -> bool:
 #:
 #: The first row of every window always carries the key, because there is no
 #: earlier row to have inherited it from.
-DELTA_RAW_COLUMNS = ("array_2af1",)
+#:
+#: `array_2b43` joined on 2026-09-26 for the same reasons and with the same
+#: shape.  It is 26 bytes -- 52 hex characters -- and it was in the CSV on every
+#: row while reaching the page on none of them, so the 3D view could not draw it
+#: at all.  Measured the same way, on the 600-row window of
+#: drive-20260915T161456Z.csv: the whole snapshot is 356,561 bytes without the
+#: column and 359,607 with it delta-encoded, because only 47 of those 600 rows
+#: change it.  Stated on every row the column is 41,951 bytes against 3,291 for
+#: those 47, so the encoding saves 38,660 bytes a poll -- 10.8% of the payload
+#: the page actually fetches.  Across all 29,188 rows in evidence/sessions the
+#: array is byte-identical to the row before it 68.6% of the time; it repeats
+#: less often than `array_2af1` (89%) because it tracks state of charge, which
+#: moves whenever the truck does.
+DELTA_RAW_COLUMNS = ("array_2af1", "array_2b43")
 
 
 def _history(rows: list[dict], *, location: bool = False) -> list[dict]:
@@ -266,10 +279,11 @@ def _history(rows: list[dict], *, location: bool = False) -> list[dict]:
             "coolant_1_raw": raw("coolant_1_raw"),
             "coolant_2_raw": raw("coolant_2_raw"),
             "compressor_temp_raw": raw("compressor_temp_raw"),
-            # The 24-byte module array is NOT here: it is the one column
-            # expensive enough to be worth sending only when it changes, and
-            # it is added below by DELTA_RAW_COLUMNS. See the note there for
-            # what a missing key means and why that is not the same as null.
+            # The 24-byte module array and the 26-byte charge array are NOT
+            # here: they are the two columns expensive enough to be worth
+            # sending only when they change, and they are added below by
+            # DELTA_RAW_COLUMNS. See the note there for what a missing key
+            # means and why that is not the same as null.
             # What a replay needs to tell a drive from a charge AT THAT
             # MOMENT. Without these the page took charging, plugged and
             # coolant flow from the session's final state, so a trip that

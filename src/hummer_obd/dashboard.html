@@ -517,6 +517,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     <div class="legend" id="legend"></div>
     <div class="caveat" id="module-caveat"></div>
     <div class="caveat" id="cell-caveat"></div>
+    <div class="caveat" id="charge-caveat"></div>
     <div class="caveat" id="corner-caveat"></div>
     <div class="caveat" id="effort-caveat"></div>
   </div>
@@ -885,7 +886,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   function byId(id) { return document.getElementById(id); }
   [ "status-primary","status-secondary","banner","session-select","f-samples",
     "f-duration","f-period","f-age","vehicle-sub","legend",
-    "module-caveat","cell-caveat","corner-caveat","effort-caveat","map","map-tiles","map-grid","trail","trail-head","map-empty","map-stats",
+    "module-caveat","cell-caveat","charge-caveat","corner-caveat","effort-caveat","map","map-tiles","map-grid","trail","trail-head","map-empty","map-stats",
     "alert-marks","playback","play","scrub","play-time",
     "panel-places","stops-list","places-known","places-sub",
     "tiles","chart","chart-empty","chart-sub","tab-power","tab-soc","tab-speed",
@@ -1367,6 +1368,111 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   var CELL_SPREAD_TYPICAL_MV = 3.2, CELL_SPREAD_HIGH_MV = 8.1,
       CELL_SPREAD_MAX_SEEN_MV = 21.4;
 
+  /* THE CHARGE-ARRAY RAMP, in counts, measured rather than chosen.
+
+     `array_2b43` is 26 single bytes on every recorded row, and what it is was
+     established on 2026-09-26 by arithmetic against 124 sessions already on
+     disk -- no vehicle time, and no offset invented, because correlation is
+     invariant under scale and offset and that is exactly the test 0x2AF1's
+     false positive would have failed. See SCAN_RESULTS_2026-09-20.md. In
+     short: its mean tracks state of charge at r +0.999 pooled and a median
+     +0.985 WITHIN a session across the 48 sessions where charge actually
+     moved, its per-position signature repeats across 80 sessions at r +0.875,
+     and its internal spread against `cell_spread_mv` is r +0.009 -- which is
+     what rules out per-cell voltage.
+
+     WHAT IS DRAWN IS THE DEVIATION FROM THE ROW'S OWN MEDIAN, in counts, and
+     nothing else. Not a percentage: a least-squares line gives 0.4324 per
+     count with a -5.58 offset and a 0.42-point residual, and neither of those
+     is a tidy number -- they are a fitted line, not a specification, so a
+     percentage here would be the 70 mV divisor all over again. A deviation
+     from the row median needs no scale at all, which is why it is the reading
+     this geometry may carry.
+
+     MEASURED, over the 697,268 position readings in the 26,818 rows of
+     evidence/sessions that carry a 26-byte array: 63.0% sit exactly on the row
+     median, the 90th percentile of |deviation| is 1.00 count, the 99th is
+     2.00 and the largest ever recorded is 3.00. Every single one of those
+     26,818 rows has at least one position off centre, so this band always has
+     something to say and is never decoration.
+
+     THE TOP IS 2.0 COUNTS, the 99th percentile, and not the 3.0 maximum. Of
+     the 257,672 readings the ramp actually colours, their mean position
+     against 2.0 is 31.2%, 14.3% reach halfway and 2.0% run past the top;
+     anchored on the once-seen 3.0 it is 19.3% and 6.5% with nothing ever
+     over-range, which is the unreachable anchor this page has been bitten by
+     twice.
+
+     THE DEADBAND IS HALF A COUNT, and it is the array's own resolution rather
+     than a choice. The values are integers and the median of 26 integers lands
+     on a half-count, so 0.5 is the smallest difference this array can express.
+     Under it is not a finding -- and it IS a measurement, so it takes its own
+     colour rather than the unlit black that means "nothing was read".
+
+     A PER-POSITION BASELINE WAS BUILT AND CUT. Positions 0, 1 and 24 sit
+     consistently off centre -- -0.90, -1.06 and +0.73 counts averaged over 80
+     sessions -- so their mark is their normal state and not news, and
+     subtracting a per-position baseline is the obviously right correction.
+     Measured on 40 held-out sessions against baselines trained on the other
+     40, it is not worth what it costs: the 90th percentile is 1.00 count with
+     the correction and 1.00 without it, the 99th moves 2.00 to 1.84, and the
+     share of readings inside the deadband moves 64.1% to 71.2%. That buys 26
+     corpus-derived constants in this file, every one of which goes stale as
+     the corpus grows. The distribution is dominated by the one-count
+     quantisation, not by the baselines, so the bias is stated in the caption
+     where a reader can apply it and nothing here has to be kept in sync. */
+  /* 26, and the pack has 24 modules. That discrepancy is unresolved and is
+     NOT smoothed over: positions 0 and 1 are the obvious candidates for "not a
+     module", and they are the minimum of the remaining 24 only 35% of the
+     time, so "24 modules plus a min and a max" is refuted rather than
+     supported. Until a position can be tied to a physical module, a mark here
+     means "one of these differs", never "that one". A row of any other length
+     is refused outright rather than padded or truncated. */
+  var CHARGE_POSITIONS = 26;
+  var CHARGE_DEADBAND = 0.5, CHARGE_HIGH = 2.0, CHARGE_MAX_SEEN = 3.0;
+  /* Measured, and at its usual place in the row. Deliberately the same pale
+     neutral the tyres use for an agreeing corner: it is the same claim. */
+  var CHARGE_AGREE = [0.30, 0.31, 0.32];
+  var CHARGE_FLOOR = 0.3;
+  /* Off the scale rather than far along it, and carrying a green channel the
+     ramp never produces, exactly as the corner flags do. */
+  var CHARGE_OVER_HIGH = [0.88, 0.82, 0.24], CHARGE_OVER_LOW = [0.24, 0.82, 0.88];
+
+  /* One position's colour. `dev` is its count difference from the row median,
+     or null when the row has no array at all. */
+  function chargeEmissive(dev) {
+    if (typeof dev !== "number" || !isFinite(dev)) return [0, 0, 0];
+    var dm = Math.abs(dev);
+    if (dm < CHARGE_DEADBAND) {
+      return [CHARGE_AGREE[0], CHARGE_AGREE[1], CHARGE_AGREE[2]];
+    }
+    if (dm > CHARGE_HIGH) {
+      return dev > 0 ? [CHARGE_OVER_HIGH[0], CHARGE_OVER_HIGH[1], CHARGE_OVER_HIGH[2]]
+                     : [CHARGE_OVER_LOW[0], CHARGE_OVER_LOW[1], CHARGE_OVER_LOW[2]];
+    }
+    var cm = CHARGE_FLOOR + (1 - CHARGE_FLOOR)
+           * ((dm - CHARGE_DEADBAND) / (CHARGE_HIGH - CHARGE_DEADBAND));
+    /* Warm above the median, cool below -- the same direction convention the
+       tyres and the module blocks already use, so one reading of the colour
+       language works everywhere on the model. */
+    return dev > 0 ? [cm * 0.55, cm * 0.30, 0] : [0, cm * 0.30, cm * 0.55];
+  }
+
+  /* The 26 deviations for one row, or null when there is no usable array.
+     Null rather than an array of nulls: "no reading" is a fact about the whole
+     array and the band is withheld outright, which is what keeps an absent
+     array from being drawn as 26 agreeing positions. */
+  function chargeDeviations(hex) {
+    var bytes = hexBytes(hex), sorted, median, out = [], i;
+    if (bytes.length !== CHARGE_POSITIONS) return null;
+    sorted = bytes.slice().sort(function (a, b) { return a - b; });
+    /* An even count, so the median is the mean of the middle pair and lands
+       on a half -- which is where the half-count deadband comes from. */
+    median = (sorted[CHARGE_POSITIONS / 2 - 1] + sorted[CHARGE_POSITIONS / 2]) / 2;
+    for (i = 0; i < bytes.length; i++) out.push(bytes[i] - median);
+    return out;
+  }
+
   /* The colour of a spread that has run past the top of the ramp above.
      Deliberately not on the green-amber ramp and not the modules' red: a
      band in this colour is not "far along the scale", it is "off it", and
@@ -1476,7 +1582,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        would put back the thing the viewer asked to take away. */
     if (part.layer === "shell" || part.layer === "cabin") return emissive;
     /* The reading parts. See above: their unlit state is a measurement. */
-    if (part.cornerTint || part.effort || part.spreadBand) return emissive;
+    if (part.cornerTint || part.effort || part.spreadBand
+        || part.chargeSeg) return emissive;
     /* Already lit by something it measured: that is information, this is
        only contrast. */
     if (emissive[0] + emissive[1] + emissive[2] >= CONTRAST_FLOOR_SUM) {
@@ -2261,6 +2368,35 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
           spreadBand: true,
           t: [envX, VEH.packBottom + 0.11, envZ],
           s: [0.90, 0.040, 0.024] });
+
+    /* --- the 26-position charge strip, below the spread band ---------------
+       `array_2b43`: 26 readings that track state of charge, each drawn by how
+       far it sits from the row's own median. See CHARGE_DEADBAND above for what
+       that is and is not.
+
+       Segmented rather than one band, because the reading IS per position --
+       the opposite of the spread band above it, which is a single pack-level
+       number and deliberately stands still. Same flank and same z as that
+       band so both are readable in one view without rotating; 0.025 of
+       clearance between them, and the strip is shorter than the pack face it
+       sits on.
+
+       It may NOT go on the 24 module blocks, which is the obvious thing to
+       want: there are 26 of these and 24 of those, and painting 26 readings
+       onto 24 objects would invent the very mapping the caption has to deny. */
+    var segPitch = 1.80 / CHARGE_POSITIONS;
+    for (var ci = 0; ci < CHARGE_POSITIONS; ci++) {
+      add({ id: "charge-seg-" + ci, mesh: "bev", layer: "pack",
+            colour: [0.20, 0.22, 0.24],
+            /* `chargeSeg` so draw() can withhold the whole strip: with no
+               array there is nothing to draw, and 26 segments left in a
+               resting colour would be 26 readings nobody took. `chargeIndex`
+               is which position it shows. */
+            chargeSeg: true, chargeIndex: ci,
+            t: [envX - 0.90 + segPitch * (ci + 0.5),
+                VEH.packBottom + 0.05, envZ],
+            s: [segPitch - 0.012, 0.030, 0.024] });
+    }
 
     for (var layer = 0; layer < 2; layer++) {
       for (var r = 0; r < rows; r++) {
@@ -3406,7 +3542,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         /* Every field the draw loop reads has to exist before the first
            snapshot arrives, or a frame renders NaN into the shader and the
            part disappears without an error anywhere. */
-        live = { modules: [], kw: 0, brake: 0, flow: 0, speed: 0, steer: 0, csi: "off",
+        live = { modules: [], charge: null,
+                 kw: 0, brake: 0, flow: 0, speed: 0, steer: 0, csi: "off",
                  corners: {}, charging: false, plugged: false, soc: null,
                  coolant1: null, coolant2: null, compressor: null,
                  roll: 0, pitch: 0,
@@ -3736,6 +3873,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            its position is not a reading and never becomes one, which is
            the difference between it and the three marks it replaced. */
         if (p.spreadBand && typeof live.spreadMv !== "number") return;
+        /* The whole strip, not one segment: an array either answered or it did
+           not, and drawing part of it would be a reading nobody took. */
+        if (p.chargeSeg && !live.charge) return;
         var mesh = meshes[p.mesh] || meshes.box;
         gl.bindBuffer(gl.ARRAY_BUFFER, mesh.position);
         gl.enableVertexAttribArray(loc.pos);
@@ -3986,6 +4126,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
               t01 = (p.t[pax] - p.travel.from) / (p.travel.to - p.travel.from),
               lit = Math.sin(Math.max(0, Math.min(1, t01)) * Math.PI);
           emissive = [0.10 * lit, 0.75 * lit, 0.85 * lit];
+        }
+        if (p.chargeSeg) {
+          /* draw() has already returned above when there is no array, so
+             reaching here means this row answered. */
+          emissive = chargeEmissive(live.charge[p.chargeIndex]);
         }
         if (p.spreadBand) {
           /* The pack's imbalance in millivolts, and nothing else: green at
@@ -4519,6 +4664,20 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       for (var i = 0; i < 24; i++) colours.push(moduleColour(bytes[i], median, spread));
     }
 
+    /* THE 26-POSITION CHARGE STRIP, read the same way and gated harder.
+       A replay takes the frame's own array, carried through the delta encoding
+       exactly as the module blocks are. LIVE, the signal is used only when the
+       node calls it FRESH: `signals[c].value` survives going stale and is
+       nulled only when the node judges it invalid, so a pack that stopped
+       answering would otherwise keep colouring this strip from its last
+       reading for as long as the page stayed open. That is the same fault the
+       corner tint carries an explicit gate for, and it gets the same gate. */
+    var chargeSignal = sig("array_2b43"),
+        chargeHex = carriedRaw("array_2b43",
+                               chargeSignal && chargeSignal.status === "fresh"
+                                 ? chargeSignal.value : null),
+        chargeDevs = chargeDeviations(chargeHex);
+
     var kpa = atFrame("brake_kpa", sigValue("brake_kpa")),
         speed = atFrame("speed_kph", num(derived("speed_now_kph")));
 
@@ -4714,6 +4873,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
     viewer.update({
       modules: colours,
+      /* null, never an empty array: `draw()` withholds the whole strip on a
+         falsy value, and [] would be truthy. */
+      charge: chargeDevs,
       kw: atFrame("pack_kw", num(derived("pack_kw"))) || 0,
       brake: kpa === null ? 0 : Math.min(1, kpa / 4000),
       flow: flowHere,
@@ -4926,6 +5088,57 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        Zero 2 W that is not free. */
     if (el["cell-caveat"].textContent !== cellNote) {
       el["cell-caveat"].textContent = cellNote;
+    }
+
+    /* --- what the charge strip is saying, including what it is not ---------
+       Three things a viewer cannot get from the colours and needs: that the
+       counts have no established scale, that the position order is a source
+       order, and that three positions sit off centre as their normal state.
+       The last one is the per-position baseline that was measured and then NOT
+       built into the drawing (see CHARGE_DEADBAND) -- stating it here is the
+       whole reason that was an acceptable trade. */
+    var chargeNote;
+    if (!chargeDevs) {
+      chargeNote = "The 26-segment strip under the pack band is unlit: there "
+        + "is no charge array for this moment, so no position has a reading. "
+        + "That is \u201cnothing was sampled here\u201d, not \u201cevery "
+        + "position agrees\u201d \u2014 a position sitting at the row's own "
+        + "median is drawn in pale grey instead, and 63% of all recorded "
+        + "positions are exactly there, so the two must never be one picture.";
+    } else {
+      var chargeMax = 0, chargeAt = 0, ci2;
+      for (ci2 = 0; ci2 < chargeDevs.length; ci2++) {
+        if (Math.abs(chargeDevs[ci2]) > Math.abs(chargeMax)) {
+          chargeMax = chargeDevs[ci2]; chargeAt = ci2;
+        }
+      }
+      chargeNote = "The 26-segment strip is " + CHARGE_POSITIONS + " readings "
+        + "from 0x2B43, each coloured by how far it sits from this row's own "
+        + "median, in counts \u2014 warm above, cool below, pale grey within "
+        + "half a count. The array tracks state of charge (r +0.999 across "
+        + "26,509 recorded rows, and +0.985 within a drive), but its scale is "
+        + "a fitted line rather than a specification, so these are counts and "
+        + "no percentage is claimed. Full tint is "
+        + CHARGE_HIGH.toFixed(1) + " counts, the 99th percentile of 697,268 "
+        + "recorded positions; the largest ever seen is "
+        + CHARGE_MAX_SEEN.toFixed(1) + ". Widest here: "
+        + (chargeMax > 0 ? "+" : "") + chargeMax.toFixed(1) + " counts. ";
+      if (Math.abs(chargeMax) > CHARGE_HIGH) {
+        chargeNote += "That is past the top of the ramp, so the segment is "
+          + "flagged rather than pinned \u2014 read this number, not the "
+          + "colour. ";
+      }
+      chargeNote += "Two things the picture cannot tell you. The order is a "
+        + "SOURCE order: there are 26 of these and 24 modules in the pack, the "
+        + "gap is unexplained, and nothing ties a segment to a place in the "
+        + "truck \u2014 read a marked segment as \u201cone of these "
+        + "differs\u201d, never as \u201cthat one\u201d. And positions 1, 2 "
+        + "and 25 counting from the left sit off centre as their NORMAL state, "
+        + "by \u22120.90, \u22121.06 and +0.73 counts averaged over "
+        + "80 sessions, so a mark on those three is usually not news.";
+    }
+    if (el["charge-caveat"].textContent !== chargeNote) {
+      el["charge-caveat"].textContent = chargeNote;
     }
 
     /* --- what the tyres are saying, including when they say nothing ---
@@ -5833,9 +6046,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
      The refusals are the load-bearing part of this table. There is no
      front- or rear-axle telemetry on this vehicle: `hv_power_kw`, `pack_a`
      and `power_kw` are whole-driveline, so if the three motors glow they glow
-     together. `array_2b43` returns 26 values against 24 modules and the gap is
-     unexplained, so it is never mapped onto module geometry. `evse_current_raw`
-     was falsified as charge-port current twice, independently. Drawing any of
+     together. `array_2b43` now has its own 26-segment strip, and the reason it
+     is a strip and not module colour is the same refusal: it returns 26 values
+     against 24 modules, the gap is unexplained, and painting 26 readings onto
+     24 objects would invent the mapping. `evse_current_raw` was falsified as
+     charge-port current twice, independently. Drawing any of
      those on a part would look better and mean less. */
   var SIGNAL_PART = {
     /* --- traction pack --- */
@@ -5861,6 +6076,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                                    + "the caption under the model"],
     cell_max_v:     ["#cell-caveat", "the highest cell, printed in volts in "
                                    + "the caption under the model"],
+    array_2b43:     ["charge-seg-*", "26 segments on the pack's flank, each "
+                                 + "coloured by how far that position sits "
+                                 + "from the row's own median, in counts. The "
+                                 + "array tracks state of charge; its scale is "
+                                 + "not established, so no percentage is "
+                                 + "claimed and the position order is a "
+                                 + "SOURCE order, not a physical one — 26 "
+                                 + "readings against 24 modules"],
     cell_spread_mv: ["cell-spread-band", "the band on the pack's flank, "
                                  + "coloured by the pack's imbalance in "
                                  + "millivolts; its position is not a "
@@ -5951,7 +6174,6 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     dtc_count:      ["shell", "warning lamp (module 17's view of it)"],
 
     /* --- recorded, deliberately not drawn --- */
-    array_2b43:     [null, "26 values against 24 modules; the gap is unexplained"],
     dist_since_chg_mi: [null, "the pack's fill comes from energy_kwh, which "
                             + "moves smoothly where this one steps"],
     regen_field_raw: [null, "a tick accumulator, level 2 — behaviour "
@@ -6317,6 +6539,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        that an unlit one stays unlit. */
     function tyre(dev) { return swatchHex(TYRE_DIFFUSE, cornerEmissive(dev)); }
     function shaft(eff) { return swatchHex(SHAFT_DIFFUSE, effortEmissive(eff)); }
+    /* A CHARGE SEGMENT, the same way: its reading is emissive over the strip's
+       own diffuse, and draw() exempts it from the contrast floor so an absent
+       one stays unlit. Computed rather than written out, so the legend cannot
+       drift from what the model draws. */
+    function seg(dev) { return swatchHex([0.20, 0.22, 0.24], chargeEmissive(dev)); }
     /* Full tint, for the ramps that have a top: the label names the top of
        the ramp, so the swatch shows the top of the ramp. `counts / scale` of
        1 puts effortEmissive at the top of its own. */
@@ -6366,6 +6593,20 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         it is left as the emissive it is drawn with. */
      ["#b833f2","pack band: spread past 8.1 mV, the top of its tint (read "
               + "the caption, not the colour)"],
+     /* THE CHARGE STRIP, all five states. The last one is why the strip exists
+        as its own visual rather than as more module colour: 63% of readings are
+        exactly on the row median, so "at its usual place" is the ordinary
+        picture and it MUST be distinguishable from "nothing was read". */
+     [seg(0), "charge strip: at the row's median (a measurement, not an "
+            + "absence)"],
+     [seg(CHARGE_HIGH), "charge strip: " + CHARGE_HIGH.toFixed(1)
+            + " counts above the median, the top of its tint"],
+     [seg(-CHARGE_HIGH), "charge strip: " + CHARGE_HIGH.toFixed(1)
+            + " counts below"],
+     [seg(CHARGE_MAX_SEEN), "charge strip: past the top (read the caption, "
+            + "not the colour)"],
+     [seg(null), "charge strip: no array for this moment — unlit, and the "
+            + "whole strip goes with it"],
      /* THE HALFSHAFTS, all four states. The last two are the point: a
         measured neutral and no reading at all used to be the same shaft, and
         on a field that answers in a quarter of recorded rows that meant a

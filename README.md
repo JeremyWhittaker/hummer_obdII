@@ -522,11 +522,12 @@ brakes, suspension, armour, thermal, electrical, cabin and radar groups one at a
 time. The body is off by default, so the page opens on the hardware (see *Body
 off means gone* below).
 
-**Four channels now carry a reading, and three pictures each.** The pack's 24
+**Five channels now carry a reading, and three pictures each.** The pack's 24
 module blocks shade by how far each sits from its siblings' median; the tyres
 tint by each corner's deviation from the four-corner mean; the halfshafts light
-with drive and regen effort; and a band on the pack flank colours with cell
-spread. Every one distinguishes three states, because two would let the page
+with drive and regen effort; a band on the pack flank colours with cell spread;
+and a strip of 26 segments below it draws `array_2b43`, one segment per position,
+each coloured by how far that position sits from the row's own median. Every one distinguishes three states, because two would let the page
 lie: *absent* renders unlit, *measured and unremarkable* gets its own colour,
 and *measured signal* rides a ramp anchored on a percentile measured from the
 recorded sessions, with over-range flagged rather than pinned at the top. The
@@ -559,8 +560,28 @@ it, so the over-range flag was turning into the ordinary state. The test suite
 recomputes all of these from the sessions on disk and fails when the page drifts
 from them, which is how this surfaced rather than being noticed by eye.
 
-A fifth was built and cut: three marks for lowest, average and highest cell
-voltage on a fixed 3.0-4.2 V axis. The axis maps a millivolt to 0.000267 model
+**The 26-segment strip is the first per-position pack reading on this truck**,
+and what it is was established by arithmetic against sessions already on disk --
+no vehicle time. Its mean tracks state of charge at r +0.999 pooled and a median
++0.985 *within* a drive across the 48 sessions where charge actually moved; its
+per-position signature repeats across 80 sessions at r +0.875; and its internal
+spread against `cell_spread_mv` is r +0.009, which is what rules out per-cell
+voltage. See [SCAN_RESULTS_2026-09-20.md](docs/SCAN_RESULTS_2026-09-20.md).
+
+Two things it deliberately does not say. **No percentage**: the count-to-SOC
+relation is a least-squares line, not a specification, so the strip is in counts
+from the row median and nothing converts it. **No position**: there are 26
+readings and 24 modules in the pack, the gap is unexplained, so the strip is its
+own geometry rather than module colour and the caption says to read a marked
+segment as "one of these differs", never as "that one". A per-position baseline
+was measured and then cut -- positions 1, 2 and 25 sit about a count off centre
+as their normal state, but correcting for it moves the 90th percentile not at all
+and the 99th from 2.00 to 1.84 counts, which does not earn 26 corpus-derived
+constants in the page. The bias is stated in the caption instead, where a reader
+can apply it and nothing has to be kept in sync.
+
+Another channel was built and cut: three marks for lowest, average and highest
+cell voltage on a fixed 3.0-4.2 V axis. The axis maps a millivolt to 0.000267 model
 units while each mark is 0.020 thick, so at the widest imbalance this pack has
 ever recorded the three render as one bar. The numbers are printed instead --
 digits can express a millivolt where that geometry cannot.

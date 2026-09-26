@@ -54,12 +54,15 @@ def _balanced(source: str, start: int) -> str:
 READING_RULES = ("num", "hexBytes", "frameIndex", "carriedFrom",
                  "torqueCounts", "effortScale", "effortEmissive",
                  "cornerDeviation", "cornerEmissive", "cellSpreadEmissive",
-                 "cellEnvelope", "moduleColour", "contrastFloor",
+                 "cellEnvelope", "moduleColour", "chargeEmissive",
+                 "chargeDeviations", "contrastFloor",
                  "swatchRgb", "swatchHex", "legendEntries")
 #: The first name of each top-level `var` declaration those rules close over.
 READING_CONSTS = ("TORQUE_ZERO", "EFFORT_NEUTRAL", "CORNER_DEADBAND_KPH",
                   "CORNER_AGREE", "CORNER_OVER_FAST",
                   "CELL_SPREAD_TYPICAL_MV", "CELL_SPREAD_OVER",
+                  "CHARGE_POSITIONS", "CHARGE_DEADBAND", "CHARGE_AGREE",
+                  "CHARGE_FLOOR", "CHARGE_OVER_HIGH",
                   "CONTRAST_FLOOR", "SWATCH_AMBIENT", "TYRE_DIFFUSE")
 
 
@@ -212,6 +215,35 @@ def corpus_corner_deviations() -> list[float]:
     return out
 
 
+def corpus_charge_deviations() -> list[float]:
+    """Every deviation the charge strip's own rule would colour, in counts.
+
+    The same population `chargeDeviations` produces: a row contributes only
+    when its `array_2b43` is exactly 26 bytes, and each such row contributes 26
+    readings, each the byte's difference from that row's own median. The median
+    of an even count is the mean of the middle pair, which is where the
+    half-count deadband comes from and why this is not integer arithmetic.
+    """
+    out = []
+    for path in sorted(CORPUS.glob("drive-*.csv")):
+        with path.open(newline="") as handle:
+            reader = csv.DictReader(handle)
+            if "array_2b43" not in (reader.fieldnames or []):
+                continue
+            for row in reader:
+                text = (row["array_2b43"] or "").strip()
+                if len(text) != 52:
+                    continue
+                try:
+                    values = [int(text[i:i + 2], 16) for i in range(0, 52, 2)]
+                except ValueError:
+                    continue
+                ordered = sorted(values)
+                median = (ordered[12] + ordered[13]) / 2
+                out.extend(value - median for value in values)
+    return out
+
+
 def percentile(values: list[float], q: float) -> float:
     """Nearest-rank percentile, which is what the page's comment cites."""
     ordered = sorted(values)
@@ -258,14 +290,14 @@ class DashboardTests(unittest.TestCase):
              "pack_a": 40, "speed_kph": 50, "soc_pct": 79, "energy_kwh": 150.1},
         ]
 
-    def sequence(self, arrays):
+    def sequence(self, arrays, column="array_2af1"):
         """One row per entry, each carrying that array (None for no array)."""
         rows = []
         for index, array in enumerate(arrays):
             row = dict(self.rows()[0])
             row["utc"] = "2026-01-01T12:00:%02dZ" % index
             row["elapsed_s"] = index
-            row["array_2af1"] = "" if array is None else array
+            row[column] = "" if array is None else array
             rows.append(row)
         return rows
 
@@ -402,6 +434,76 @@ class DashboardTests(unittest.TestCase):
             sum(1 for row in history if "array_2af1" in row), len(shapes),
             "nothing was saved: every row still states the array",
         )
+
+    def test_the_charge_array_reaches_the_history_at_all(self):
+        # It was in the CSV on every row and in the snapshot's `signals`, and
+        # it reached the history on NO row -- so the 3D view could not draw it
+        # from a replay frame however the page asked. A column the recorder
+        # writes and the history drops is invisible to every part of the page
+        # that follows the scrub, which is now most of it.
+        rows = self.rows()
+        for row in rows:
+            row["array_2b43"] = "C8" * 26
+        self.write(rows)
+        history = self.store.snapshot(now=self.now)["history"]
+        self.assertEqual(carried(history, len(history) - 1, "array_2b43"),
+                         "C8" * 26)
+
+    def test_the_charge_array_is_sent_only_when_it_changes(self):
+        # 26 bytes is 52 hex characters plus a key name. Across
+        # evidence/sessions it repeats the previous row 68.6% of the time --
+        # less often than the module array's 89%, because it tracks state of
+        # charge and that moves whenever the truck does.
+        self.write(self.sequence(["C8" * 26, "C8" * 26, "C7" * 26, "C7" * 26],
+                                 column="array_2b43"))
+        history = self.store.snapshot(now=self.now)["history"]
+        stated = [index for index, row in enumerate(history)
+                  if "array_2b43" in row]
+        self.assertEqual(
+            stated, [0, 2],
+            "the charge array is repeated on rows that did not change it",
+        )
+
+    def test_the_charge_arrays_delta_encoding_loses_no_row(self):
+        # Same bar as the module array: the saving is only allowed if
+        # resolving it back gives the same per-row answer. Absent has to stay
+        # distinguishable from unchanged, or a pack that stopped answering
+        # would keep the previous row's reading across the gap.
+        shapes = ["C8" * 26, "C8" * 26, "C7" * 26, None, None, "C7" * 26]
+        self.write(self.sequence(shapes, column="array_2b43"))
+        history = self.store.snapshot(now=self.now)["history"]
+        self.assertEqual(
+            [carried(history, i, "array_2b43") for i in range(len(history))],
+            shapes,
+            "resolving the delta encoding does not reproduce the rows",
+        )
+        self.assertLess(
+            sum(1 for row in history if "array_2b43" in row), len(shapes),
+            "nothing was saved: every row still states the array",
+        )
+
+    def test_a_malformed_charge_array_replays_as_absent(self):
+        rows = self.sequence(["C8" * 26, "not hex at all"], column="array_2b43")
+        self.write(rows)
+        history = self.store.snapshot(now=self.now)["history"]
+        self.assertEqual(history[0]["array_2b43"], "C8" * 26)
+        self.assertIn("array_2b43", history[1])
+        self.assertIsNone(history[1]["array_2b43"])
+
+    def test_both_arrays_are_delta_encoded_independently(self):
+        # One changing must not force the other to be restated, and one going
+        # absent must not silence the other. They are separate readings from
+        # separate identifiers and the encoding is per column.
+        rows = self.rows()
+        for index, row in enumerate(rows):
+            row["array_2af1"] = "1A" * 24
+            row["array_2b43"] = ("C8" if index == 0 else "C7") * 26
+        self.write(rows)
+        history = self.store.snapshot(now=self.now)["history"]
+        self.assertEqual([i for i, r in enumerate(history) if "array_2af1" in r],
+                         [0], "the module array was restated for the other's sake")
+        self.assertEqual([i for i, r in enumerate(history) if "array_2b43" in r],
+                         [0, 1])
 
     def test_torque_is_withheld_once_its_only_source_goes_stale(self):
         # These two used to sit outside CURRENT_FIELDS, so the staleness loop
@@ -3103,6 +3205,271 @@ class LiveViewFrameTests(unittest.TestCase):
 
     def test_replaying_is_declared_in_state(self):
         self.assertIn("frame: null, replaying: false", self.source)
+
+
+@unittest.skipIf(NODE is None, "node is not installed on this machine")
+class ChargeStripTests(unittest.TestCase):
+    """The 26-position charge strip: what it draws and what it refuses to.
+
+    `array_2b43` was read by arithmetic against the recorded sessions rather
+    than sourced, so every claim the picture makes has to be one the arithmetic
+    supports. The two it must NOT make are a percentage -- the scale is a
+    fitted line -- and a position, because there are 26 readings and 24 modules.
+    """
+
+    #: A row where every position sits on the median except two: one a count
+    #: above, one two counts below. 26 bytes.
+    ROW = "C8" * 26
+
+    def _row(self, overrides):
+        values = [0xC8] * 26
+        for index, value in overrides.items():
+            values[index] = value
+        return "".join("%02X" % v for v in values)
+
+    def test_a_row_of_the_wrong_length_is_refused_outright(self):
+        """Padding or truncating would invent readings, so neither happens."""
+        for label, hexed in (("24 bytes, the module array's length", "C8" * 24),
+                             ("25 bytes", "C8" * 25),
+                             ("27 bytes", "C8" * 27),
+                             ("empty", ""),
+                             ("odd nibble count", "C8" * 25 + "C"),
+                             ("not hex", "zz" * 26)):
+            with self.subTest(label):
+                got = run_reading_rules("return chargeDeviations(%s);"
+                                        % json.dumps(hexed))
+                self.assertIsNone(got)
+        self.assertIsNone(run_reading_rules("return chargeDeviations(null);"))
+
+    def test_the_deviations_are_from_the_rows_own_median(self):
+        # An even count, so the median is the mean of the middle pair and lands
+        # on a half. That is not a rounding detail: it is why the deadband is
+        # half a count rather than one.
+        hexed = self._row({3: 0xC9, 7: 0xC6})
+        got = run_reading_rules("return chargeDeviations(%s);" % json.dumps(hexed))
+        self.assertEqual(len(got), 26)
+        self.assertEqual(got[3], 1.0)
+        self.assertEqual(got[7], -2.0)
+        self.assertEqual(got[0], 0.0)
+        # A split median: thirteen low, thirteen high, so it sits on the half.
+        split = "".join("%02X" % (0xC8 if i < 13 else 0xC9) for i in range(26))
+        halves = run_reading_rules("return chargeDeviations(%s);" % json.dumps(split))
+        self.assertEqual(sorted(set(halves)), [-0.5, 0.5])
+
+    def test_absent_agreeing_and_signal_are_three_different_pictures(self):
+        """The defect this project has shipped twice, in a third place.
+
+        An unlit segment and a segment measured at the row's median must not be
+        the same pixels, because 63% of all recorded positions ARE at the
+        median -- so "everything agrees" is the ordinary frame and reading it as
+        "nothing was measured" is the ordinary mistake.
+        """
+        SEG = {"layer": "pack", "chargeSeg": True}
+        absent = as_rendered("chargeEmissive(null)", SEG)
+        agree = as_rendered("chargeEmissive(0)", SEG)
+        signal = as_rendered("chargeEmissive(%f)" % 2.0, SEG)
+        self.assertEqual(absent, [0, 0, 0],
+                         "an absent segment is lit, so it claims a reading")
+        self.assertNotEqual(agree, absent)
+        self.assertNotEqual(agree, signal)
+        # And the ordering has to be the one a viewer reads off the screen.
+        diffuse = [0.20, 0.22, 0.24]
+        swatches = [run_reading_rules("return swatchHex(%s, %s);"
+                                      % (json.dumps(diffuse), json.dumps(e)))
+                    for e in (absent, agree, signal)]
+        self.assertEqual(len(set(swatches)), 3,
+                         "two of absent/agreeing/signal render identically")
+        self.assertLess(peak_channel(swatches[0]), peak_channel(swatches[1]))
+        self.assertLess(peak_channel(swatches[1]), peak_channel(swatches[2]))
+
+    def test_the_contrast_floor_leaves_an_absent_segment_unlit(self):
+        """`contrastFloor` repaints a dark part so it reads against the body.
+
+        Applied here it would paint an absent segment a measured grey, which is
+        exactly the state the segment must not be able to claim. The exemption
+        is asserted through the real function, not read off the source.
+        """
+        got = run_reading_rules(
+            "return contrastFloor([0, 0, 0], "
+            "{ layer: \"pack\", chargeSeg: true }, true);")
+        self.assertEqual(got, [0, 0, 0])
+
+    def test_warm_is_above_the_median_and_cool_below(self):
+        """One colour language across the model, or the legend teaches nothing."""
+        warm = run_reading_rules("return chargeEmissive(1.5);")
+        cool = run_reading_rules("return chargeEmissive(-1.5);")
+        self.assertGreater(warm[0], warm[2], "above the median is not warm")
+        self.assertGreater(cool[2], cool[0], "below the median is not cool")
+        # The same convention the tyres use, checked against them rather than
+        # asserted twice.
+        tyre_warm = run_reading_rules("return cornerEmissive(1.5);")
+        self.assertEqual(warm[0] > warm[2], tyre_warm[0] > tyre_warm[2])
+
+    def test_past_the_top_is_flagged_and_not_pinned(self):
+        """A pinned segment says "2.0 counts" over a position 3.0 out."""
+        top = run_reading_rules("return chargeEmissive(CHARGE_HIGH);")
+        over = run_reading_rules("return chargeEmissive(CHARGE_MAX_SEEN);")
+        self.assertNotEqual(top, over)
+        # The flag carries a green channel the ramp cannot produce, so it reads
+        # as OFF the scale rather than far along it.
+        self.assertEqual(top[1] > 0 and top[2], 0)
+        self.assertGreater(over[1], 0)
+        self.assertGreater(over[2], 0)
+
+    @unittest.skipIf(not CORPUS.is_dir(), "the recorded sessions are not on this machine")
+    def test_the_ramp_still_matches_the_sessions_on_disk(self):
+        readings = corpus_charge_deviations()
+        if len(readings) < 10000:
+            self.skipTest("too few recorded charge arrays on this machine to cite")
+        page, sizes = page_constants(), [abs(v) for v in readings]
+        self.assertEqual(page["CHARGE_POSITIONS"], 26)
+        self.assertAlmostEqual(page["CHARGE_HIGH"], percentile(sizes, 0.99),
+                               places=2,
+                               msg="the top of the ramp is no longer the 99th "
+                                   "percentile of the record -- rescale it, and "
+                                   "restate the corpus in the comment")
+        self.assertAlmostEqual(page["CHARGE_MAX_SEEN"], max(sizes), places=2,
+                               msg="the caption quotes an old widest-ever "
+                                   "deviation")
+        # The top is a percentile and NOT the maximum, which is the lesson the
+        # cell and corner ramps were both rebuilt for.
+        self.assertLess(page["CHARGE_HIGH"], page["CHARGE_MAX_SEEN"])
+        # And the deadband is the array's own resolution, not a choice: the
+        # median of 26 integers lands on a half-count, so nothing finer exists.
+        self.assertEqual(page["CHARGE_DEADBAND"], 0.5)
+        self.assertTrue(all(abs(v * 2 - round(v * 2)) < 1e-9 for v in readings),
+                        "a deviation finer than half a count exists, so the "
+                        "deadband is no longer the array's own resolution")
+
+    @unittest.skipIf(not CORPUS.is_dir(), "the recorded sessions are not on this machine")
+    def test_the_ramp_can_actually_be_traversed(self):
+        readings = corpus_charge_deviations()
+        if len(readings) < 10000:
+            self.skipTest("too few recorded charge arrays on this machine to cite")
+        page = page_constants()
+        low, high = page["CHARGE_DEADBAND"], page["CHARGE_HIGH"]
+        sizes = [abs(v) for v in readings]
+        tinted = [v for v in sizes if v >= low]
+        self.assertGreater(len(tinted), 1000)
+        where = [min(1.0, (v - low) / (high - low)) for v in tinted]
+        self.assertGreaterEqual(
+            sum(where) / len(where), 0.15,
+            "the average coloured segment sits in the bottom sixth of this "
+            "ramp, so the strip spends every drive at its floor")
+        self.assertGreaterEqual(
+            sum(1 for x in where if x >= 0.5) / len(where), 0.05,
+            "fewer than one coloured segment in twenty reaches the middle of "
+            "this ramp -- the far end is decorative")
+        past = sum(1 for v in sizes if v > high)
+        self.assertGreater(past, 0, "nothing on record exceeds the top, so the "
+                                    "over-range flag can never appear")
+        self.assertLess(past / len(tinted), 0.10,
+                        "most coloured segments run past the top, so this is "
+                        "not a ramp")
+
+    @unittest.skipIf(not CORPUS.is_dir(), "the recorded sessions are not on this machine")
+    def test_the_strip_is_never_a_dead_visual(self):
+        """Every recorded row has at least one position off centre.
+
+        The claim the comment makes, checked. A band that is pale grey end to
+        end on every real frame would be decoration whatever its ramp did.
+        """
+        rows = 0
+        speaking = 0
+        for path in sorted(CORPUS.glob("drive-*.csv")):
+            with path.open(newline="") as handle:
+                reader = csv.DictReader(handle)
+                if "array_2b43" not in (reader.fieldnames or []):
+                    continue
+                for row in reader:
+                    text = (row["array_2b43"] or "").strip()
+                    if len(text) != 52:
+                        continue
+                    values = [int(text[i:i + 2], 16) for i in range(0, 52, 2)]
+                    ordered = sorted(values)
+                    median = (ordered[12] + ordered[13]) / 2
+                    rows += 1
+                    if max(abs(v - median) for v in values) >= 0.5:
+                        speaking += 1
+        if rows < 1000:
+            self.skipTest("too few recorded charge arrays on this machine")
+        self.assertEqual(speaking, rows,
+                         "some recorded rows have every position on the median, "
+                         "so the comment's claim is no longer true")
+
+
+class ChargeStripPageTests(unittest.TestCase):
+    """The wiring, read off the source: which accessor, and which gate."""
+
+    def setUp(self):
+        self.source = page_script()
+
+    def test_the_live_read_is_freshness_gated(self):
+        # `signals[c].value` survives going STALE and is nulled only when the
+        # node judges a reading invalid, so a pack that stopped answering would
+        # keep colouring this strip from its last array for as long as the page
+        # stayed open. The corner tint carries an explicit gate for exactly
+        # this; so does this.
+        self.assertIn('chargeSignal && chargeSignal.status === "fresh"',
+                      self.source,
+                      "the live charge array is read without a freshness gate")
+        self.assertFalse('sigValue("array_2b43")' in self.source,
+                         "an ungated accessor is used for the charge array")
+
+    def test_the_replay_read_goes_through_the_frame(self):
+        # Otherwise the strip shows the session's last array while the scrub
+        # marker walks the trip -- not a crash, just the wrong moment, which is
+        # how this went unnoticed on the module map for as long as it existed.
+        self.assertIn('carriedRaw("array_2b43"', self.source)
+
+    def test_the_whole_strip_is_withheld_when_there_is_no_array(self):
+        self.assertIn("if (p.chargeSeg && !live.charge) return;", self.source,
+                      "segments are drawn individually, so an array that did "
+                      "not answer would be drawn as 26 agreeing positions")
+
+    def test_the_strip_is_not_drawn_on_module_geometry(self):
+        # 26 readings, 24 modules. Painting one onto the other invents the
+        # mapping the caption exists to deny.
+        start = self.source.index('add({ id: "charge-seg-"')
+        block = self.source[start:start + 600]
+        self.assertNotIn("index:", block.replace("chargeIndex:", ""),
+                         "the strip claims a module index")
+        self.assertIn("chargeIndex: ci", block)
+
+    def test_the_caption_states_what_the_colours_cannot(self):
+        # Scoped to the caption's own assembly, not the whole page. Searching
+        # the file passed while the caption said nothing, because the part
+        # index beside it uses the same words about the same array -- a test
+        # that cannot fail, which is the defect this file exists to catch.
+        start = self.source.index("var chargeNote;")
+        block = self.source[start:self.source.index('el["charge-caveat"].textContent =',
+                                                    start)]
+        for cited in ("SOURCE order", "24 modules",
+                      "no percentage is claimed", "one of these",
+                      "NORMAL state", "80 sessions"):
+            with self.subTest(cited):
+                self.assertIn(cited, block,
+                              "the caption does not state this, so a viewer "
+                              "reads the colour as more than it is")
+
+    def test_the_absent_caption_refuses_the_agreement_reading(self):
+        # The unlit strip and the all-grey strip are different claims, and the
+        # unlit one is the easier to misread because it looks calmer.
+        start = self.source.index("var chargeNote;")
+        block = self.source[start:self.source.index("} else {", start)]
+        self.assertIn("nothing was sampled here", block)
+        self.assertIn("63%", block,
+                      "the absent caption does not say how ordinary the "
+                      "agreeing state is, which is what makes the two easy to "
+                      "confuse")
+
+    def test_the_legend_names_every_state_the_strip_can_draw(self):
+        start = self.source.index("function legendEntries()")
+        block = _balanced(self.source, start)
+        for cited in ("at the row's median", "counts above the median",
+                      "counts below", "past the top", "no array for this moment"):
+            with self.subTest(cited):
+                self.assertIn(cited, block)
 
 
 if __name__ == "__main__":

@@ -75,7 +75,14 @@ def _balanced(source: str, start: int) -> str:
 #: also declares SHAFT_DIFFUSE: both are the diffuse colours of parts whose
 #: legend swatch has to be shaded from the same array the scene is built with,
 #: so they live beside `swatchHex` rather than inside `buildScene`.
-SCENE_CONSTS = r"^  var (?:HALF_TRACK|AXLE|HALF_W|TYRE_DIFFUSE) = [^;]+;"
+#:
+#: CHARGE_POSITIONS is how many segments the charge strip is built from, and it
+#: lives beside that reading's own rules rather than in `buildScene` because the
+#: draw rule, the caption and the tests all have to agree with it. A literal 26
+#: in the scene would be a second copy of the one number the array's length is
+#: checked against.
+SCENE_CONSTS = (r"^  var (?:HALF_TRACK|AXLE|HALF_W|TYRE_DIFFUSE"
+                r"|CHARGE_POSITIONS) = [^;]+;")
 
 
 def build_parts() -> list[dict]:
@@ -84,7 +91,7 @@ def build_parts() -> list[dict]:
     veh = re.search(r"var VEH = \{[\s\S]*?\n  \};", source)
     assert veh, "VEH literal not found"
     consts = re.findall(SCENE_CONSTS, source, re.M)
-    assert len(consts) == 4, f"expected 4 derived constants, found {len(consts)}"
+    assert len(consts) == 5, f"expected 5 derived constants, found {len(consts)}"
     scene = _balanced(source, source.index("function buildScene"))
     harness = (veh.group(0) + "\n" + "\n".join(consts) + "\n" + scene + """
 const parts = buildScene();
@@ -126,6 +133,22 @@ process.stdout.write(JSON.stringify(parts.map(p => ({
         done = subprocess.run([NODE, str(path)], capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, f"buildScene failed:\n{done.stderr[:800]}"
     return json.loads(done.stdout)
+
+
+def vehicle() -> dict:
+    """The page's own VEH numbers, read off its source.
+
+    Read rather than written down: every bound asserted against the pack is a
+    claim about where the page puts things, and a test with its own copy of
+    2.090 would keep passing the day the pack moved.
+    """
+    source = _script()
+    block = re.search(r"var VEH = \{([\s\S]*?)\n  \};", source)
+    assert block, "VEH literal not found"
+    out = {}
+    for name, value in re.findall(r"(\w+):\s*(-?[\d.]+)", block.group(1)):
+        out[name] = float(value)
+    return out
 
 
 @unittest.skipIf(NODE is None, "node is not installed on this machine")
@@ -1079,3 +1102,93 @@ class TonneauTests(unittest.TestCase):
                 if all(a[i][0] < b[i][1] - 1e-6 and b[i][0] < a[i][1] - 1e-6 for i in range(3)):
                     clash.append((pid, qid))
         self.assertEqual(clash, [], f"inside the tonneau: {clash}")
+
+
+@unittest.skipIf(NODE is None, "node is not installed on this machine")
+class ChargeStripGeometryTests(unittest.TestCase):
+    """26 segments on the pack's flank, and not one of them on a module.
+
+    The reading is per position and the position order is a SOURCE order, so the
+    geometry has to say "26 ordered readings" without saying where any of them
+    is in the truck. Every assertion here is a way the strip could have implied
+    a place it cannot claim.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.parts = build_parts()
+        cls.segs = sorted((p for p in cls.parts if p["id"].startswith("charge-seg-")),
+                          key=lambda p: int(p["id"].rsplit("-", 1)[1]))
+        cls.band = next(p for p in cls.parts if p["id"] == "cell-spread-band")
+        cls.modules = [p for p in cls.parts if p["id"].startswith("mod-")]
+
+    def test_there_are_exactly_twenty_six(self):
+        # The array is 26 long and `chargeDeviations` refuses any other length.
+        # A 24-segment strip would quietly drop two readings.
+        self.assertEqual(len(self.segs), 26)
+        self.assertEqual([int(p["id"].rsplit("-", 1)[1]) for p in self.segs],
+                         list(range(26)))
+
+    def test_the_count_does_not_match_the_modules(self):
+        """Deliberate, and the reason this is a strip rather than module colour.
+
+        If these two ever became equal somebody would paint one onto the other,
+        so the difference is asserted rather than left as a fact about the
+        vehicle.
+        """
+        self.assertEqual(len(self.modules), 24)
+        self.assertNotEqual(len(self.segs), len(self.modules))
+
+    def test_they_run_along_the_pack_in_index_order(self):
+        # A strip whose index order is not its spatial order would make the
+        # caption's "one of these differs" unreadable: a viewer could not tell
+        # which mark the caption meant.
+        xs = [p["t"][0] for p in self.segs]
+        self.assertEqual(xs, sorted(xs),
+                         "segment index order is not left-to-right order")
+        gaps = [round(b - a, 6) for a, b in zip(xs, xs[1:])]
+        self.assertEqual(len(set(gaps)), 1,
+                         "the segments are not evenly pitched, so the strip "
+                         "implies structure the array does not have")
+
+    def test_no_segment_overlaps_another(self):
+        for before, after in zip(self.segs, self.segs[1:]):
+            with self.subTest(before["id"]):
+                edge = before["t"][0] + before["s"][0] / 2
+                self.assertLess(edge, after["t"][0] - after["s"][0] / 2,
+                                "segments touch, so 26 readings read as one bar")
+
+    def test_the_strip_does_not_collide_with_the_spread_band(self):
+        """Two different readings on the same flank must stay two objects."""
+        top = max(p["t"][1] + p["s"][1] / 2 for p in self.segs)
+        self.assertLess(top, self.band["t"][1] - self.band["s"][1] / 2,
+                        "the charge strip and the spread band intersect")
+        # Same flank and same depth, so both are readable without rotating.
+        for p in self.segs:
+            with self.subTest(p["id"]):
+                self.assertAlmostEqual(p["t"][2], self.band["t"][2], places=6)
+
+    def test_the_strip_stays_on_the_pack_face(self):
+        veh = vehicle()
+        length, centre = veh["packLength"], veh["packCentreX"]
+        for p in self.segs:
+            with self.subTest(p["id"]):
+                self.assertGreater(p["t"][0] - p["s"][0] / 2, centre - length / 2)
+                self.assertLess(p["t"][0] + p["s"][0] / 2, centre + length / 2)
+                self.assertGreater(p["t"][1] - p["s"][1] / 2, veh["packBottom"])
+                self.assertLess(p["t"][1] + p["s"][1] / 2, veh["packTop"])
+
+    def test_every_segment_is_on_the_pack_layer(self):
+        # So the pack toggle takes the strip with it; a reading a viewer cannot
+        # get out of the way is the thing the cutaway exists to avoid.
+        for p in self.segs:
+            with self.subTest(p["id"]):
+                self.assertEqual(p["layer"], "pack")
+
+    def test_no_segment_is_translucent(self):
+        # A translucent segment composites its emissive against whatever is
+        # behind it, so the same reading would render as different colours
+        # depending on the camera -- and the legend swatch would match neither.
+        for p in self.segs:
+            with self.subTest(p["id"]):
+                self.assertIsNone(p["alpha"])
