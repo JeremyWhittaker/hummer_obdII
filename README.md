@@ -535,6 +535,30 @@ happens. All of it follows a replay scrub rather than freezing at the last live
 sample, and every colour in the legend is computed through the page's own
 shading rule, so the swatch is the colour the model draws.
 
+**The live view reads live signals, and only a replay reads a history row.**
+This was broken and is the more important half of the paragraph above. A
+history row carries no freshness — it is the reading taken at that instant —
+so the page's whole freshness discipline is bypassed the moment the model is
+handed one. `renderMap` runs on every poll to keep the map marker on the end
+of the track, and it used to hand over the frame while doing it: on the live
+view of any session with GPS the model silently ran off the last recorded row,
+so a corner that had stopped answering was drawn from its last number instead
+of abstaining. That is the exact defect the `status === "fresh"` gate exists to
+prevent, reached by another route, with nothing on screen saying which source
+was in use. Adoption now requires that somebody actually be watching a replay,
+playing or having moved the scrub, and the playback readout names that frame's
+clock beside it.
+
+**The two measured ramps were rescaled, because the corpus outgrew them.** The
+recorded sessions went from 63 to 124 and the percentiles moved with them: cell
+spread anchors at a 3.2 mV median and an 8.1 mV 99th percentile against a 21.4
+mV record maximum, and the corner ramp tops out at 2.25 km/h, the 99.9th
+percentile of 13,432 corner readings. The old corner top of 1.75 had become the
+opposite failure from an unreachable anchor — 5.0% of coloured readings ran past
+it, so the over-range flag was turning into the ordinary state. The test suite
+recomputes all of these from the sessions on disk and fails when the page drifts
+from them, which is how this surfaced rather than being noticed by eye.
+
 A fifth was built and cut: three marks for lowest, average and highest cell
 voltage on a fixed 3.0-4.2 V axis. The axis maps a millivolt to 0.000267 model
 units while each mark is 0.020 thick, so at the widest imbalance this pack has
@@ -1670,8 +1694,8 @@ See [Validation](docs/VALIDATION.md) for the test matrix and evidence policy.
   tested: five answered at the battery manager including a twenty-four-value
   array, and all nine at the body control module returned `NO DATA`.
 - [Passive CAN validation](docs/PASSIVE_CAN_VALIDATION.md) — why passive
-  monitoring at this vehicle's connector is very likely a dead end, and the
-  bounded experiment that would confirm it.
+  monitoring at this vehicle's connector is a dead end, now measured on all
+  four CAN protocols rather than one.
 - [Capabilities](docs/CAPABILITIES.md) — what the node, the adapter, and this
   vehicle can actually do, split into proven, available-but-unproven, and
   out of scope.

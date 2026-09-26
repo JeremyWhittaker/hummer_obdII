@@ -15,6 +15,44 @@ inferred from other people's. The practical consequence: **there is no passive
 fallback.** Every byte this project has ever obtained arrived because something
 asked for it, and "try sniffing the DLC" is retired rather than deferred.
 
+## The gap in that result is now closed: all four protocols, 2026-09-26
+
+The 2026-09-04 capture used `ATSP7` alone, which is what this vehicle answers
+diagnostics on. That was a real hole in a negative result — a frame on a
+different protocol would not have been seen, and "nothing arrives" had only ever
+been established for one of the four this tool can listen on. `PROTOCOLS` was
+widened afterwards precisely so the hole could be closed.
+
+It was closed on 2026-09-26 (UTC), parked, powered on and awake, recorder
+stopped, four captures of 20 s each:
+
+| Protocol | Framing | Captured |
+|---|---|---|
+| `ATSP6` | ISO 15765-4 CAN, 11-bit, 500 kbit/s | **0 bytes** |
+| `ATSP7` | ISO 15765-4 CAN, 29-bit, 500 kbit/s | **0 bytes** |
+| `ATSP8` | ISO 15765-4 CAN, 11-bit, 250 kbit/s | **0 bytes** |
+| `ATSP9` | ISO 15765-4 CAN, 29-bit, 250 kbit/s | **0 bytes** |
+
+Every capture stopped on its own duration with the stop character acknowledged,
+and the adapter's CAN counters read `T:00 R:00` both before and after each one —
+consistent with the receive-only promise (nothing transmitted) and with the
+silence itself (nothing received). Two of the six attempts failed at `ATZ` with
+"device reports readiness to read but returned no data", the ordinary signature
+of the Bluetooth link still settling after the recorder released the port; both
+were repeated and both then returned zero.
+
+**This does not measure bus load and nothing here licenses that reading.** The
+link is ASCII over Bluetooth at 115200 baud and caps at a few hundred frames per
+second against a bus carrying thousands; the capture is lossy by construction. A
+zero says the gateway forwards nothing unsolicited to *this connector*, on any
+framing it can be asked to listen with. It says nothing about the networks
+behind the gateway.
+
+What that closes: the protocol coverage. What it does not close: whether a
+deliberate event — a fob lock, a charge start — produces a frame where an idle
+parked truck does not. The runbook still recommends two or three event captures
+before this path is called finished, and those need an operator at the vehicle.
+
 What follows below the next section is the research note exactly as written
 before any of that, because the reasoning is what justified the design and
 rewriting it into hindsight would destroy the record.

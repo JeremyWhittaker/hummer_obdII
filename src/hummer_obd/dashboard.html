@@ -803,6 +803,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        another one; `frameIndex` resolves by timestamp, but the scrub's own
        bounds belong to whatever history is now loaded. */
     state.frame = null;
+    state.replaying = false;
     return true;
   }
 
@@ -849,8 +850,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        matched against. `stopsLoaded` distinguishes "no stops" from "not asked
        yet", which the tab shows differently. */
     stops: [], places: [], stopsLoaded: false,
-    /* The history row the replay is sitting on, or null when it is not. */
-    frame: null, autoplay: false, mainView: "live",
+    /* The history row the replay is sitting on, or null when it is not.
+       `replaying` is whether anyone is WATCHING a replay -- playing, or having
+       moved the scrub. Adopting a frame bypasses every freshness gate, so the
+       map's own marker updates may not set one on their own. */
+    frame: null, replaying: false, autoplay: false, mainView: "live",
     map: null, play: { timer: null },
     /* Coolant flow is animated from whether the thermal accumulator is
        actually advancing, which needs the previous poll to compare against.
@@ -1019,7 +1023,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
      `utc` is the stable key: dashboard.py writes it on every history row
      verbatim from the recorder, at microsecond resolution, and it is unique
-     within a session in all 10,682 rows of all 63 CSVs under
+     within a session in all 29,188 rows of all 124 CSVs under
      evidence/sessions -- a test asserts that premise against the corpus
      rather than assuming it. It can still be missing on a row the recorder
      wrote without a clock, so `elapsed_s` is the second key and identity is
@@ -1075,7 +1079,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
      asserts these literals still equal the Python ones. */
   var TORQUE_ZERO = 22534, TORQUE_BAND = 30;
 
-  /* 0x2429 is two bytes wide in all 2,756 samples in the session corpus, and
+  /* 0x2429 is two bytes wide in all 14,109 samples in the session corpus, and
      live.py's `_hex` reads the WHOLE hex string it is handed. Taking the
      first two bytes of something longer would put the page and the node on
      different numbers for the same instant with neither one complaining, so
@@ -1136,9 +1140,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   /* ABSENT IS NOT NEUTRAL, and this is the pair of numbers that keeps them
      apart on the halfshafts.
 
-     0x2429 is SPARSE. It answered in 2,756 of the 10,682 rows in
-     evidence/sessions -- 25.8% -- in only 20 of the 63 sessions, with runs of
-     up to 198 consecutive rows carrying nothing, about 18 s at the 90 ms
+     0x2429 is SPARSE. It answered in 14,109 of the 29,188 rows in
+     evidence/sessions -- 48.3% -- in 74 of the 124 sessions, with runs of
+     up to 281 consecutive rows carrying nothing, about 25 s at the 90 ms
      playback tick. So a replay of a real drive spends most of its time with
      no effort reading at all, and it does it in the middle of acceleration.
 
@@ -1221,30 +1225,41 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
      It divided the deviation past the deadband by an uncited 3.0, which puts
      full tint at 4.0 km/h from the four-corner mean. Nothing on this truck
-     has ever been near it. MEASURED, over the 10,682 rows in the 63 CSVs
-     under evidence/sessions: 7,480 rows carry all four corners and 1,425 of
+     has ever been near it. MEASURED, over the 29,188 rows in the 124 CSVs
+     under evidence/sessions: 18,668 rows carry all four corners and 3,358 of
      those have a four-corner mean at or above the 5 km/h floor
-     `cornerDeviation` applies, which is 5,700 individual corner readings.
-     Of those the median deviation is 0.00 km/h, 58.8% are exactly zero, the
-     99th percentile is 1.50 and the largest ever recorded is 2.75. Against a
-     4.0 km/h top the largest reading on record sat 58% of the way up, so the
-     whole upper 42% of the ramp was unreachable, and only 83 of those 1,425
-     moving frames (5.8%) showed any tint on any corner at all.
+     `cornerDeviation` applies, which is 13,432 individual corner readings.
+     Of those the median deviation is 0.00 km/h, 59.1% are exactly zero, the
+     95th percentile is 1.00, the 99th is 1.50 and the largest ever recorded is
+     2.75, which occurs once. Against a 4.0 km/h top the largest reading on
+     record sat 58% of the way up, so the whole upper 42% of the ramp was
+     unreachable, and only 179 of those 3,358 moving frames (5.3%) showed any
+     tint on any corner at all.
 
-     THE TOP IS 1.75 km/h, a percentile of the record and not its maximum.
-     1.75 is the 99.9th percentile of all 5,700 corner readings, the 99th
-     percentile of the 1,425 rows taken at their worst corner, and the 95th
-     percentile of the 253 readings that clear the deadband and are therefore
-     the only ones this ramp ever colours. Those 253 are what has to traverse
-     it: against 4.0 km/h their mean position on the ramp is 7.3% and 0.4%
-     reach halfway; against 1.75 it is 27.7% and 26.9%, with 2.0% running past
-     the top. Anchoring on the once-ever 2.75 gives 12.5% and 2.0% with
+     THE TOP IS 2.25 km/h, a percentile of the record and not its maximum:
+     the 99.9th percentile of all 13,432 corner readings. 873 of them reach or
+     pass the 1.0 km/h deadband and are therefore the only ones this ramp ever
+     colours -- `cornerEmissive` tints at `dm >= CORNER_DEADBAND_KPH`, so that
+     boundary is the population, not a rounding of it -- and they are what has
+     to traverse it. Against 4.0 km/h their mean position is 9.2% and 0.3%
+     reach halfway; against 2.25 it is 22.0% and 12.3%, with 3 readings past
+     the top. Anchoring on the once-ever 2.75 gives 15.8% and 5.0% with
      nothing ever over-range, which is the unreachable anchor again in a
      smaller size.
 
-     Those 2.0% are why over-range is FLAGGED and not pinned, exactly as the
-     spread is: a tyre pinned at full amber says "1.75 km/h" over a corner
-     2.75 km/h out, and the caption prints the number instead.
+     This top was 1.75 km/h, measured the same way against a corpus half this
+     size, and the corpus outgrew it: at 1.75 the mean position is 34.5%, 37.3%
+     of coloured readings reach halfway and 5.0% run past the top. That is a
+     ramp whose over-range flag is becoming the ordinary state rather than the
+     exception, which is the unreachable-anchor fault running the other way --
+     so the number moved with the evidence, which is the whole reason
+     tests/test_dashboard.py recomputes it from the corpus on disk.
+
+     Those 3 readings are why over-range is FLAGGED and not pinned, exactly as
+     the spread is: a tyre pinned at full amber says "2.25 km/h" over a corner
+     2.75 km/h out, and the caption prints the number instead. Three on record
+     is rare and it is not zero -- an anchor at the maximum would make the flag
+     unreachable, which is what it must not be.
 
      THE DEADBAND IS NOT PART OF THE RAMP. Each corner is one byte in 1 km/h
      steps, so a deviation under one whole step is inside the sensor's own
@@ -1252,7 +1267,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
      of 0.25 km/h (the mean of four one-km/h corners). A step is not a
      finding -- but it IS a measurement, and it gets its own colour below
      rather than the black that also means "nothing was read". */
-  var CORNER_DEADBAND_KPH = 1.0, CORNER_HIGH_KPH = 1.75,
+  var CORNER_DEADBAND_KPH = 1.0, CORNER_HIGH_KPH = 2.25,
       CORNER_MAX_SEEN_KPH = 2.75;
 
   /* ABSENT, MEASURED-AGREEMENT, MEASURED-SIGNAL: three states, three
@@ -1262,9 +1277,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
      when any corner is not fresh, or when the four-corner mean is under
      5 km/h -- and that used to leave the tyre at emissive [0, 0, 0], which is
      pixel-identical to a corner measured squarely inside the deadband. It is
-     the COMMON case: 9,257 of the 10,682 recorded rows (86.7%) produce no
-     four-corner deviation at all, 3,202 of them because a corner is missing
-     and 6,055 because the truck is below walking pace. The freshness gate
+     the COMMON case: 25,830 of the 29,188 recorded rows (88.5%) produce no
+     four-corner deviation at all, 10,520 of them because a corner is missing
+     and 15,310 because the truck is below walking pace. The freshness gate
      made it worse, because one stale corner untints all four, and four
      untinted tyres read as the affirmative claim "the corners agree".
 
@@ -1289,7 +1304,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
      produces (its warm end is [0.55, 0.30, 0] and its cool end
      [0, 0.30, 0.55]), so an over-range tyre reads as OFF the scale rather
      than far along it. The legend names both and the caption prints the
-     number, because "1.75 km/h out" and "somewhere past 1.75 km/h out" are
+     number, because "2.25 km/h out" and "somewhere past 2.25 km/h out" are
      different readings and a pinned ramp cannot tell them apart. */
   var CORNER_OVER_FAST = [0.88, 0.82, 0.24], CORNER_OVER_SLOW = [0.24, 0.82, 0.88];
 
@@ -1324,25 +1339,24 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
      its range and could not move enough to be read. That is this project's
      cardinal sin -- see the note beside identifier 2429 in drive.py.
 
-     MEASURED, from the 10,349 rows carrying `cell_spread_mv` in 52 of the 63
-     session CSVs under evidence/sessions: minimum 0.0 mV, median 3.4, 90th
-     percentile 5.0, 99th percentile 7.6, 99.9th 12.3, maximum 19.7 -- and
-     19.7 occurs exactly once in the whole corpus.
+     MEASURED, from the 26,836 rows carrying `cell_spread_mv` in the session
+     CSVs under evidence/sessions: minimum 0.0 mV, median 3.2, 95th percentile
+     5.5, 99th percentile 8.1, 99.9th 11.8, maximum 21.4 -- and 21.4 occurs
+     twice in the whole corpus.
 
      THE TOP IS THE 99TH PERCENTILE AND NOT THE MAXIMUM, which is the second
-     half of the same lesson. Anchored at that once-ever 19.7 the ramp could
-     not move either: of those 10,349 readings 50.2% sat exactly on the green
-     floor, 92.4% inside the bottom tenth of the ramp, 0.17% ever reached
-     halfway, and the mean position was 3.9% -- an amber end no drive can
-     reach is the 70 mV divisor with a citation stapled to it. Against 7.6
-     the same readings traverse the ramp: mean position 14.6%, 4.5% reach
-     halfway or beyond, and 1.0% run past the top.
+     half of the same lesson. Anchored at that near-once 21.4 the ramp could
+     not move either: of those 26,836 readings the mean position on the ramp is
+     2.9% and 0.08% ever reach halfway -- an amber end no drive can reach is
+     the 70 mV divisor with a citation stapled to it, and 70 itself scores 0.8%
+     and 0.00%. Against 8.1 the same readings traverse it: mean position 10.4%,
+     4.2% reach halfway or beyond, and 1.0% run past the top.
 
      Those 1.0% are why there is an over-range flag rather than a clamp. A
-     band pinned at full amber would say "7.6 mV" when the reading is 12, and
+     band pinned at full amber would say "8.1 mV" when the reading is 12, and
      that gets its own colour and the number printed in the caption.
 
-     What green means is stated rather than implied: 3.4 mV is this pack's
+     What green means is stated rather than implied: 3.2 mV is this pack's
      MEDIAN, so green covers the bottom half of every reading on record and
      the caption says so in those words. GM publishes no imbalance limit for
      this pack, and citing one from another chemistry would be inventing a
@@ -1350,14 +1364,14 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
      that corpus, and separately checks that the ramp is still traversable by
      the readings in it -- so a corpus that grows past the ramp says so
      rather than the ramp going quietly out of date. */
-  var CELL_SPREAD_TYPICAL_MV = 3.4, CELL_SPREAD_HIGH_MV = 7.6,
-      CELL_SPREAD_MAX_SEEN_MV = 19.7;
+  var CELL_SPREAD_TYPICAL_MV = 3.2, CELL_SPREAD_HIGH_MV = 8.1,
+      CELL_SPREAD_MAX_SEEN_MV = 21.4;
 
   /* The colour of a spread that has run past the top of the ramp above.
      Deliberately not on the green-amber ramp and not the modules' red: a
      band in this colour is not "far along the scale", it is "off it", and
-     the legend and the caption both say so. Full amber cannot: "at 7.6 mV"
-     and "somewhere above 7.6 mV" are different readings and a pinned ramp
+     the legend and the caption both say so. Full amber cannot: "at 8.1 mV"
+     and "somewhere above 8.1 mV" are different readings and a pinned ramp
      tells them apart in neither direction. */
   var CELL_SPREAD_OVER = [0.72, 0.20, 0.95];
 
@@ -2218,9 +2232,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        average and the highest. The decode was sound; the GEOMETRY could not
        carry it. That axis maps 1.2 V onto 0.320 model units, so 1 mV is
        0.000267 units, while each mark was 0.020 units thick. The widest
-       imbalance this truck has ever recorded, 19.7 mV, separated the lowest
-       mark from the highest by 26% of one mark's own thickness; the median
-       reading, 3.4 mV, by 4.5% of it -- about a tenth of a pixel on screen.
+       imbalance this truck has ever recorded, 21.4 mV, separated the lowest
+       mark from the highest by 29% of one mark's own thickness; the median
+       reading, 3.2 mV, by 4.3% of it -- about a tenth of a pixel on screen.
        On every reading in the corpus the three marks were one bar, under a
        caption saying they showed lowest, average and highest. A visual that
        cannot express its own claim must not ship, so the marks are gone and
@@ -4676,9 +4690,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
            `_hex` parses the whole string and taking a prefix of a wider
            field would let the two diverge in silence.
 
-           The endianness is not assumed. Across the 2,756 samples in the
+           The endianness is not assumed. Across the 14,109 samples in the
            session corpus the big-endian value has its median exactly on
-           the 22534 zero and 73% of samples inside the neutral band; read
+           the 22534 zero and 78% of samples inside the neutral band; read
            little-endian the median sits 20,910 counts away and not one
            sample lands in the band at all. (The low byte is 0x06 in about
            72% of samples, not all of them, so it is the clustering and not
@@ -4864,7 +4878,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
             + "rather than a stale or impossible triple. ";
     /* --- what the band on the pack is saying, in the band's own numbers ---
        The ramp is measured, and saying so is half of it; saying what a green
-       band therefore covers is the other half. 3.4 mV is the MEDIAN of the
+       band therefore covers is the other half. 3.2 mV is the MEDIAN of the
        recorded readings, so "green" is "the ordinary bottom half of this
        pack's record" and not "balanced" -- the colour cannot make that
        distinction and the sentence can.
@@ -4883,8 +4897,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         + "pack's median — so green covers the bottom half of every reading "
         + "on record, and means ordinary rather than balanced. Full amber "
         + "is " + CELL_SPREAD_HIGH_MV.toFixed(1) + " mV, the 99th "
-        + "percentile of 10,349 recorded readings; the widest ever seen is "
-        + CELL_SPREAD_MAX_SEEN_MV.toFixed(1) + " mV, once. Its position is "
+        + "percentile of 26,836 recorded readings; the widest ever seen is "
+        + CELL_SPREAD_MAX_SEEN_MV.toFixed(1) + " mV, twice. Its position is "
         + "not a reading — only its colour is. ";
       if (spreadHere > CELL_SPREAD_HIGH_MV) {
         cellNote += "This reading is past the top of that ramp, so the band is "
@@ -4917,8 +4931,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     /* --- what the tyres are saying, including when they say nothing ---
        A four-corner deviation needs all four corners, all of them fresh, and
        a mean at or above walking pace, and most recorded rows do not have
-       that: 9,257 of 10,682 (86.7%) produce no deviation at all -- 3,202
-       because a corner is missing from the row and 6,055 because the truck
+       that: 25,830 of 29,188 (88.5%) produce no deviation at all -- 10,520
+       because a corner is missing from the row and 15,310 because the truck
        is under 5 km/h. Four unlit tyres are therefore the page's ordinary
        frame, and four unlit tyres with no sentence beside them are a viewer
        reading "the corners agree" out of an absent measurement. */
@@ -4940,8 +4954,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         + "grey instead, so the two are never the same picture. It needs all "
         + "four corners, each of them fresh, and a mean at or above 5 km/h, "
         + "because each corner is one byte in 1 km/h steps and at walking "
-        + "pace the steps are the whole signal: 9,257 of 10,682 recorded rows "
-        + "(86.7%) meet none of that — 3,202 missing a corner and 6,055 below "
+        + "pace the steps are the whole signal: 25,830 of 29,188 recorded rows "
+        + "(88.5%) meet none of that — 10,520 missing a corner and 15,310 below "
         + "5 km/h.";
     } else {
       /* Over-range corners by name and by number. A flagged tyre says "off
@@ -4969,9 +4983,9 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     }
 
     /* --- what the halfshafts are saying, including when they say nothing ---
-       0x2429 answered in 2,756 of the 10,682 rows recorded in
-       evidence/sessions -- 25.8%, and in only 20 of 63 sessions, with runs of
-       up to 198 rows carrying nothing, about 18 s of playback. An unlit shaft
+       0x2429 answered in 14,109 of the 29,188 rows recorded in
+       evidence/sessions -- 48.3%, and in 74 of 124 sessions, with runs of
+       up to 281 rows carrying nothing, about 25 s of playback. An unlit shaft
        is therefore the COMMON case on a replay, and an unlit shaft with no
        sentence beside it is a page letting the viewer read "coasting" out of
        a gap in the log. */
@@ -4986,8 +5000,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         + "shafts are unlit. That is “nothing was sampled here”, not “the "
         + "truck is coasting” — a measured neutral is drawn in pale grey "
         + "instead, so the two are never the same picture. This field is "
-        + "sparse: it answered in 2,756 of 10,682 recorded rows (25.8%), in "
-        + "20 of 63 sessions, with gaps of up to 198 rows — about 18 seconds "
+        + "sparse: it answered in 14,109 of 29,188 recorded rows (48.3%), in "
+        + "74 of 124 sessions, with gaps of up to 281 rows — about 25 seconds "
         + "of playback.";
     } else {
       effortNote += "Right now: " + ({ drive: "driving", regen: "regenerating",
@@ -5086,7 +5100,25 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
      Pull up a past session and watch where the vehicle actually was, minute
      by minute. The marker is placed from the same projection the trail was
      drawn with, so the two cannot drift apart. */
-  function showFrame(index) {
+  /* `adopt` decides whether the MODEL follows this frame, as opposed to just
+     the map marker. It is not a detail: `state.frame` is what `renderVehicle`
+     reads INSTEAD of the freshness-gated signals, and a history row carries no
+     freshness at all -- it is the reading taken at that instant, and every gate
+     on the live view is bypassed the moment one is adopted.
+
+     This used to be unconditional, and `renderMap` calls this function on
+     every poll to keep the marker on the end of the track. So on the LIVE
+     view of a session with GPS, the model silently ran off the last recorded
+     row rather than off the current signals: a corner that had stopped
+     answering was drawn from its last number instead of abstaining, which is
+     the precise defect the `status === "fresh"` gate in `cornerDeviation`
+     exists to prevent, reachable again by another route. Nothing on screen
+     said which source was in use.
+
+     So adoption now requires that somebody actually be watching a replay --
+     playing, or having moved the scrub -- and the marker placement, which is
+     about the map and not about the truck, no longer drags the model with it. */
+  function showFrame(index, adopt) {
     var m = state.map;
     if (!m || !m.points.length) return;
     var i = Math.max(0, Math.min(m.points.length - 1, index)),
@@ -5111,8 +5143,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        which is worse than showing nothing. `state.frame` is what
        `renderVehicle` reads instead of the latest signals while a replay is
        in progress, and it is cleared when the replay stops. */
-    state.frame = row;
-    renderVehicle(viewState());
+    if (adopt) {
+      state.frame = row;
+      renderVehicle(viewState());
+    }
 
     var speed = num(row.speed_kph), elapsed = num(row.elapsed_s), parts = [],
         clock = clockOf(row.utc);
@@ -5160,6 +5194,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     if (state.play.timer !== null) { stopPlayback(); return; }
     var m = state.map;
     if (!m || m.points.length < 2) return;
+    state.replaying = true;
     if (Number(el.scrub.value) >= m.points.length - 1) el.scrub.value = "0";
     el.play.textContent = "\u23F8";
     el.play.setAttribute("aria-label", "Pause");
@@ -5169,7 +5204,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       var next = Number(el.scrub.value) + 1;
       if (!state.map || next > state.map.points.length - 1) { stopPlayback(); return; }
       el.scrub.value = String(next);
-      showFrame(next);
+      showFrame(next, true);
     }, 90);
   }
 
@@ -5561,11 +5596,15 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
        scrub back to zero for as long as the session stayed selected. */
     if (state.autoplay) {
       state.autoplay = false;
+      state.replaying = true;
       if (state.play.timer === null) togglePlayback();
     }
     el.scrub.max = String(pts.length - 1);
     if (Number(el.scrub.value) > pts.length - 1) el.scrub.value = String(pts.length - 1);
-    showFrame(Number(el.scrub.value) || pts.length - 1);
+    /* Marker only unless a replay is actually being watched. This call runs on
+       every poll, and adopting here is what used to hand the live model a
+       history row with no freshness behind it. */
+    showFrame(Number(el.scrub.value) || pts.length - 1, state.replaying === true);
 
     /* distance along the trail */
     var metres = 0;
@@ -5826,10 +5865,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                                  + "coloured by the pack's imbalance in "
                                  + "millivolts; its position is not a "
                                  + "reading. Green at this pack's median "
-                                 + "3.4 mV \u2014 so green is the bottom half "
+                                 + "3.2 mV \u2014 so green is the bottom half "
                                  + "of every reading on record, not "
                                  + "\u201cbalanced\u201d \u2014 full amber at the "
-                                 + "99th percentile of 7.6 mV, and flagged "
+                                 + "99th percentile of 8.1 mV, and flagged "
                                  + "past that. Measured from the sessions on "
                                  + "disk, not a published limit"],
     pack_v:         ["pack-case", "HV bus"],
@@ -5851,28 +5890,28 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     wheel_fl_kph:   ["tyre-fl", "corner rotation (corner label is a source label), "
                               + "and tinted by this corner's deviation from the "
                               + "four-corner mean, in km/h \u2014 full tint at the "
-                              + "measured 1.75 km/h and flagged past it. Under "
+                              + "measured 2.25 km/h and flagged past it. Under "
                               + "1 km/h is inside the sensor's own step and takes "
                               + "a pale neutral, which is a MEASUREMENT; a tyre "
                               + "with no reading is unlit instead"],
     wheel_fr_kph:   ["tyre-fr", "corner rotation (corner label is a source label), "
                               + "and tinted by this corner's deviation from the "
                               + "four-corner mean, in km/h \u2014 full tint at the "
-                              + "measured 1.75 km/h and flagged past it. Under "
+                              + "measured 2.25 km/h and flagged past it. Under "
                               + "1 km/h is inside the sensor's own step and takes "
                               + "a pale neutral, which is a MEASUREMENT; a tyre "
                               + "with no reading is unlit instead"],
     wheel_rl_kph:   ["tyre-rl", "corner rotation (corner label is a source label), "
                               + "and tinted by this corner's deviation from the "
                               + "four-corner mean, in km/h \u2014 full tint at the "
-                              + "measured 1.75 km/h and flagged past it. Under "
+                              + "measured 2.25 km/h and flagged past it. Under "
                               + "1 km/h is inside the sensor's own step and takes "
                               + "a pale neutral, which is a MEASUREMENT; a tyre "
                               + "with no reading is unlit instead"],
     wheel_rr_kph:   ["tyre-rr", "corner rotation (corner label is a source label), "
                               + "and tinted by this corner's deviation from the "
                               + "four-corner mean, in km/h \u2014 full tint at the "
-                              + "measured 1.75 km/h and flagged past it. Under "
+                              + "measured 2.25 km/h and flagged past it. Under "
                               + "1 km/h is inside the sensor's own step and takes "
                               + "a pale neutral, which is a MEASUREMENT; a tyre "
                               + "with no reading is unlit instead"],
@@ -6304,7 +6343,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
         the same black tyre, on a page where 86.7% of recorded rows carry no
         four-corner deviation at all. */
      [tyre(CORNER_HIGH_KPH),
-      "tyre: turning faster than the other three (full tint at 1.75 km/h, "
+      "tyre: turning faster than the other three (full tint at 2.25 km/h, "
       + "the measured 99.9th percentile)"],
      [tyre(-CORNER_HIGH_KPH), "tyre: turning slower"],
      [tyre(0), "tyre: measured, within one sensor step of the other three"],
@@ -6319,13 +6358,13 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
      /* Past the top of the ramp is not at the top of it, so these two are
         off the warm/cool pair above rather than brighter versions of it. */
      [tyre(CORNER_MAX_SEEN_KPH),
-      "tyre: faster, past 1.75 km/h (read the caption, not the colour)"],
-     [tyre(-CORNER_MAX_SEEN_KPH), "tyre: slower, past 1.75 km/h"],
+      "tyre: faster, past 2.25 km/h (read the caption, not the colour)"],
+     [tyre(-CORNER_MAX_SEEN_KPH), "tyre: slower, past 2.25 km/h"],
      /* Past the top of the spread ramp is not at the top of it either. The
         band is a one-entry flag with no sibling state in this legend, so
         there is no within-set comparison for a raw quotation to invert, and
         it is left as the emissive it is drawn with. */
-     ["#b833f2","pack band: spread past 7.6 mV, the top of its tint (read "
+     ["#b833f2","pack band: spread past 8.1 mV, the top of its tint (read "
               + "the caption, not the colour)"],
      /* THE HALFSHAFTS, all four states. The last two are the point: a
         measured neutral and no reading at all used to be the same shaft, and
@@ -6659,6 +6698,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   el["session-select"].addEventListener("change", function (ev) {
     stopPlayback(); el.scrub.value = "0";
     state.frame = null;
+    state.replaying = false;
     state.selected = ev.target.value; state.snapshot = null;
     /* Choosing a past trip is asking to watch it, so it plays. Not "latest":
        that is the live view, and starting a replay of the present would be
@@ -6669,7 +6709,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   el.play.addEventListener("click", togglePlayback);
   el.scrub.addEventListener("input", function (ev) {
     stopPlayback();
-    showFrame(Number(ev.target.value));
+    /* Moving the scrub IS asking to watch a moment, including on the live
+       view, so this is the one place the live view legitimately hands the
+       model to a history row. The playback readout names that row's clock
+       beside it, which is what keeps it from reading as the present. */
+    state.replaying = true;
+    showFrame(Number(ev.target.value), true);
   });
   el["signal-search"].addEventListener("input", function (ev) {
     state.filter = ev.target.value || ""; renderSignals(viewState());

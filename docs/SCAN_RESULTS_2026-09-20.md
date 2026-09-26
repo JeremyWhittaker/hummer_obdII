@@ -49,6 +49,48 @@ the four ranges scanned. Next: the rest of `CB`'s identifier space, and module
 and is already known to be **temperatures** — the "match" was manufactured by
 an offset the search was allowed to invent.
 
+### `array_2b43`: a 26-position pack array that tracks state of charge
+
+Read on 2026-09-26 by route 1 alone, against 124 recorded sessions already on
+disk. No vehicle time was used and no offset was invented: correlation is
+invariant under scale and offset, which is exactly why it is the test that
+`0x2AF1`'s false positive would have failed.
+
+`array_2b43` is **26 single bytes**, recorded on every row the recorder writes.
+What was measured:
+
+| Test | Result |
+|---|---|
+| Mean of the 26 elements vs `soc_pct`, pooled | r = **+0.999** over 26,509 paired rows |
+| The same, **within a single session** | median r = **+0.985** over the 48 sessions where SOC moved at least one point |
+| Element-to-element spread vs `cell_spread_mv` | r = **+0.009** over 26,788 rows |
+| Per-position offset from the row mean, profiled per session and compared against the grand profile | median r = **+0.875** over 80 independent sessions |
+| Mean of elements vs `cell_avg_v` | r = +0.965 — weaker than SOC, and voltage itself tracks SOC |
+
+**What that establishes.** It is a real per-position array, not 26 noisy copies
+of one number: the per-position signature repeats across 80 sessions, with
+elements 0 and 1 consistently about one count low and element 24 about 0.7 count
+high. It tracks state of charge *within* a drive, so the pooled correlation is
+not a shared-trend artefact. And it is **not per-cell voltage** — if it were,
+its internal spread would move with the pack's reported cell spread, and that
+correlation is indistinguishable from zero.
+
+**What it does not establish, and must not be presented as.** The scaling. A
+least-squares line gives 0.4324 per count with a −5.58 offset and a residual of
+0.42 SOC points, and neither of those numbers is a tidy one — they are a fitted
+line, not a specification, so this may not be drawn or logged as a calibrated
+percentage. Nor is the mapping from position to module established: the pack has
+**24** modules and this array has **26** positions. Elements 0 and 1 are the
+obvious candidates for "not a module", but they are the minimum of the remaining
+24 only 35% of the time, so "24 modules plus min and max" is refuted rather than
+supported. Until a position can be tied to a physical module, a hot or low
+element means "one of these differs", never "that one".
+
+**Where it goes next.** It is drawable in the 3D view as a 26-position band
+under the same caveat the module heat map already carries, and it is the first
+per-position pack array on this truck with validated behaviour. It is not the
+per-cell voltage array, which remains unfound.
+
 ## Module `40` — body control, and this platform's charging data (291 hits)
 
 Scanned `4000–43FF`. Mostly small values: 203 single bytes, 38 two-byte, and
@@ -111,11 +153,23 @@ section 6 order prioritised; a full `0000–FFFF` on all eight would be roughly
 
 ## Recommended order
 
-1. **Scan `CD`, then wider `CB` ranges** — parked, unattended, hunting the
-   per-cell array. Each session runs until the truck leaves ready (~40 min).
-2. **Run routes 1 and 2 across every array hit** — no vehicle time, using
-   evidence already captured plus the borrowed-label checklist.
-3. **Repeat the door/climate experiment** — five minutes, promotes four body
-   signals into the recorder and dashboard.
+Analysis that needs no vehicle time comes first, because a scan is the
+expensive resource here and the evidence already captured is not spent.
+
+1. **Run routes 1 and 2 across every array hit** — no vehicle time, using
+   evidence already captured plus the borrowed-label checklist. This is where
+   `array_2b43` was read (see below); the same method is unspent on the rest.
+2. **Scan `CD`, then wider `CB` ranges** — hunting the per-cell array.
+   **Supervised and attended, parked, person-started, never unattended.** An
+   earlier revision of this line read "parked, unattended", which contradicts
+   the authorization this whole campaign runs under: the owner authorized a
+   *supervised, parked, person-started* scan on 2026-09-15 and nothing since
+   has widened that. A recommendation in a document is an instruction to
+   whoever reads it next, so the wording matters as much as the code gate.
+   Each session runs until the truck leaves ready (~40 min).
+3. **Repeat the door/climate experiment** — five minutes with an operator at
+   the truck. It does not promote anything by itself: each candidate needs an
+   independent controlled repeat, a negative control, and payload-encoding
+   verification before it reaches the recorder or the dashboard.
 4. **Draft the supervised drive experiment** for the drive-unit candidates, for
    the owner to approve before anything is read while moving.

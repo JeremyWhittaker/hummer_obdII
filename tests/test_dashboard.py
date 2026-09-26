@@ -1525,7 +1525,7 @@ class ReadingRuleTests(unittest.TestCase):
         # both then picked up the same contrast floor. On a halfshaft that
         # picture reads as coasting -- a statement about the truck made out
         # of a gap in the log. And it is the common case, not a corner: the
-        # field answered in 2,756 of 10,682 recorded rows, in 20 of 63
+        # field answered in 14,109 of 29,188 recorded rows, in 74 of 124
         # sessions, with runs of up to 198 rows carrying nothing, which is
         # about 18 s of playback in the middle of an acceleration.
         #
@@ -1589,7 +1589,7 @@ class ReadingRuleTests(unittest.TestCase):
     # -- the cell spread tint ---------------------------------------------
     def test_a_spread_past_the_top_of_the_ramp_is_flagged_not_pinned(self):
         # A reading above the top anchor clamped to full amber would say
-        # "7.6 mV" over a 12 mV pack -- the same defect as clamping an
+        # "8.1 mV" over a 12 mV pack -- the same defect as clamping an
         # off-axis cell to the end of the voltage axis. 1.0% of the recorded
         # readings land here, so this is a state the page really enters.
         page = page_constants()
@@ -1652,8 +1652,8 @@ class ReadingRuleTests(unittest.TestCase):
         # deadband. So "nobody read this corner" and "this corner agrees with
         # the other three" were the same tyre.
         #
-        # It is the COMMON case, not an edge: 9,257 of the 10,682 rows in
-        # evidence/sessions (86.7%) produce no four-corner deviation at all.
+        # It is the COMMON case, not an edge: 25,830 of the 29,188 rows in
+        # evidence/sessions (88.5%) produce no four-corner deviation at all.
         # The freshness gate made it worse, because one stale corner untints
         # all four, and four untinted tyres read as the affirmative claim
         # "the corners agree".
@@ -1726,7 +1726,7 @@ class ReadingRuleTests(unittest.TestCase):
     def test_a_corner_past_the_top_of_the_ramp_is_flagged_not_pinned(self):
         # 2.0% of the readings this ramp colours run past its top, so this is
         # a state the page really enters. Pinned at full tint it would say
-        # "1.75 km/h" over a corner 2.75 km/h out -- the same defect as the
+        # "2.25 km/h" over a corner 2.75 km/h out -- the same defect as the
         # spread tint pinned at full amber.
         page = page_constants()
         top = run_reading_rules("return cornerEmissive(%r);"
@@ -1906,7 +1906,7 @@ class PageLiteralTests(unittest.TestCase):
     def test_the_cell_spread_ramp_is_measured_and_not_invented(self):
         # It used to run 10 mV to 70 mV and present that as calibrated. It was
         # not: 70 was a divisor picked to make a ramp. On this truck the
-        # spread has never exceeded 19.7 mV, so the visual sat permanently in
+        # spread has never exceeded 21.4 mV, so the visual sat permanently in
         # the bottom sixth of its range and could not move enough to be read.
         # An absolute scale must cite where its numbers came from -- see the
         # note beside identifier 2429 in drive.py, which is this project's
@@ -1925,7 +1925,7 @@ class PageLiteralTests(unittest.TestCase):
         # The comment beside them has to say where they came from, by name.
         where = source[source.index("THE SPREAD RAMP"):
                        source.index("var CELL_SPREAD_TYPICAL_MV")]
-        for cited in ("10,349", "evidence/sessions", "median",
+        for cited in ("26,836", "evidence/sessions", "median",
                       "99th percentile", "maximum"):
             with self.subTest(cited):
                 self.assertIn(cited, where,
@@ -1963,12 +1963,12 @@ class PageLiteralTests(unittest.TestCase):
         # same test fixed that constant AT THE MEDIAN. By definition about
         # half of the readings exceed the median, so the bar was unfailable
         # for any ramp built this way: it passed identically with the top at
-        # 19.7 mV, and would have passed with the top at 197.
+        # 21.4 mV, and would have passed with the top at 214.
         #
         # What matters is not how many readings leave the floor but HOW FAR
         # ALONG THE RAMP they get, so that is what is measured: where each
         # recorded reading lands between the two anchors. Against the
-        # once-ever 19.7 mV maximum the answer is 3.9% mean position and
+        # near-once 21.4 mV maximum the answer is 2.9% mean position and
         # 0.17% ever reaching halfway; against the 99th percentile it is
         # 14.6% and 4.5%. The thresholds below sit between those two, so
         # reinstating the unreachable anchor fails this test.
@@ -2019,8 +2019,8 @@ class PageLiteralTests(unittest.TestCase):
         self.assertLess(page["CORNER_HIGH_KPH"], page["CORNER_MAX_SEEN_KPH"])
         where = source[source.index("THE CORNER RAMP"):
                        source.index("var CORNER_DEADBAND_KPH")]
-        for cited in ("10,682", "evidence/sessions", "5,700", "median",
-                      "99th percentile", "1,425"):
+        for cited in ("29,188", "evidence/sessions", "13,432", "median",
+                      "99.9th percentile", "3,358"):
             with self.subTest(cited):
                 self.assertIn(cited, where,
                               "a scale that does not say what it was measured "
@@ -2049,11 +2049,14 @@ class PageLiteralTests(unittest.TestCase):
         # but HOW FAR ALONG THE RAMP they get.
         #
         # The population is the readings the ramp actually colours -- those
-        # that clear the 1 km/h deadband, which is one whole sensor step and
-        # not part of the ramp. There are 253 of them in the corpus. Against
-        # the old 4.0 km/h top their mean position is 7.3% and 0.4% reach
-        # halfway; against 1.75 it is 27.7% and 26.9%. The thresholds below
-        # sit between those two, so reinstating the 3.0 divisor fails this.
+        # at or past the 1 km/h deadband, which is one whole sensor step and
+        # not part of the ramp. `cornerEmissive` tints at
+        # `dm >= CORNER_DEADBAND_KPH`, so the boundary reading is coloured and
+        # belongs in the population; there are 873 of them in the corpus.
+        # Against the old 4.0 km/h top their mean position is 9.2% and 0.3%
+        # reach halfway; against 2.25 it is 22.0% and 12.3%. The thresholds
+        # below sit between those two, so reinstating the 3.0 divisor fails
+        # this.
         readings = corpus_corner_deviations()
         if len(readings) < 1000:
             self.skipTest("too few recorded corner samples on this machine to cite")
@@ -2078,10 +2081,19 @@ class PageLiteralTests(unittest.TestCase):
         )
         # And the other end: a ramp nothing runs past needs no flag, and one
         # everything runs past is not a ramp.
-        over = sum(1 for v in tinted if v > high) / len(tinted)
-        self.assertGreater(over, 0.005,
+        # A COUNT, not a fraction. The claim being guarded is that the
+        # over-range flag is reachable at all; a fraction floor is a second
+        # thing, tuned to whatever corpus it was written against, and this one
+        # was written against a corpus half the present size. At the 99.9th
+        # percentile of 13,432 readings exactly 3 corners on record run past
+        # the top -- rare, and not zero, which is what the flag needs. An
+        # anchor at or above the maximum still fails this, which is the defect
+        # it exists to catch.
+        past = sum(1 for v in tinted if v > high)
+        self.assertGreater(past, 0,
                            "nothing on record exceeds the top of the ramp, so "
                            "the over-range flag can never appear")
+        over = past / len(tinted)
         self.assertLess(over, 0.10,
                         "more than one tinted corner in ten runs past the top "
                         "of the ramp, so the flag is the normal state")
@@ -2094,8 +2106,8 @@ class CellEnvelopeRemovalTests(unittest.TestCase):
     decode was sound; the geometry could not carry it. That axis maps 1.2 V
     onto 0.320 model units, so 1 mV is 0.000267 units while each mark was
     0.020 units thick: the widest imbalance this truck has ever recorded,
-    19.7 mV, separated the lowest mark from the highest by 26% of one mark's
-    own thickness, and the median reading, 3.4 mV, by 4.5% of it -- about a
+    21.4 mV, separated the lowest mark from the highest by 29% of one mark's
+    own thickness, and the median reading, 3.2 mV, by 4.3% of it -- about a
     tenth of a pixel. On every reading in the corpus the three marks were one
     bar, under a caption saying they showed lowest, average and highest.
     """
@@ -2105,8 +2117,8 @@ class CellEnvelopeRemovalTests(unittest.TestCase):
         # put them back has to answer it.
         units_per_volt = 0.320 / (4.2 - 3.0)
         mark_thickness = 0.020
-        for name, spread_mv in (("widest ever recorded", 19.7),
-                                ("this pack's median", 3.4)):
+        for name, spread_mv in (("widest ever recorded", 21.4),
+                                ("this pack's median", 3.2)):
             with self.subTest(name):
                 separation = spread_mv / 1000 * units_per_volt
                 self.assertLess(
@@ -2387,7 +2399,7 @@ class VehicleCaptionTests(unittest.TestCase):
     def test_the_off_ramp_cell_colour_is_in_the_legend(self):
         legend = self.legend()
         self.assertIn(self.swatch(page_constants()["CELL_SPREAD_OVER"]), legend)
-        self.assertIn("past 7.6 mV", legend)
+        self.assertIn("past 8.1 mV", legend)
 
     def test_the_legend_no_longer_claims_a_cell_voltage_axis(self):
         # The marks are gone; a legend entry for "off the 3.0-4.2 V axis"
@@ -2414,7 +2426,7 @@ class VehicleCaptionTests(unittest.TestCase):
         # test_every_legend_swatch_is_its_state_under_the_shading_rule: each
         # one is the page's own draw rule for that state, shaded, so there is
         # no hex in the source to match against a constant here.
-        self.assertIn("past 1.75 km/h", legend,
+        self.assertIn("past 2.25 km/h", legend,
                       "the over-range flag does not say what it is past")
 
     def test_the_corner_caption_names_the_absent_case(self):
@@ -2425,8 +2437,8 @@ class VehicleCaptionTests(unittest.TestCase):
         source = page_script()
         start = source.index("var cornerNote =")
         note = source[start:source.index("corner-caveat\"].textContent =", start)]
-        for cited in ("no corner deviation for this moment", "9,257", "10,682",
-                      "86.7%", "3,202", "6,055"):
+        for cited in ("no corner deviation for this moment", "25,830", "29,188",
+                      "88.5%", "10,520", "15,310"):
             with self.subTest(cited):
                 self.assertIn(cited, note,
                               "four unlit tyres with nothing beside them are "
@@ -2439,8 +2451,8 @@ class VehicleCaptionTests(unittest.TestCase):
         source = page_script()
         start = source.index("var effortNote =")
         note = source[start:source.index("effort-caveat\"].textContent =", start)]
-        for cited in ("no effort reading for this moment", "2,756", "10,682",
-                      "25.8%", "198"):
+        for cited in ("no effort reading for this moment", "14,109", "29,188",
+                      "48.3%", "281"):
             with self.subTest(cited):
                 self.assertIn(cited, note,
                               "an unlit halfshaft with nothing beside it is a "
@@ -3018,6 +3030,80 @@ class CachePathTests(unittest.TestCase):
         start = source.index('state.snapshot = snapshot; state.network = "ok";')
         self.assertIn("state.cacheAge = null;", source[start:start + 400],
                       "a page that reconnected would keep the offline banner")
+
+class LiveViewFrameTests(unittest.TestCase):
+    """The live view must read live signals, not the last row on the map.
+
+    `state.frame` is what `renderVehicle` reads INSTEAD of the freshness-gated
+    signals, and a history row carries no freshness -- so adopting one on the
+    live view bypasses every gate this project has built. `renderMap` runs on
+    every poll and used to adopt unconditionally, which meant any session with
+    GPS drove the model off its last recorded row: a corner that had stopped
+    answering was drawn from its last number rather than abstaining, which is
+    the exact defect `cornerDeviation`'s `status === "fresh"` test exists to
+    prevent, reached by another route with nothing on screen saying so.
+
+    Read off the source because the fault is WHICH argument each call site
+    passes, and the calls are inside the map and polling code that cannot run
+    in node without a browser.
+    """
+
+    def setUp(self):
+        self.source = page_script()
+
+    def _call_args(self, needle):
+        """The `showFrame(...)` call that follows *needle* in the source."""
+        start = self.source.index(needle)
+        found = re.search(r"showFrame\(([^;]*)\);", self.source[start:start + 2000])
+        self.assertIsNotNone(found, f"no showFrame call after {needle!r}")
+        return found.group(1)
+
+    def test_show_frame_takes_an_adopt_argument(self):
+        self.assertIn("function showFrame(index, adopt)", self.source,
+                      "adoption has to be a decision of the caller: the map "
+                      "updates its marker on every poll and the model must not "
+                      "follow it there")
+
+    def test_the_model_is_handed_the_frame_only_when_adopting(self):
+        start = self.source.index("function showFrame(index, adopt)")
+        body = _balanced(self.source, start)
+        found = re.search(r"if \(adopt\) \{\s*state\.frame = row;", body)
+        self.assertIsNotNone(
+            found, "state.frame is still assigned unconditionally, so every "
+                   "marker update bypasses the freshness gates")
+
+    def test_the_maps_own_marker_update_does_not_adopt_on_its_own(self):
+        args = self._call_args("Marker only unless a replay")
+        self.assertIn("state.replaying", args,
+                      "renderMap runs on every poll; adopting here is the "
+                      "defect")
+        # The argument has to be the CONDITION, not a constant. A bare `true`
+        # as the last argument is the original bug spelled differently.
+        last = args.rsplit(",", 1)[-1].strip()
+        self.assertNotEqual(last, "true",
+                            "an unconditional true here is the same bug again")
+
+    def test_playing_and_scrubbing_do_adopt(self):
+        for label, needle in (("the playback timer", "el.scrub.value = String(next);"),
+                              ("the scrub handler", "state.replaying = true;\n    showFrame")):
+            with self.subTest(label):
+                self.assertIn("showFrame(next, true)", self.source) if "next" in needle \
+                    else self.assertIn("showFrame(Number(ev.target.value), true)", self.source)
+
+    def test_watching_is_released_when_the_view_changes(self):
+        """Otherwise the live view never gets the model back."""
+        for label, anchor in (
+            ("choosing a session", 'state.selected = ev.target.value; state.snapshot = null;'),
+            ("adopting a cached snapshot", "state.frame = null;\n    state.replaying = false;\n    return true;"),
+        ):
+            with self.subTest(label):
+                start = max(0, self.source.index(anchor) - 300)
+                window = self.source[start:self.source.index(anchor) + len(anchor)]
+                self.assertIn("state.replaying = false", window)
+
+    def test_replaying_is_declared_in_state(self):
+        self.assertIn("frame: null, replaying: false", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
