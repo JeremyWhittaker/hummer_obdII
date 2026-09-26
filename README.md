@@ -418,7 +418,36 @@ at `/local/...` with no authentication, and an instance reachable through Nabu
 Casa serves it to the internet. The generated panel is code and one address:
 no coordinates, no session names, no VIN. Keep it that way. Session data stays
 on the node, behind whatever network the node is on, and a viewer who cannot
-reach the node gets an empty page rather than someone else's driving history.
+reach the node gets nothing out of Home Assistant rather than someone else's
+driving history.
+
+**The panel keeps the last snapshot it saw, in the reader's own browser.** The
+node rides in the truck and loses power with it, so away from the vehicle every
+fetch fails — and a cold load in that state used to draw an error banner over
+an empty page, indistinguishable from a broken dashboard. The last good
+snapshot now goes into that browser's `localStorage` and is drawn when the node
+cannot be reached, under its own view state (`cached`, outage-red) and a banner
+naming how old the data is.
+
+Two properties make that honest rather than a stale dashboard pretending:
+
+* **Ages are recomputed against the reader's clock**, not replayed out of the
+  payload. Every freshness gate on the page keys off `age_s`, so re-dating the
+  snapshot is the whole mechanism — it is what makes the 3D channels abstain,
+  the readings badge stale and the derived tiles empty. The same path now also
+  catches a link that dies mid-session, whose ages used to freeze at the last
+  successful poll.
+* **Nothing drawn from it is called current.** A cached view claims no derived
+  value at all, because the node nulls a derived reading whose inputs are not
+  fresh and none of them are any more. The recorded session is still fully
+  there: scrub or play the replay and the model animates through it.
+
+It changes nothing about who can see what. `localStorage` is per-origin and
+per-browser-profile: it never reaches the node, never reaches another device,
+and a visitor who has never had a working route to the node still has nothing
+to show. It does mean a browser that has loaded the panel with the node up
+holds a copy of that snapshot afterwards, which is a reason not to open the
+panel on a machine you do not control.
 
 #### Reaching it from a phone, off the LAN
 

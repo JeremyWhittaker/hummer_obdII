@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 import threading
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -2545,6 +2545,479 @@ class EnvelopeGatingTests(unittest.TestCase):
                 self.assertTrue('derived("%s")' % column in source,
                                 f"{column} is not read from the gated source")
 
+
+#: The page functions behind the offline cache, plus the ones whose answers it
+#: has to change. A cached snapshot is the one payload on this page that is
+#: DRAWN while being known to be old, so every rule that decides "current"
+#: has to be run against it rather than read.
+CACHE_RULES = ("num", "duration", "longAgo", "cacheStore", "saveCache",
+               "loadCache", "newestMs", "agedSnapshot", "applyCache",
+               "viewState", "signalStatus", "cornerDeviation", "renderHeader")
+CACHE_CONSTS = ("CACHE_KEY", "CACHE_MAX_BYTES", "CACHE_WRITE_MS", "BANNERS")
+
+#: A browser's storage, a clock and the handful of DOM objects `renderHeader`
+#: writes into -- enough to run the real functions rather than copies of them.
+#: `now_ms` is settable from the test body, which is the whole point: the fault
+#: this guards is an age that does not move when the clock does.
+CACHE_PRELUDE = """
+var __clock = { now: 0 }, __store = { data: {}, throwGet: false, throwSet: false,
+                                      blocked: false, writes: 0 };
+Date.now = function () { return __clock.now; };
+var window = {
+  get localStorage() {
+    if (__store.blocked) throw new Error("site data blocked");
+    return {
+      getItem: function (k) {
+        if (__store.throwGet) throw new Error("read denied");
+        return Object.prototype.hasOwnProperty.call(__store.data, k)
+             ? __store.data[k] : null;
+      },
+      setItem: function (k, v) {
+        if (__store.throwSet) { var e = new Error("quota"); e.name = "QuotaExceededError"; throw e; }
+        __store.writes++; __store.data[k] = String(v);
+      }
+    };
+  }
+};
+var el = {}, __dom = {};
+["status-primary", "status-secondary", "banner", "f-samples", "f-duration",
+ "f-period", "f-age"].forEach(function (id) { el[id] = { textContent: "", title: "" }; });
+var document = { documentElement: { dataset: {} }, body: { dataset: {} } };
+"""
+
+
+def run_cache_rules(body: str, state=None):
+    """Run *body* against the page's own cache rules, in node.
+
+    Same contract as `run_reading_rules`: the functions come out of
+    dashboard.html and only the assertions are written here. A Python
+    reimplementation of the ageing rule would agree with itself while the page
+    replayed stored ages, which is the exact failure these tests exist for.
+    """
+    source = page_script()
+    pieces = [CACHE_PRELUDE]
+    pieces += [re.search(r"^  var %s = [^;]+;" % name, source, re.M).group(0)
+               for name in CACHE_CONSTS]
+    pieces += [_balanced(source, source.index("function %s(" % name))
+               for name in CACHE_RULES]
+    pieces.append("var state = %s;" % json.dumps(state if state is not None else {}))
+    pieces.append("process.stdout.write(JSON.stringify((function () {\n%s\n})()));"
+                  % body)
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "cache.js"
+        path.write_text("\n".join(pieces), encoding="utf-8")
+        done = subprocess.run([NODE, str(path)], capture_output=True,
+                              text=True, timeout=120)
+    assert done.returncode == 0, f"the page's cache rules failed:\n{done.stderr[:800]}"
+    return json.loads(done.stdout)
+
+
+#: A snapshot shaped like the node's, small enough to read in a failure
+#: message. Its four corners agree and are fresh, so `cornerDeviation` answers
+#: for it -- which is how the ageing is proved to reach the 3D gates and not
+#: merely the table.
+def live_payload(newest="2026-09-23T04:00:00.000000Z"):
+    def wheel(value):
+        return {"value": value, "age_s": 2.0, "status": "fresh",
+                "label": "wheel", "unit": "km/h"}
+    return {
+        "schema": 1,
+        "session": {"id": "drive-20260923T033000Z.csv", "rows": 240,
+                    "newest_utc": newest, "elapsed_s": 1800.0,
+                    "age_s": 4.0, "period_s": 7.5, "status": "live"},
+        "signals": {
+            "soc_pct": {"value": 61.5, "age_s": 3.0, "status": "fresh",
+                        "label": "state of charge", "unit": "%"},
+            "speed_kph": {"value": 0.0, "age_s": 3.0, "status": "fresh",
+                          "label": "speed", "unit": "km/h"},
+            "pack_a": {"value": None, "age_s": None, "status": "missing",
+                       "label": "pack current", "unit": "A"},
+            "brake_kpa": {"value": 4000.0, "age_s": 3.0, "status": "invalid",
+                          "label": "brake", "unit": "kPa"},
+            "wheel_fl_kph": wheel(61.0), "wheel_fr_kph": wheel(59.0),
+            "wheel_rl_kph": wheel(60.0), "wheel_rr_kph": wheel(60.0),
+        },
+        "derived": {"pack_kw": -84.2, "cell_min_v": 3.971, "cell_max_v": 3.979,
+                    "implied_kwh": 205.0},
+        "report": {}, "history": [], "warnings": [], "insights": [],
+    }
+
+
+#: The moment the payload above was newest, in epoch ms. Derived from the same
+#: string the payload carries rather than written down: a literal that drifted
+#: from `newest_utc` by a year would make every absolute age clamp to zero and
+#: the tests below would agree with a page that had stopped ageing anything.
+LIVE_AT_MS = int(datetime(2026, 9, 23, 4, 0, 0,
+                          tzinfo=timezone.utc).timestamp() * 1000)
+DAY_MS = 86400000
+
+
+@unittest.skipIf(NODE is None, "node is not installed on this machine")
+class OfflineCacheTests(unittest.TestCase):
+    """A snapshot drawn from storage must never be drawn as the present.
+
+    The panel that carries this page lives on Home Assistant; the node that
+    answers it rides in the truck and loses power with it, so "the data is
+    hours or days old and the link is down" is the ORDINARY state away from the
+    vehicle, not an edge case. Every test here is a way the page could have
+    dressed that state up as a live truck.
+    """
+
+    def _saved_then_read(self, body, *, state=None, newest=None, gap_ms=2 * DAY_MS):
+        """Save the live payload at its own timestamp, read it back after *gap_ms*."""
+        payload = live_payload() if newest is None else live_payload(newest)
+        setup = (
+            "__clock.now = %d;\n"
+            "var payload = %s;\n"
+            "var wrote = saveCache(payload, true);\n"
+            "__clock.now = %d;\n"
+        ) % (LIVE_AT_MS + 4000, json.dumps(payload), LIVE_AT_MS + 4000 + gap_ms)
+        return run_cache_rules(setup + body,
+                               state=state if state is not None
+                               else {"selected": "latest", "network": "loading",
+                                     "cacheAge": None, "cacheWroteAt": None,
+                                     "snapshot": None, "frame": None})
+
+    def test_the_stored_ages_are_re_dated_against_the_clock(self):
+        """Two days later, everything in the payload is two days older.
+
+        The failure this catches is the simplest and the worst: write the
+        payload out, read it back, draw it. `age_s` is a number the node
+        computed at fetch time, so a snapshot that said "newest sample 4 s ago"
+        keeps saying it forever -- and every freshness gate on this page keys
+        off that number, so the whole view would report a two-day-old truck as
+        one sampled four seconds ago.
+        """
+        got = self._saved_then_read(
+            "return { adopted: applyCache(), session: state.snapshot.session,"
+            " soc: state.snapshot.signals.soc_pct, cacheAge: state.cacheAge };")
+        self.assertTrue(got["adopted"])
+        # From `newest_utc`, so it is the absolute span and not 4 s plus a gap.
+        self.assertAlmostEqual(got["session"]["age_s"], 2 * 86400 + 4, delta=1.5)
+        # A per-signal age is relative to the fetch, so it gains the gap.
+        self.assertAlmostEqual(got["soc"]["age_s"], 3.0 + 2 * 86400, delta=1.5)
+        self.assertAlmostEqual(got["cacheAge"], 2 * 86400, delta=1.5)
+
+    def test_nothing_in_a_cached_payload_still_claims_to_be_fresh(self):
+        got = self._saved_then_read(
+            "applyCache();"
+            "return { signals: state.snapshot.signals,"
+            " status: state.snapshot.session.status };")
+        for name, signal in got["signals"].items():
+            with self.subTest(name):
+                self.assertNotEqual(signal["status"], "fresh")
+        # `missing` and `invalid` are verdicts about the reading itself and
+        # survive; only `fresh` is a claim about time.
+        self.assertEqual(got["signals"]["pack_a"]["status"], "missing")
+        self.assertEqual(got["signals"]["brake_kpa"]["status"], "invalid")
+        self.assertEqual(got["status"], "cached")
+
+    def test_the_view_state_is_its_own_and_not_live_stale_or_error(self):
+        """`cached` beats both `live` and `error`, in that order.
+
+        Two ways to get this wrong, and the page had the shape for both. Order
+        the network check first and the fallback is invisible -- every cached
+        load reads `error` over a page that is plainly showing data. Leave the
+        session's own `live` status to decide and the outage disappears
+        entirely.
+        """
+        for network in ("loading", "error", "ok"):
+            with self.subTest(network=network):
+                got = self._saved_then_read(
+                    "applyCache(); state.network = %s; return viewState();"
+                    % json.dumps(network))
+                self.assertEqual(got, "cached")
+
+    def test_a_cached_reading_is_badged_stale_not_fresh(self):
+        got = self._saved_then_read(
+            "applyCache();"
+            "var vs = viewState(), out = {};"
+            "for (var k in state.snapshot.signals) {"
+            "  out[k] = signalStatus(state.snapshot.signals[k].status, vs); }"
+            "out.__direct = signalStatus('fresh', vs);"
+            "return out;")
+        self.assertEqual(got["soc_pct"], "stale")
+        # Belt and braces: the badge must not depend on `agedSnapshot` having
+        # rewritten the payload somewhere else in the file.
+        self.assertEqual(got["__direct"], "stale")
+        self.assertEqual(got["pack_a"], "missing")
+        self.assertEqual(got["brake_kpa"], "invalid")
+
+    def test_the_3d_channels_abstain_on_a_cached_payload(self):
+        """The ageing has to reach the model, not just the table.
+
+        `cornerDeviation` tints a tyre only from a corner whose status is
+        `fresh`, and this payload's four corners are fresh and disagree by a
+        km/h -- so it answers before the round trip and must answer nothing
+        after it. If it still answered, the pack heat map, the halfshaft glow
+        and the cell band would all be drawing two-day-old numbers as measured
+        signal, which is the defect this project has fixed five times.
+        """
+        got = self._saved_then_read(
+            "var before = cornerDeviation(null, %s);"
+            "applyCache();"
+            "return { before: before,"
+            " after: cornerDeviation(null, state.snapshot.signals) };"
+            % json.dumps(live_payload()["signals"]))
+        self.assertIsNotNone(got["before"], "the fixture no longer tints, so "
+                                            "the abstention below proves nothing")
+        self.assertIsNone(got["after"])
+
+    def test_every_derived_value_is_dropped(self):
+        """The node nulls a derived value whose inputs are not fresh.
+
+        Coming out of storage, none of them are -- and a derived tile is a
+        confident current number with a unit, which is the worst thing on the
+        page to get wrong. Re-deriving the node's dependency map here to spare
+        a few tiles would be a second copy of a subtle rule.
+        """
+        got = self._saved_then_read(
+            "applyCache(); return state.snapshot.derived;")
+        self.assertEqual(sorted(got), ["cell_max_v", "cell_min_v",
+                                       "implied_kwh", "pack_kw"])
+        for field, value in got.items():
+            with self.subTest(field):
+                self.assertIsNone(value)
+
+    def test_a_stamp_from_the_future_is_refused(self):
+        """A clock that moved backwards would make the data read fresher than fresh."""
+        got = run_cache_rules(
+            "__clock.now = %d;"
+            "__store.data[CACHE_KEY] = JSON.stringify({ saved_ms: %d, snapshot: %s });"
+            "return { held: loadCache(), adopted: applyCache(),"
+            " state: (state.network = 'error', viewState()) };"
+            % (LIVE_AT_MS, LIVE_AT_MS + 3600000, json.dumps(live_payload())),
+            state={"selected": "latest", "network": "loading", "cacheAge": None,
+                   "cacheWroteAt": None, "snapshot": None, "frame": None})
+        self.assertIsNone(got["held"])
+        self.assertFalse(got["adopted"])
+        self.assertEqual(got["state"], "error")
+
+    def test_a_chosen_past_session_is_never_replaced_by_the_cache(self):
+        """A failed fetch of one trip is not a reason to draw a different one."""
+        got = self._saved_then_read(
+            "return { adopted: applyCache(), snapshot: state.snapshot,"
+            " cacheAge: state.cacheAge };",
+            state={"selected": "drive-20260905T043016Z.csv", "network": "loading",
+                   "cacheAge": None, "cacheWroteAt": None, "snapshot": None,
+                   "frame": None})
+        self.assertFalse(got["adopted"])
+        self.assertIsNone(got["snapshot"])
+        self.assertIsNone(got["cacheAge"])
+
+    def test_an_empty_session_does_not_overwrite_a_real_one(self):
+        got = run_cache_rules(
+            "__clock.now = %d;"
+            "var good = saveCache(%s, true);"
+            "var empty = %s; empty.session.rows = 0;"
+            "var bad = saveCache(empty, true);"
+            "return { good: good, bad: bad, held: loadCache().snapshot.session.rows };"
+            % (LIVE_AT_MS, json.dumps(live_payload()), json.dumps(live_payload())),
+            state={"selected": "latest", "cacheWroteAt": None})
+        self.assertTrue(got["good"])
+        self.assertFalse(got["bad"])
+        self.assertEqual(got["held"], 240)
+
+    def test_storage_that_throws_or_is_blocked_leaves_the_page_working(self):
+        """Private windows and blocked site data are ordinary, not faults.
+
+        `window.localStorage` is a property that THROWS on access when site
+        data is blocked -- the object is there, touching it is what fails --
+        so an `in` test would pass and the next line would take the page down
+        with it.
+        """
+        for scenario, setup in (
+            ("blocked", "__store.blocked = true;"),
+            ("read denied", "__store.throwGet = true;"),
+            ("quota exceeded", "__store.throwSet = true;"),
+        ):
+            with self.subTest(scenario):
+                got = run_cache_rules(
+                    "__clock.now = %d; %s"
+                    "return { saved: saveCache(%s, true), held: loadCache(),"
+                    " adopted: applyCache(), state: (state.network = 'error', viewState()) };"
+                    % (LIVE_AT_MS, setup, json.dumps(live_payload())),
+                    state={"selected": "latest", "network": "loading",
+                           "cacheAge": None, "cacheWroteAt": None,
+                           "snapshot": None, "frame": None})
+                self.assertFalse(got["adopted"])
+                self.assertEqual(got["state"], "error")
+
+    def test_the_write_throttle_holds_and_a_forced_write_overrides_it(self):
+        """350 kB every five seconds for a payload that barely changes."""
+        got = run_cache_rules(
+            "__clock.now = %d;"
+            "var payload = %s;"
+            "var first = saveCache(payload);"
+            "__clock.now += 5000;"
+            "var soon = saveCache(payload);"
+            "var forced = saveCache(payload, true);"
+            "__clock.now += CACHE_WRITE_MS + 1;"
+            "var later = saveCache(payload);"
+            "return { first: first, soon: soon, forced: forced, later: later,"
+            " writes: __store.writes };"
+            % (LIVE_AT_MS, json.dumps(live_payload())),
+            state={"selected": "latest", "cacheWroteAt": None})
+        self.assertEqual([got["first"], got["soon"], got["forced"], got["later"]],
+                         [True, False, True, True])
+        self.assertEqual(got["writes"], 3)
+
+    def test_an_oversized_entry_is_neither_written_nor_parsed(self):
+        got = run_cache_rules(
+            "__clock.now = %d;"
+            "var payload = %s;"
+            "payload.history = []; var i;"
+            "for (i = 0; i < 40000; i++) payload.history.push({ utc: 'x', pad: 'yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy' });"
+            "var wrote = saveCache(payload, true);"
+            "__store.data[CACHE_KEY] = new Array(CACHE_MAX_BYTES + 2).join('x');"
+            "return { wrote: wrote, held: loadCache() };"
+            % (LIVE_AT_MS, json.dumps(live_payload())),
+            state={"selected": "latest", "cacheWroteAt": None})
+        self.assertFalse(got["wrote"])
+        self.assertIsNone(got["held"])
+
+    def test_junk_under_the_key_is_refused_rather_than_drawn(self):
+        for label, stored in (
+            ("not json", "{{{"),
+            ("not an object", '"hello"'),
+            ("no stamp", '{"snapshot": {"session": {}, "signals": {}}}'),
+            ("no session", '{"saved_ms": 1, "snapshot": {"signals": {}}}'),
+            ("no signals", '{"saved_ms": 1, "snapshot": {"session": {}}}'),
+            ("empty string", '""'),
+        ):
+            with self.subTest(label):
+                got = run_cache_rules(
+                    "__clock.now = %d;"
+                    "__store.data[CACHE_KEY] = %s;"
+                    "return { held: loadCache(), adopted: applyCache() };"
+                    % (LIVE_AT_MS, json.dumps(stored)),
+                    state={"selected": "latest", "cacheAge": None,
+                           "cacheWroteAt": None, "snapshot": None, "frame": None})
+                self.assertIsNone(got["held"])
+                self.assertFalse(got["adopted"])
+
+    def test_the_banner_quotes_the_data_age_and_never_calls_it_current(self):
+        """What the reader actually reads, produced by the real `renderHeader`.
+
+        The age quoted has to be the DATA's. A snapshot fetched four seconds
+        before the link dropped can hold a reading the recorder took twenty
+        minutes earlier, so "captured 4 s ago" would be true of the fetch and
+        wrong about the truck -- and it is the truck the banner is about.
+        """
+        got = self._saved_then_read(
+            "applyCache(); state.network = 'error';"
+            "var vs = viewState(); renderHeader(vs);"
+            "return { vs: vs, primary: el['status-primary'].textContent,"
+            " secondary: el['status-secondary'].textContent,"
+            " banner: el.banner.textContent, age: el['f-age'].textContent,"
+            " attr: document.body.dataset.viewState };")
+        self.assertEqual(got["vs"], "cached")
+        self.assertEqual(got["attr"], "cached")
+        self.assertIn("2 days", got["banner"])
+        self.assertIn("nothing here is current", got["banner"])
+        self.assertIn("not reachable", got["banner"])
+        self.assertIn("Offline", got["primary"])
+        # The footer age comes from the same corrected session block.
+        self.assertIn("2 days", got["secondary"])
+        self.assertNotIn("4s", got["age"])
+
+    def test_the_banner_age_is_the_samples_age_and_not_the_write_time(self):
+        """The two differ, and only one of them is about the truck.
+
+        The fixture is saved twenty hours after its newest sample -- a parked
+        truck whose recorder has gone quiet, which is the ordinary way this
+        page is left -- and read back twenty-six hours after that. The data is
+        then 46 hours old and the cache entry 26. Quoting the write time would
+        under-report the truck by most of a day, and it is the truck the
+        sentence is about.
+        """
+        got = self._saved_then_read(
+            "applyCache(); state.network = 'error'; renderHeader(viewState());"
+            "return { banner: el.banner.textContent,"
+            " secondary: el['status-secondary'].textContent };",
+            newest="2026-09-22T08:00:00.000000Z", gap_ms=26 * 3600 * 1000)
+        self.assertIn("1 day", got["banner"])
+        self.assertNotIn("26h", got["banner"])
+        # The write time is still on offer, on the line where it belongs.
+        self.assertIn("26h 0m", got["secondary"])
+
+    def test_the_banner_says_it_is_still_checking_before_the_first_failure(self):
+        """A cold load paints from cache BEFORE the first fetch resolves.
+
+        Away from the truck that fetch costs a 4.5 s timeout and a retry, and
+        ten seconds of blank page under "Connecting" is the complaint this
+        path exists to answer. But nothing is known about the link yet, so the
+        banner may not assert an outage -- overstating in the other direction
+        is the same fault.
+        """
+        got = self._saved_then_read(
+            "applyCache(); renderHeader(viewState());"
+            "return el.banner.textContent;")
+        self.assertIn("still checking", got)
+        self.assertNotIn("not reachable", got)
+
+    def test_the_error_banner_no_longer_promises_values_it_has_none_of(self):
+        """`error` is now precisely the state with nothing to fall back to."""
+        got = run_cache_rules("return BANNERS.error;")
+        self.assertNotIn("remain below", got)
+        self.assertIn("no earlier snapshot", got)
+
+    def test_an_outage_of_days_is_quoted_in_days(self):
+        """`duration` counts hours without limit; nobody converts "120h 0m"."""
+        got = run_cache_rules(
+            "return [duration(93600), longAgo(3600), longAgo(93600),"
+            " longAgo(2 * 86400), longAgo(5 * 86400), longAgo(null)];")
+        self.assertEqual(got, ["26h 0m", "1h 0m", "26h 0m", "2 days",
+                              "5 days", "–"])
+
+    def test_the_replay_position_does_not_survive_into_another_payload(self):
+        got = self._saved_then_read(
+            "return { adopted: applyCache(), frame: state.frame };",
+            state={"selected": "latest", "network": "loading", "cacheAge": None,
+                   "cacheWroteAt": None, "snapshot": None,
+                   "frame": {"utc": "2026-09-01T00:00:00Z", "speed_kph": 40}})
+        self.assertTrue(got["adopted"])
+        self.assertIsNone(got["frame"])
+
+
+class CachePathTests(unittest.TestCase):
+    """The two call sites, read off the source.
+
+    Both are inside the polling loop, which cannot be run in node without a
+    browser's `fetch` -- but WHICH call the loop makes is the whole behaviour,
+    and a loop that skipped the forced write would leave the old frozen-age
+    bug in place for a link that dies mid-session.
+    """
+
+    def test_a_successful_poll_caches_only_the_live_session(self):
+        source = page_script()
+        self.assertIn('if (wanted === "latest") saveCache(snapshot);', source)
+
+    def test_a_failed_poll_folds_the_live_snapshot_in_before_reading_it_back(self):
+        source = page_script()
+        start = source.index("state.network = \"error\";\n      state.error = explain(err);")
+        block = source[start:start + 1200]
+        self.assertIn("saveCache(state.snapshot, true)", block,
+                      "a link that dies mid-session must re-date what is on "
+                      "screen, or its ages freeze at the last good poll")
+        self.assertIn("applyCache();", block)
+        self.assertLess(block.index("saveCache(state.snapshot, true)"),
+                        block.index("applyCache();"),
+                        "reading the cache before writing it would draw the "
+                        "PREVIOUS outage's snapshot over this one")
+
+    def test_the_cold_load_paints_from_cache_before_the_first_fetch(self):
+        source = page_script()
+        tail = source[source.index("renderLegend();"):]
+        self.assertLess(tail.index("applyCache();"), tail.index("refresh();"),
+                        "applying the cache after refresh() means a 10 s blank "
+                        "page every time the truck is away")
+
+    def test_a_successful_poll_releases_the_cached_state(self):
+        source = page_script()
+        start = source.index('state.snapshot = snapshot; state.network = "ok";')
+        self.assertIn("state.cacheAge = null;", source[start:start + 400],
+                      "a page that reconnected would keep the offline banner")
 
 if __name__ == "__main__":
     unittest.main()

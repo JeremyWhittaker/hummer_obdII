@@ -112,6 +112,11 @@ header.top{
 [data-view-state="stale"] .dot{background:var(--warn);box-shadow:0 0 0 4px rgba(255,180,84,.15)}
 [data-view-state="error"] .dot{background:var(--bad);box-shadow:0 0 0 4px rgba(255,92,92,.15)}
 [data-view-state="historical"] .dot{background:var(--cool);box-shadow:0 0 0 4px rgba(85,217,237,.15)}
+/* Cached is an OUTAGE with something to show, so the light is the outage red
+   rather than the amber of a sleeping truck -- the amber dot means "the truck
+   is parked and quiet", and a viewer who reads the two as the same thing is
+   being told the link is fine when it is not. */
+[data-view-state="cached"] .dot{background:var(--bad);box-shadow:0 0 0 4px rgba(255,92,92,.15)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
 @media (prefers-reduced-motion:reduce){
   [data-view-state="live"] .dot{animation:none}
@@ -121,14 +126,17 @@ header.top{
 .status-copy span{font-size:12px;color:var(--ink-3)}
 
 /* --- degraded states ------------------------------------------------ */
-[data-view-state="error"] .fadeable,[data-view-state="stale"] .fadeable{opacity:.78}
+[data-view-state="error"] .fadeable,[data-view-state="stale"] .fadeable,
+[data-view-state="cached"] .fadeable{opacity:.78}
 .banner{
   display:none;margin:0 0 var(--gap);padding:11px 14px;border-radius:var(--r-sm);
   font-size:13px;border:1px solid transparent;
 }
 [data-view-state="error"] .banner,[data-view-state="stale"] .banner,
-[data-view-state="historical"] .banner,[data-view-state="empty"] .banner{display:block}
+[data-view-state="historical"] .banner,[data-view-state="empty"] .banner,
+[data-view-state="cached"] .banner{display:block}
 [data-view-state="error"] .banner{background:rgba(255,92,92,.10);border-color:rgba(255,92,92,.34);color:#ffd9d9}
+[data-view-state="cached"] .banner{background:rgba(255,92,92,.10);border-color:rgba(255,92,92,.34);color:#ffd9d9}
 [data-view-state="stale"] .banner{background:rgba(255,180,84,.09);border-color:rgba(255,180,84,.30);color:#ffe6c2}
 [data-view-state="historical"] .banner{background:rgba(85,217,237,.08);border-color:rgba(85,217,237,.28);color:#cdf2fa}
 [data-view-state="empty"] .banner{background:rgba(255,255,255,.05);border-color:var(--line);color:var(--ink-2)}
@@ -652,6 +660,152 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
      the same as being broken, and a timeout reports the wrong one. */
   var SNAPSHOT_TIMEOUT_MS = 20000;
 
+  /* ---------- the last snapshot this browser saw ----------------------
+     This page is also served from Home Assistant, while the data it draws
+     lives on a Pi that rides in the truck and loses power with it. Away from
+     the truck every fetch fails, and a cold load in that state used to draw
+     an error banner over an empty page: indistinguishable from a broken
+     dashboard, and the banner's promise that "last-known values remain below"
+     was false, because on a first load none did.
+
+     So the last good snapshot is kept in this browser's own storage and drawn
+     when the node cannot be reached. Two rules keep that honest.
+
+       * Its AGES are recomputed against the reader's clock rather than
+         replayed out of the payload. Every staleness gate on this page keys
+         off `age_s`, so correcting the ages is the whole mechanism: it is what
+         makes the 3D channels abstain, the readings badge stale and the
+         derived tiles empty. Replaying the stored ages would draw a two-day
+         -old snapshot as a live truck -- and that was already happening to a
+         LIVE snapshot whose link died mid-session, whose ages froze at the
+         moment of the last successful poll. The cache path fixed both.
+       * It is never called live. The view state is its own, `cached`, with an
+         outage-red light and a banner naming how old the data is.
+
+     Storage is per-browser and per-origin: it never reaches another device,
+     never reaches the node, and in a private window or with site data blocked
+     it can come back empty or throw on access. Every touch is guarded and the
+     page renders correctly with none of it. */
+  var CACHE_KEY = "hummer.snapshot.v1";
+  /* A full 1168-row session serialises to about 350 kB, which the usual 5 MB
+     per-origin budget swallows -- but a budget is not a promise, and a page
+     that cannot write its cache has to keep working. Reading is bounded for
+     the same reason: something enormous under this key is not worth a second
+     of parse time to find out it is not ours. */
+  var CACHE_MAX_BYTES = 2000000;
+  /* Writing on every poll would push 350 kB into storage every five seconds
+     for a payload that barely changes between them. */
+  var CACHE_WRITE_MS = 60000;
+
+  /* `duration` counts hours without limit, which is right for a trip and
+     wrong for an outage: a Pi that lost power on Tuesday reads "120h 0m", and
+     nobody converts that. Past a day and a half this says days instead. Only
+     the cached banner uses it -- everywhere else the span really is a drive. */
+  function longAgo(s) {
+    var n = num(s);
+    if (n === null) return "–";
+    if (n < 129600) return duration(n);
+    var days = Math.floor(n / 86400);
+    return days + (days === 1 ? " day" : " days");
+  }
+
+  function cacheStore() {
+    /* Not `"localStorage" in window`: the property EXISTS and throws on
+       access when site data is blocked, which is the case this guards. */
+    try { return window.localStorage; } catch (e) { return null; }
+  }
+
+  function saveCache(snapshot, force) {
+    var store = cacheStore(), text;
+    if (!store || !snapshot || !snapshot.session) return false;
+    /* Only the live session, and only one with rows in it. An empty snapshot
+       is not news worth overwriting a real one with. */
+    if (!num(snapshot.session.rows)) return false;
+    if (!force && state.cacheWroteAt !== null
+        && Date.now() - state.cacheWroteAt < CACHE_WRITE_MS) return false;
+    try {
+      text = JSON.stringify({ saved_ms: Date.now(), snapshot: snapshot });
+    } catch (e) { return false; }
+    if (text.length > CACHE_MAX_BYTES) return false;
+    try { store.setItem(CACHE_KEY, text); } catch (e) { return false; }
+    state.cacheWroteAt = Date.now();
+    return true;
+  }
+
+  function loadCache() {
+    var store = cacheStore(), text, held;
+    if (!store) return null;
+    try { text = store.getItem(CACHE_KEY); } catch (e) { return null; }
+    if (typeof text !== "string" || !text || text.length > CACHE_MAX_BYTES) return null;
+    try { held = JSON.parse(text); } catch (e) { return null; }
+    if (!held || typeof held !== "object") return null;
+    if (num(held.saved_ms) === null) return null;
+    /* A stamp in the future means the clock moved, and an age computed from it
+       would be negative -- which reads as fresher than fresh. Two minutes of
+       slack absorbs ordinary drift; beyond that the entry is unusable, not
+       merely odd. */
+    if (held.saved_ms - Date.now() > 120000) return null;
+    if (!held.snapshot || typeof held.snapshot !== "object"
+        || !held.snapshot.session || !held.snapshot.signals) return null;
+    return held;
+  }
+
+  /* When the newest sample was, in epoch milliseconds, or null. */
+  function newestMs(session) {
+    var at = session && typeof session.newest_utc === "string"
+           ? Date.parse(session.newest_utc) : NaN;
+    return isFinite(at) ? at : null;
+  }
+
+  /* A stored snapshot re-dated for the moment it is being drawn.
+     `extraS` is the wall time since it was captured. The session's own age is
+     preferred from `newest_utc` where the payload carries one, because that is
+     an absolute instant and does not accumulate the error of two clocks. */
+  function agedSnapshot(snapshot, extraS, nowMs) {
+    var out = snapshot, session = out.session, absolute = newestMs(session),
+        name, signal;
+    session.age_s = absolute !== null ? Math.max(0, (nowMs - absolute) / 1000)
+                  : num(session.age_s) === null ? null : session.age_s + extraS;
+    /* Neither "live" nor "historical": a cached live session is its own thing,
+       and both of those labels route the view state somewhere wrong. */
+    session.status = "cached";
+    for (name in out.signals) {
+      if (!Object.prototype.hasOwnProperty.call(out.signals, name)) continue;
+      signal = out.signals[name];
+      if (!signal || typeof signal !== "object") continue;
+      signal.age_s = num(signal.age_s) === null || signal.age_s < 0
+                   ? null : signal.age_s + extraS;
+      if (signal.status === "fresh") signal.status = "stale";
+    }
+    /* The node nulls a derived value whose inputs are not fresh, and every
+       input here has just stopped being fresh -- so every derived value goes.
+       Re-deriving the node's own dependency map in this page to spare a few
+       tiles would be a second copy of a rule that is already subtle, and the
+       failure it would hide is a confident current number with nothing behind
+       it. The tiles read "--", which is true. */
+    if (out.derived && typeof out.derived === "object") {
+      for (name in out.derived) {
+        if (Object.prototype.hasOwnProperty.call(out.derived, name)) out.derived[name] = null;
+      }
+    }
+    return out;
+  }
+
+  /* Put the cached snapshot on screen, if there is one for the live view.
+     Returns whether anything was adopted. Never touches a chosen past session:
+     a failed fetch of one trip is not a reason to draw a different one. */
+  function applyCache() {
+    var nowMs = Date.now(), held = state.selected === "latest" ? loadCache() : null;
+    if (!held) return false;
+    state.cacheAge = Math.max(0, (nowMs - held.saved_ms) / 1000);
+    state.snapshot = agedSnapshot(held.snapshot, state.cacheAge, nowMs);
+    /* A replay position from the previous payload does not survive into
+       another one; `frameIndex` resolves by timestamp, but the scrub's own
+       bounds belong to whatever history is now loaded. */
+    state.frame = null;
+    return true;
+  }
+
   /* Below this much spread across the whole session, the "track" is receiver
      noise rather than travel. A stationary BU-353S4 wanders tens of metres. */
   var STATIONARY_M = 120;
@@ -683,6 +837,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     snapshot: null, sessions: [], selected: "latest", network: "loading",
     error: "", timer: null, busy: false, queued: false, generation: 0,
     series: "power", filter: "", retried: false, sessionKey: "", view: "exterior",
+    /* Seconds since the snapshot on screen was captured, when it came out of
+       this browser's storage rather than off the node; null whenever the node
+       answered. It is the whole test for the `cached` view state, so it is a
+       number and not a flag -- the banner has to say how old. */
+    cacheAge: null, cacheWroteAt: null,
     /* Radar markers currently on the map, with their timestamps, so the
        replay can light the one it is passing. Rebuilt whenever the map is. */
     plotted: [],
@@ -1386,6 +1545,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
   /* ---------- view state ---------- */
   function viewState() {
+    /* Before the network check, not after it. Whenever cached data is on
+       screen the node is unreachable -- that is the only way it gets there --
+       so `error` and `cached` are the same outage, and `error` is the one that
+       means there was nothing to fall back to. Checking `error` first would
+       make the fallback invisible. */
+    if (state.cacheAge !== null) return "cached";
     if (state.network === "error") return "error";
     if (state.network === "loading" && !state.snapshot) return "loading";
     var s = state.snapshot && state.snapshot.session;
@@ -1395,6 +1560,11 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   }
   function signalStatus(raw, vs) {
     if (raw === "missing" || raw === "invalid") return raw;
+    /* `agedSnapshot` has already turned every `fresh` in a cached payload to
+       `stale`, so this is the same answer twice -- deliberately. The badge is
+       the one place a viewer reads "current" off a row, and it must not depend
+       on a rewrite somewhere else in the file having happened. */
+    if (vs === "cached") return raw === "fresh" ? "stale" : raw;
     if (vs === "error") return "offline";
     if (vs === "historical") return raw === "fresh" ? "recorded" : raw;
     if (vs === "stale") return "stale";
@@ -6199,7 +6369,10 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
 
   /* ---------- header + session bar ---------- */
   var BANNERS = {
-    error: "The local telemetry reader could not be refreshed. Last-known values remain below, marked unavailable.",
+    /* No longer "last-known values remain below": with the cache in place,
+       `error` is precisely the state where there are none. A banner that
+       promises data the page is not showing sends the reader looking for it. */
+    error: "Could not reach the telemetry reader, and this browser has no earlier snapshot to show instead.",
     stale: "The recorder has not written a sample recently. The vehicle is probably asleep.",
     historical: "A past session. Nothing here is live.",
     empty: "No recorded sessions yet."
@@ -6209,12 +6382,33 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     document.body.dataset.viewState = vs;
     var s = (state.snapshot && state.snapshot.session) || {},
         primary = { live: "Live", stale: "Vehicle asleep", historical: "Historical",
-                    error: "Refresh unavailable", empty: "No sessions", loading: "Connecting" }[vs];
+                    error: "Refresh unavailable", empty: "No sessions", loading: "Connecting",
+                    cached: "Offline — cached" }[vs];
     el["status-primary"].textContent = primary;
     el["status-secondary"].title = state.errorRaw || "";
     el["status-secondary"].textContent = vs === "error" ? (state.error || "")
+      : vs === "cached" ? "saved " + longAgo(state.cacheAge) + " ago on this device"
       : (num(s.age_s) !== null ? "newest sample " + duration(s.age_s) + " ago" : "reading the local session");
-    el.banner.textContent = BANNERS[vs] || "";
+    /* Built here rather than kept in BANNERS: the only thing worth saying
+        about cached data is how old it is, and that is not a constant. The
+        first poll has not failed yet on a cold load, so the wording separates
+        "still checking" from "checked, and it is not there" -- claiming an
+        outage before asking would be the same overstatement in the other
+        direction. */
+    /* The age quoted is the DATA's, from the session's newest sample, not the
+       cache write's. They differ: a snapshot fetched five seconds before the
+       link dropped can hold a reading the recorder took twenty minutes
+       earlier, and "captured 5 s ago" would be true of the fetch and wrong
+       about the truck. The write time is the secondary line, where it belongs.
+       Falls back to the cache age only when the payload carries no timestamp
+       to date itself by. */
+    el.banner.textContent = vs !== "cached" ? (BANNERS[vs] || "")
+      : "Showing the last data this browser saw. Its newest reading is "
+        + longAgo(num(s.age_s) !== null ? s.age_s : state.cacheAge)
+        + " old and nothing here is current"
+        + (state.network === "loading"
+           ? "; still checking whether the truck's logger is reachable."
+           : " — the truck's logger is not reachable.");
     el["f-samples"].textContent = num(s.rows) === null ? "–" : String(s.rows);
     el["f-duration"].textContent = duration(s.elapsed_s);
     el["f-period"].textContent = num(s.period_s) === null ? "–" : s.period_s.toFixed(1) + " s";
@@ -6403,6 +6597,8 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       }
       state.snapshot = snapshot; state.network = "ok"; state.error = "";
       state.retried = false;
+      state.cacheAge = null;
+      if (wanted === "latest") saveCache(snapshot);
       render();
       /* Stops and places, after the snapshot rather than beside it: both are
          cheap, neither is needed to draw the live view, and a slow one must
@@ -6438,6 +6634,17 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
       state.network = "error";
       state.error = explain(err);
       state.errorRaw = (err && err.message) || String(err || "");
+      /* Fold whatever is on screen into the cache before reading it back, so a
+         link that dies mid-session takes the same corrected-age path as a cold
+         load. The old behaviour left the last live snapshot in place with its
+         ages frozen at the last successful poll: an hour after the truck went
+         quiet the header still read "newest sample 4 s ago", and every
+         freshness gate downstream believed it. Forced past the write
+         throttle -- this is the one write that must not be skipped. */
+      if (state.snapshot && state.cacheAge === null && wanted === "latest") {
+        saveCache(state.snapshot, true);
+      }
+      applyCache();
       render();
     }).finally(function () {
       /* The retry path above has already cleared busy and queued its own
@@ -6487,6 +6694,12 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
   buildViewControls();
   buildLayerControls();
   renderLegend();
+  /* Before the first fetch, not after its failure. Away from the truck the
+     first attempt costs a 4.5 s timeout and a retry, and ten seconds of a
+     blank page under "Connecting" is the complaint this whole path exists to
+     answer. The banner says "still checking" until the attempt actually fails,
+     so painting early claims an outage that has not been established. */
+  applyCache();
   render();
   refresh();
 })();
