@@ -48,6 +48,11 @@ SSH_TARGETED = {
     "deploy.sh",
     "deploy-panel.sh",
     "enable-remote-dashboard.sh",
+    # Exists BECAUSE of the mistake this file is about, in the other direction:
+    # `systemctl restart hummer-battery hummer-dashboard` typed on a workstation
+    # fails with "Unit not found" rather than doing anything, because those
+    # units are only on the node. This names the node and runs sudo there.
+    "restart-node-services.sh",
 }
 
 #: Scripts that change nothing on any machine -- readers, smoke tests, an

@@ -613,6 +613,32 @@ journalctl -u hummer-battery -n 20
 sudoedit /etc/default/hummer-battery          # threshold, interval, streak
 ```
 
+### Restarting the watch (and the API) from a workstation
+
+The node's polkit rules authorise `start`/`stop` of `hummer-drive` without a
+password, and nothing else — so `hummer-battery` and `hummer-dashboard` need
+`sudo` **on the node**. Typing `systemctl restart hummer-battery
+hummer-dashboard` on a workstation fails with "Unit hummer-battery.service not
+found", because those units are only on the Pi.
+
+```bash
+scripts/restart-node-services.sh --check   # read-only: what is running, and does it work
+scripts/restart-node-services.sh           # restart both, then verify (prompts for the node's sudo)
+```
+
+It never names `hummer-drive`. The recorder is the one service whose
+interruption loses readings nobody can take again, and neither of these two
+depends on it — `hummer-dashboard` wants only `network-online.target` and
+mounts, `hummer-battery` only `multi-user.target` — so a restart cannot cascade
+into it. The script asserts the recorder is still active afterwards rather than
+relying on that, and an exit code is not taken as acceptance: it checks that the
+battery watch *identifies the board and reads a plausible cell*, that the API
+*serves the history column the 3D view draws from*, and that the PiSugar3's
+restore bit is still set.
+
+Both services also pick up newly deployed code on the next power cycle by
+themselves, so this is a way to avoid waiting rather than the only route.
+
 ### Why it stops the collector instead of shutting down
 
 This used to rest on one fact — a PiSugar2 cannot power the Pi back on — and
