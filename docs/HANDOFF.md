@@ -97,7 +97,7 @@ added.
 | Collector | one-shot proven; continuous unit disabled and config flag false |
 | Recorder | `hummer-drive.service` enabled and active — the thing that actually collects. Writes one CSV per wake period to `evidence/sessions/` |
 | Passive capture | `hummer-obd-passive` exists and was run once, 2026-09-04: **zero bytes in 30 s**. There is no passive data stream at this connector; see `docs/VALIDATION.md` |
-| Battery | PiSugar2 (IP5209) on I2C bus 1; `hummer-battery` enabled and active, shuts down below 3.40 V sustained |
+| Battery | **PiSugar3** at 0x57 on I2C bus 1 (PiSugar2/IP5209 until 2026-10-17); `hummer-battery` enabled and active, stops the collector below 3.40 V sustained. Auto-power-on-when-restored is set in the board (CTR1 bit 4) |
 | Upload | disabled, endpoint empty |
 | Tests | run the suite rather than reading a number here; it has gone stale in this table before |
 

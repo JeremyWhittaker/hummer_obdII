@@ -83,7 +83,7 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | Bounded collection | self-stopping trials by cycle count or wall-clock duration, under systemd supervision |
 | Offline reporting | sanitized capability report that never opens the serial device |
 | Node health | e-paper status page, Bluetooth recovery, reboot-safe services |
-| Battery monitoring | PiSugar2 cell read over I2C, with the power IC identified by measurement rather than by label |
+| Battery monitoring | PiSugar cell read over I2C, with the board identified by measurement rather than by label. A PiSugar3 replaced the PiSugar2 on 2026-10-17: different address, transaction style and encoding, all three confirmed on the node before being written down |
 | **HV battery state of charge, energy remaining, range, distance since charge, temperature, charger power** | **proven**: six supervised enhanced reads (UDS service `22`) all answer from the Battery System Manager. They cross-check each other — range ÷ state of charge gives 333 mi at full against a 329 mi EPA rating, and the charger reads exactly 0 kW while the pack is measurably discharging. State of charge is coarser and slower than it looks: it advances in jumps, not continuously — seven changes in a 4200-second session while `energy_kwh` took 59 distinct values. The jump size is state-dependent: **+0.400% every ~340 s while charging** (five transitions agreeing to ±0.002) and about −0.5% every 143 s while discharging (two transitions, too few to rely on). So a short charge can report zero gained however much energy went in — use `energy_kwh`, which moves continuously. Dashboard cross-check still outstanding — see [GM enhanced candidates](docs/GM_ENHANCED_CANDIDATES.md) |
 | **HV cell voltage, average / minimum / maximum** | **proven**: `0x2AF5` returns 4.0185 / 4.0171 / 4.0220 V — a **4.9 mV** cell spread. The published `min < avg < max` ordering holds exactly, which a wrong byte offset would almost always break, and 4.02 V is where a cell sits at the 80.85 % this truck independently reported |
 | **Body control module** | nine identifiers at module `40`: an EVSE current, three battery group voltages, three battery temperatures and two coolant temperatures. Reachable **only at CAN priority `0x18`** -- it returned nothing at all at `0x14`, which made it look unreachable until a per-module support census showed it answering the legislated services. Every value is kept raw: none of the scalings is established |
@@ -109,7 +109,7 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | OnStar / GM cloud data | A different system. Belongs in a separate broker with isolated credentials |
 | Raw transcript upload | Refused at config load: raw logs can contain an unmasked VIN |
 | Continuous collector autostart | Gated on two unproven physical results: overnight 12 V stability, and sleep while actively polling |
-| Automatic power-off on low battery | Deliberately not the default. A PiSugar2 cannot power the Pi back on, so halting would strand the node; the watch stops vehicle polling instead |
+| Automatic power-off on low battery | Deliberately not the default. The PiSugar3 *can* power the Pi back on — the restore bit is set — but nothing cuts the board's output during shutdown, so a halt leaves the Pi stopped with power still applied and no cycle for that bit to act on. The watch stops vehicle polling instead |
 
 Report the live state of a node at any time, without touching the vehicle:
 
@@ -1454,7 +1454,7 @@ src/hummer_obd/
   capabilities.py    sanitized offline capability report; never opens the port
   export.py          local export of stored telemetry for external ingestion
   voltage.py         12 V watch that provably transmits nothing to the vehicle
-  battery.py         PiSugar2 cell watch and low-battery response
+  battery.py         PiSugar cell watch and low-battery response (PiSugar2/3)
   policy.py          adaptive awake/parked/asleep collection policy
   enhanced.py        supervised enhanced (UDS service 22) reads, one identifier
                      at a time, from a fixed enumeration

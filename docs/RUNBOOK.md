@@ -597,8 +597,9 @@ Two things worth knowing when writing your own invocations:
 
 ## Battery watch and graceful shutdown
 
-The node runs on a PiSugar2 pack. `hummer-battery.service` watches the cell and
-powers the node down cleanly before it runs flat.
+The node runs on a PiSugar pack — a PiSugar2 until 2026-10-17 and a **PiSugar3**
+since. `hummer-battery.service` watches the cell and powers the node down
+cleanly before it runs flat.
 
 The reason is data, not tidiness: an unexpected power loss can corrupt the SD
 card mid-write, and the SQLite database and append-only transcript on it hold
@@ -614,18 +615,23 @@ sudoedit /etc/default/hummer-battery          # threshold, interval, streak
 
 ### Why it stops the collector instead of shutting down
 
-**A PiSugar2 cannot power the Pi back on.** That single fact decides the
-design, and it is the vendor's own position rather than an inference:
+This used to rest on one fact — a PiSugar2 cannot power the Pi back on — and
+**the PiSugar3 changed that half.** It still stops the collector, for the half
+that did not change:
 
-| Question | Answer |
+| Question | Answer, on the PiSugar3 |
 |---|---|
-| Does a bare `systemctl poweroff` cut PiSugar power? | **No.** The vendor ships a `pisugar-poweroff` service precisely because something must tell the chip to cut, over I2C, during shutdown. Without it the Pi sits halted and still draws from the cell |
-| Can the pack power the Pi back on when USB returns? | **No.** `toggle_power_restore` is implemented for the PiSugar 3 and returns "not supported" for the IP5209. The feature table lists automatic power-on for this series only with the footnote "two independent power supplies are required" |
+| Can the pack power the Pi back on when external power returns? | **Yes, and it is already set.** Control register 1 (`0x02`) read `0xFC` on this node, which has the restore bit (bit 4) set. Nothing had to be programmed. On the PiSugar2 this was "not supported" |
+| Does the Pi itself need anything programmed to boot when 5 V arrives? | **No.** A Pi Zero 2 W has no power latch and boots whenever 5 V appears. There is no setting to change |
+| Does a bare `systemctl poweroff` cut PiSugar power? | **No, and this is the half that still bites.** The vendor ships a `pisugar-poweroff` service precisely because something must tell the chip to cut, over I2C, during shutdown. It is **not installed here**. Without it the Pi sits halted while the board keeps supplying it, and the restore bit never fires — from the board's point of view power never went away |
 | Can GPIO3 wake a halted Pi Zero 2 W? | **Unknown.** `WAKE_ON_GPIO` is a bootloader-EEPROM setting, and Raspberry Pi documents the Zero 2 W as having no EEPROM. GPIO3 wake for non-EEPROM boards is a community claim, not a documented feature |
-| What does restore output? | Toggling the **physical switch** by hand, or a scheduled RTC alarm |
 
-So both halting paths strand an unattended node in a vehicle until somebody
-walks out to it, which is worse than the flat cell they were meant to prevent.
+So `--poweroff` is still the path that strands the node, for a different reason
+than before: not because the board cannot bring it back, but because nothing
+cuts the output on the way down, so there is no power cycle for the restore bit
+to act on. **Automatic power-on only helps across an output the board actually
+cut.** The default stays `stop-collector`, and `--poweroff` becomes genuinely
+safe the day something cuts the output during shutdown.
 
 The default action is therefore `stop-collector`: it ends vehicle polling --
 the thing actually drawing power and holding the serial port -- and leaves the
@@ -665,13 +671,32 @@ prevent. So:
 
 ### Hardware identification
 
-A PiSugar2 carries an IP5209 and a PiSugar2 Pro carries an IP5312, and they
-report battery voltage from different registers. The chip was identified by
-measurement rather than from the label: on this node the IP5209 registers read
-4.05 V while the IP5312 registers read 2.60 V — and 2.60 V is below the voltage
-at which the Pi could have taken the reading at all, so it cannot be the cell.
-`identify_chip()` repeats that check at run time and refuses to guess if both
-profiles look plausible.
+Three boards are known. A PiSugar2 carries an IP5209 and a PiSugar2 Pro an
+IP5312, reporting battery voltage from different registers at `0x75`; the
+**PiSugar3** is a single MCU at `0x57`. Every one was identified by measurement
+rather than from the label.
+
+PiSugar2, while it was fitted: the IP5209 registers read 4.05 V while the IP5312
+registers read 2.60 V — and 2.60 V is below the voltage at which the Pi could
+have taken the reading at all, so it cannot be the cell.
+
+PiSugar3, on 2026-10-17: `0x75` and `0x32` stopped acknowledging altogether,
+`0x57` answers, its firmware register (`0xE2`) reads `v1.3.4`, and its voltage
+pair (`0x22` high, `0x23` low, plain big-endian **millivolts**) read 3860 mV.
+
+The swap changed three things at once, which is why the old profiles did not
+merely read wrong numbers but could not read at all — and why the watch logged
+`unusable reading: no power IC read a plausible cell voltage` every 30 seconds
+instead of converting something. **The transaction style moved too**: read the
+PiSugar3 with a write-then-read instead of one combined transaction and every
+register returns `0x03`. That is the worst available failure, because `0x03` is
+a number a profile will happily convert, and only the plausibility floor stands
+between it and a confident wrong voltage. A test asserts that it stands.
+
+`identify_chip()` repeats the whole check at run time across all three profiles
+and refuses to guess if more than one looks plausible. A board that is simply
+absent disqualifies itself through the ordinary path: its address does not
+acknowledge, the read raises, and the reading is implausible.
 
 I2C on the GPIO header was not enabled on this node. `dtparam=i2c_arm=on` was
 appended to `/boot/firmware/config.txt` (with a backup) so it survives a
