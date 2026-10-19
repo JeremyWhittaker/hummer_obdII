@@ -837,9 +837,13 @@ active but its actual `DEVICES` response was empty. Debian's installed
 `60-gpsd.rules` deliberately disables automatic matching for generic PL2303
 USB serial adapters, which explains why `USBAUTO="true"` alone did not fix it.
 
-`scripts/install-gps-hotplug.sh` prepares a durable repair using the measured
-USB identity and a stable `/dev/hummer_gps` alias. **The installer and rule are
-tested and staged; manual root activation is still required.** Run on the Pi:
+`scripts/install-gps-hotplug.sh` installs a durable repair using the measured
+USB identity and a stable `/dev/hummer_gps` alias. **Installed and verified on
+2026-10-19 at 14:12 MST:** the alias resolves to `ttyUSB0`, gpsd registers it
+with the SiRF driver and a live 3D fix, and the hotplug unit is active. The
+recorder's GPS reader also receives a 3D fix using eight satellites. Both
+recorders stayed running without restarts. Physical unplug/replug acceptance
+is still pending. For installation or updates, run on the Pi:
 
 ```bash
 sudo bash /home/jeremy/hummer-obd/scripts/install-gps-hotplug.sh
@@ -888,11 +892,11 @@ device registration separately from satellite fix mode: `registered=true`
 with no fix means the device is present but has not acquired satellites. An
 empty device list fails the check even if systemd says gpsd is active.
 
-Acceptance after manual installation: verify registration, unplug/replug the
-receiver, then verify the alias and gpsd registration return automatically and
-the recorder processes stay running. Numbered tty names may or may not change
-on any given reinsertion. No physical unplug, daemon restart or reboot was
-performed by the agent while preparing the repair.
+Remaining physical acceptance: unplug/replug the receiver, then verify the
+alias and gpsd registration return automatically and the recorder processes
+stay running. Numbered tty names may or may not change on any given
+reinsertion. The operator's installer restarted gpsd; the agent performed
+read-only runtime verification without unplugging hardware or rebooting.
 
 To roll back, restore the installer backups, remove the new rule if none
 previously existed, reload udev rules, stop `gpsdctl@hummer_gps.service`, and

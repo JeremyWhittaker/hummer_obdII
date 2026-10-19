@@ -108,10 +108,13 @@ service installation and late UPS output-cut hook were installed manually
 using `scripts/install-pisugar3-power.sh`. Fresh runtime logs and matching
 root-owned file hashes verified activation; the recorder was not restarted.
 **Physical power-cycle acceptance is deferred at the owner's request to keep
-the Pi online.** GPS has a tested, staged installer in
-`scripts/install-gps-hotplug.sh` for a stable device alias and Debian hotplug
-registration; manual root activation and physical unplug/replug acceptance
-remain pending. See [USB GPS setup](RUNBOOK.md#usb-gps-naming-and-hotplug). Do not
+the Pi online.** The operator also installed the GPS repair using
+`scripts/install-gps-hotplug.sh`. At 14:12 MST, gpsd served a live SiRF 3D fix
+through `/dev/hummer_gps`, now resolving to `ttyUSB0`; the recorder's GPS reader
+subsequently confirmed a 3D fix using eight satellites. The matched udev rule,
+device alias and stock hotplug unit are active; both recorders stayed running.
+Physical unplug/replug acceptance remains pending. See
+[USB GPS setup](RUNBOOK.md#usb-gps-naming-and-hotplug). Do not
 call automatic return verified until the complete shutdown/input-restoration
 sequence passes. See the
 [power installation](RUNBOOK.md#pisugar3-reserve-shutdown-installation) and

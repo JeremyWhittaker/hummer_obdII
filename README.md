@@ -1741,8 +1741,9 @@ A BU-353S4 (SiRF Star IV over a PL2303 bridge, 4800 baud), served by `gpsd` on
 its standard port 2947. Its numbered USB device can change after reconnecting.
 The [USB GPS installer](docs/RUNBOOK.md#usb-gps-naming-and-hotplug) assigns the
 stable `/dev/hummer_gps` alias and enables matching add/remove events through
-Debian's existing gpsd hotplug service. **The repair is prepared; manual root
-installation and unplug/replug acceptance are still pending.** The recorder
+Debian's existing gpsd hotplug service. **Installed and verified on 2026-10-19:
+gpsd and the recorder's reader receive a live 3D fix through the stable alias.**
+Physical unplug/replug acceptance remains pending. The recorder
 reads gpsd's JSON protocol on a background thread and appends nine columns to every session row:
 fix mode, latitude, longitude, altitude, speed, track, satellites used, gpsd's
 longitude-error estimate, and the satellite timestamp.
