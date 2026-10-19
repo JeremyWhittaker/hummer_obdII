@@ -97,17 +97,20 @@ added.
 | Collector | one-shot proven; continuous unit disabled and config flag false |
 | Recorder | `hummer-drive.service` enabled and active — the thing that actually collects. Writes one CSV per wake period to `evidence/sessions/` |
 | Passive capture | `hummer-obd-passive` exists and was run once, 2026-09-04: **zero bytes in 30 s**. There is no passive data stream at this connector; see `docs/VALIDATION.md` |
-| Battery | **PiSugar3** at 0x57 on I2C bus 1 (PiSugar2/IP5209 until 2026-10-17); `hummer-battery` enabled and active, stops the collector below 3.40 V sustained. Auto-power-on-when-restored is set in the board (CTR1 bit 4) |
+| Battery | **PiSugar3** at 0x57 on I2C bus 1; root-owned reserve monitor enabled and active since 2026-10-19. Three low readings 30 s apart trigger graceful shutdown at 10% or 3.40 V, only without external input. Restore bit set; late output-cut hook installed. Physical cutoff/restoration test deferred |
 | Upload | disabled, endpoint empty |
 | Tests | run the suite rather than reading a number here; it has gone stale in this table before |
 
 **Power follow-up, 2026-10-19:** the current boot reads PiSugar3 correctly and
 the API serves `array_2b43`; Claude's prior service-restart handoff is resolved.
 The board reports restore enabled. A standalone 10% reserve monitor, root-owned
-service installation and late UPS output-cut hook are prepared in
-`scripts/install-pisugar3-power.sh`; **manual root installation and physical
-power-cycle acceptance remain pending**. Do not call automatic return verified
-until the complete shutdown/input-restoration sequence passes. See the
+service installation and late UPS output-cut hook were installed manually
+using `scripts/install-pisugar3-power.sh`. Fresh runtime logs and matching
+root-owned file hashes verified activation; the recorder was not restarted.
+**Physical power-cycle acceptance is deferred at the owner's request to keep
+the Pi online.** GPS still needs its manual stable-device-path repair. Do not
+call automatic return verified until the complete shutdown/input-restoration
+sequence passes. See the
 [power installation](RUNBOOK.md#pisugar3-reserve-shutdown-installation) and
 [audit](POWER_AUDIT_2026-10-19.md).
 

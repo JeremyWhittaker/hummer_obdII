@@ -643,12 +643,17 @@ themselves, so this is a way to avoid waiting rather than the only route.
 
 ### PiSugar3 reserve shutdown installation
 
-**Prepared and tested offline, with read-only PiSugar3 hardware checks; root
-installation and a physical return-of-power test are still required.** The
-2026-10-19 boot already loaded Claude's PiSugar3 reader and updated dashboard;
+**Installed and running, verified 2026-10-19 at 10:17 MST.** The operator ran
+the manual root installer; fresh logs show `reserve=10%`, `floor=3.40 V`, three
+readings 30 s apart, and `dry_run=False`. Both root-owned program copies and
+the service drop-in match the committed files. The recorder kept its process
+and had no restart. **A physical return-of-power test remains deferred** at the
+owner's request to keep the Pi online; no controlled shutdown was initiated.
+The 2026-10-19 boot already loaded Claude's PiSugar3 reader and updated dashboard;
 the earlier request to restart those two services is no longer pending.
 
-Run the prepared installer **on the Pi**, after deploying the source:
+For initial installation or future updates, run the installer **on the Pi**
+after deploying the source:
 
 ```bash
 cd /home/jeremy/hummer-obd

@@ -14,8 +14,8 @@ outside Git.
 | API boot recovery | implemented | One transient bind failure before the VPN address existed; service restarted once and serves the latest session with correct stale status |
 | Graceful 10% reserve policy | implemented | `pisugar3_power.py` plus focused tests: board-reported percentage, three low readings 30 s apart, external-input guard, 3.40 V fallback, final fresh sample and checked systemctl result |
 | Final UPS output cut | implemented | Tested late hook checks shutdown phase and read-only root, sets restore and zero cutoff delay, preserves unrelated bits, skips reboot, and handles returning input during automatic shutdown |
-| Privileged installation | blocked | Per operator sudo policy, agent cannot execute root installation. Run the prepared [installer](RUNBOOK.md#pisugar3-reserve-shutdown-installation) on the Pi |
-| Automatic restart on vehicle start | blocked | Restore bit is set, but complete hardware acceptance needs actual output cutoff followed by restored vehicle input. Vehicle input was absent during this audit; verify switched feed goes to UPS input |
+| Privileged installation | implemented | Operator ran the [installer](RUNBOOK.md#pisugar3-reserve-shutdown-installation); activation verified at 10:17 MST. Monitor runs as root with reserve 10%, 3.40 V floor, three readings 30 s apart, dry-run off; both root-owned program copies and service drop-in hashes match committed source. Recorder process unchanged |
+| Automatic restart on vehicle start | deferred | Restore bit and installed late hook verified. Owner explicitly requested keeping the Pi online and testing later. Actual output cutoff followed by restored vehicle input and automatic boot remain unverified; verify switched feed goes to UPS input |
 | GPS | blocked | USB serial adapter disconnected and reappeared under another tty name; gpsd logs activation failure for its old path and its live `DEVICES` response is empty. GPS position was missing in today's session. Root configuration must use the stable `/dev/serial/by-id/` device and restart gpsd; recheck actual satellite reports afterward |
 | Historical system logs | blocked | Only current boot retained; journald logs are in `/run`, so earlier shutdowns cannot be audited. Application CSV/raw logs persist separately |
 | E-paper/R8 | implemented | E-paper updates regularly; radar detector remains in connecting state. Radar being off cannot be distinguished from unavailable from these logs alone |
@@ -26,9 +26,11 @@ outside Git.
 
 The UPS percentage is a firmware estimate, not a capacity calibration. No
 power-management registers, services, GPS configuration or vehicle diagnostic
-settings were changed during the read-only health inspection. Prepared files
-can be staged without activating them; activation requires the manual root
-step. The legacy monitor remains operational until then.
+settings were changed by the agent during the read-only health inspection.
+The operator subsequently performed the manual root installation. Fresh
+runtime checks confirmed the new reserve monitor is active, the restore bit
+is set, and no services failed. The controlled physical shutdown test was
+deferred at the owner's request. No GPS repair was performed by the installer.
 
 An online Pi does not prove that the Hummer is currently supplying power. The
 UPS explicitly reported no external input. Likewise `active` gpsd does not

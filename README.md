@@ -109,7 +109,7 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | OnStar / GM cloud data | A different system. Belongs in a separate broker with isolated credentials |
 | Raw transcript upload | Refused at config load: raw logs can contain an unmasked VIN |
 | Continuous collector autostart | Gated on two unproven physical results: overnight 12 V stability, and sleep while actively polling |
-| Automatic power-off on low battery | PiSugar3 installation prepared: graceful shutdown at a board-reported 10% reserve, then a late UPS output cut and auto-start on restored input. Requires the one-time root installation and physical acceptance in the [power runbook](docs/RUNBOOK.md#pisugar3-reserve-shutdown-installation). Until installed, the legacy watch only stops polling |
+| Automatic power-off on low battery | PiSugar3 reserve monitor installed and active: graceful shutdown at a board-reported 10% reserve, then a late UPS output-cut hook for auto-start on restored input. Installation verified 2026-10-19; complete shutdown/restoration hardware acceptance remains deferred. See the [power runbook](docs/RUNBOOK.md#pisugar3-reserve-shutdown-installation) |
 
 Report the live state of a node at any time, without touching the vehicle:
 
