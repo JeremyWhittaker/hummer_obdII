@@ -109,7 +109,7 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | OnStar / GM cloud data | A different system. Belongs in a separate broker with isolated credentials |
 | Raw transcript upload | Refused at config load: raw logs can contain an unmasked VIN |
 | Continuous collector autostart | Gated on two unproven physical results: overnight 12 V stability, and sleep while actively polling |
-| Automatic power-off on low battery | Deliberately not the default. The PiSugar3 *can* power the Pi back on — the restore bit is set — but nothing cuts the board's output during shutdown, so a halt leaves the Pi stopped with power still applied and no cycle for that bit to act on. The watch stops vehicle polling instead |
+| Automatic power-off on low battery | PiSugar3 installation prepared: graceful shutdown at a board-reported 10% reserve, then a late UPS output cut and auto-start on restored input. Requires the one-time root installation and physical acceptance in the [power runbook](docs/RUNBOOK.md#pisugar3-reserve-shutdown-installation). Until installed, the legacy watch only stops polling |
 
 Report the live state of a node at any time, without touching the vehicle:
 
@@ -1489,7 +1489,7 @@ of them run `sudo`:
 
 - **Run on the node.** `bootstrap_pi.sh`, `bt-grant.sh`, `bt-recover.sh`,
   `enable_service_control.sh`, `enable_agent_service_control.sh`,
-  `pair_obdlink.sh`, `switch_wifi_profile.sh`.
+  `pair_obdlink.sh`, `switch_wifi_profile.sh`, `install-pisugar3-power.sh`.
   These change systemd units, `/etc/sudoers.d`, `/etc/polkit-1/rules.d`, `/etc/default`, kernel modules
   or Wi-Fi profiles on whatever machine invokes them. Each one sources
   `scripts/lib/require-node.sh` and calls `require_node` before touching

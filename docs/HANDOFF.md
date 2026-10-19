@@ -101,6 +101,16 @@ added.
 | Upload | disabled, endpoint empty |
 | Tests | run the suite rather than reading a number here; it has gone stale in this table before |
 
+**Power follow-up, 2026-10-19:** the current boot reads PiSugar3 correctly and
+the API serves `array_2b43`; Claude's prior service-restart handoff is resolved.
+The board reports restore enabled. A standalone 10% reserve monitor, root-owned
+service installation and late UPS output-cut hook are prepared in
+`scripts/install-pisugar3-power.sh`; **manual root installation and physical
+power-cycle acceptance remain pending**. Do not call automatic return verified
+until the complete shutdown/input-restoration sequence passes. See the
+[power installation](RUNBOOK.md#pisugar3-reserve-shutdown-installation) and
+[audit](POWER_AUDIT_2026-10-19.md).
+
 The final controlled reboot was also accepted: both SSH paths returned in about
 36 seconds, all required infrastructure/display/RFCOMM services were active,
 the bond and channel survived, transcript hashes were unchanged, the collector

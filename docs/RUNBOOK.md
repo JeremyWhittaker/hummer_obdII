@@ -598,8 +598,10 @@ Two things worth knowing when writing your own invocations:
 ## Battery watch and graceful shutdown
 
 The node runs on a PiSugar pack — a PiSugar2 until 2026-10-17 and a **PiSugar3**
-since. `hummer-battery.service` watches the cell and powers the node down
-cleanly before it runs flat.
+since. The legacy `hummer-battery.service` watches voltage and stops polling;
+it does not shut down by default. The PiSugar3 reserve installation below
+replaces that service's command with a graceful shutdown monitor and installs
+the missing UPS output-cut hook.
 
 The reason is data, not tidiness: an unexpected power loss can corrupt the SD
 card mid-write, and the SQLite database and append-only transcript on it hold
@@ -639,7 +641,101 @@ restore bit is still set.
 Both services also pick up newly deployed code on the next power cycle by
 themselves, so this is a way to avoid waiting rather than the only route.
 
-### Why it stops the collector instead of shutting down
+### PiSugar3 reserve shutdown installation
+
+**Prepared and tested offline, with read-only PiSugar3 hardware checks; root
+installation and a physical return-of-power test are still required.** The
+2026-10-19 boot already loaded Claude's PiSugar3 reader and updated dashboard;
+the earlier request to restart those two services is no longer pending.
+
+Run the prepared installer **on the Pi**, after deploying the source:
+
+```bash
+cd /home/jeremy/hummer-obd
+sudo bash scripts/install-pisugar3-power.sh
+```
+
+From a workstation, use `ssh -t "$PI_HOST" 'sudo bash
+/home/jeremy/hummer-obd/scripts/install-pisugar3-power.sh'`, with `PI_HOST` set
+to the node's SSH destination. It refuses a workstation, checks the actual
+board and firmware, backs up existing files, and restarts only
+`hummer-battery`. It does not stop the recorder or power the Pi off.
+
+After installation:
+
+| Condition | Action |
+|---|---|
+| External UPS input present | Keep running, including when charge is low |
+| Input absent and board estimate at or below 10% | Three consecutive readings, 30 s apart, request normal `systemctl poweroff` |
+| Input absent and cell at or below 3.40 V | Same debounce, emergency fallback even if percentage is optimistic |
+| Invalid I2C/voltage/percentage, power changing during a sample, or restore bit absent | Clear the streak; do not request shutdown |
+| Shutdown requested | systemd stops services normally so their signal handlers can flush files |
+| Final poweroff/halt phase with root read-only | Root-owned hook sets restore, zeroes the cutoff delay, and disables UPS output |
+| Vehicle input returns during automatic shutdown | Hook reboots directly from the final phase, avoiding a halted Pi on a live supply |
+| Normal reboot/kexec | Hook does not open I2C or cut power |
+
+The 10% value is the UPS firmware's **estimate**, read at register `0x2A`,
+not a guaranteed measured energy reserve. The separate voltage floor protects
+against an optimistic estimate. Three readings span at least 60 seconds;
+the final request takes another fresh reading to catch returning input.
+
+The installer copies `pisugar3_power.py` as a root-owned standalone program
+under `/usr/local/lib/hummer-power` and as an executable under
+`/usr/lib/systemd/system-shutdown`. Python isolated mode excludes user modules.
+The `20-pisugar3.conf` service drop-in runs the monitor as root, with a
+read-only filesystem view except `/run`. No broad sudo or polkit permission is
+added. It checks/enables the restore bit at every service start. The final
+hook refuses to cut while PID 1 is still normal systemd or root is writable.
+Firmware older than 1.2.4 and separate `/usr` mounts are refused.
+
+The old `/etc/default/hummer-battery` is left intact but no longer used by the
+drop-in. Configure the new threshold in the drop-in's `ExecStart`; the monitor
+accepts reserves from 5 through 10%. The installed root-owned copies must be
+updated by re-running the installer after future source changes.
+
+Check without changing state:
+
+```bash
+python3 -I /home/jeremy/hummer-obd/src/hummer_obd/pisugar3_power.py check
+systemctl show hummer-battery -p User -p ExecStart -p ExecStartPre
+journalctl -u hummer-battery -n 15 --no-pager
+```
+
+Physical acceptance requires an observed sequence: UPS input disappears,
+reserve shutdown completes, UPS output actually switches off, vehicle input
+returns, and SSH plus the recorder return automatically. A read restore bit
+alone does not prove this sequence. The vehicle feed must be connected to the
+**UPS charging input** and must really lose and restore voltage; a permanently
+live accessory outlet or a separate supply to the Pi cannot supply that edge.
+No shutdown or vehicle power cycle was forced during the audit.
+
+A person at the vehicle can test the cutoff/return path before draining the
+pack to 10%: first confirm `external=False` using the read-only check, then
+manually run `sudo systemctl poweroff` on the Pi. Wait for UPS output to stop
+before restoring the vehicle feed. Confirm SSH and the recorder return. That
+checks the hardware return path; a later actual low-battery shutdown is still
+needed to accept the complete reserve lifecycle.
+
+Rollback on the Pi (backups are printed by the installer):
+
+```bash
+sudo rm /etc/systemd/system/hummer-battery.service.d/20-pisugar3.conf
+sudo rm /usr/lib/systemd/system-shutdown/hummer-pisugar3
+sudo systemctl daemon-reload
+sudo systemctl restart hummer-battery
+```
+
+This returns to the legacy voltage watch. If those paths existed before this
+installation, restore their installer backups instead of removing them.
+
+Register semantics and write protection come from the [PiSugar3 datasheet](https://docs.pisugar.com/docs/product-wiki/battery/pisugar3/pisugar-3-i2c)
+and [vendor driver](https://github.com/PiSugar/pisugar-power-manager-rs/blob/master/pisugar-core/src/pisugar3.rs).
+The late-hook ordering follows [systemd's shutdown implementation](https://github.com/systemd/systemd/blob/main/man/systemd-poweroff.service.xml).
+The vendor driver uses control bit 5 to cut output; newer documentation also
+describes it as delayed cutoff, so register `0x09` is explicitly set to zero.
+Only the intended control bits are changed, preserving all other bits.
+
+### Why the legacy watch stops polling
 
 This used to rest on one fact — a PiSugar2 cannot power the Pi back on — and
 **the PiSugar3 changed that half.** It still stops the collector, for the half
@@ -652,7 +748,7 @@ that did not change:
 | Does a bare `systemctl poweroff` cut PiSugar power? | **No, and this is the half that still bites.** The vendor ships a `pisugar-poweroff` service precisely because something must tell the chip to cut, over I2C, during shutdown. It is **not installed here**. Without it the Pi sits halted while the board keeps supplying it, and the restore bit never fires — from the board's point of view power never went away |
 | Can GPIO3 wake a halted Pi Zero 2 W? | **Unknown.** `WAKE_ON_GPIO` is a bootloader-EEPROM setting, and Raspberry Pi documents the Zero 2 W as having no EEPROM. GPIO3 wake for non-EEPROM boards is a community claim, not a documented feature |
 
-So `--poweroff` is still the path that strands the node, for a different reason
+Without the reserve installation above, `--poweroff` strands the node, for a different reason
 than before: not because the board cannot bring it back, but because nothing
 cuts the output on the way down, so there is no power cycle for the restore bit
 to act on. **Automatic power-on only helps across an output the board actually
@@ -665,8 +761,8 @@ operating system up and reachable. A node you can still talk to can be told
 what to do next; a halted one cannot. The watch keeps running afterwards, so a
 recovering cell needs no intervention.
 
-`--on-low poweroff` remains available for a node whose return has been solved.
-It has not been solved here.
+Do not enable legacy `--on-low poweroff` as a substitute for the complete
+reserve installation and physical acceptance.
 
 **If you want the node to survive vehicle power loss unattended**, the answer
 is not a better shutdown, it is not needing one: run from vehicle power with a
@@ -675,10 +771,8 @@ that a dirty cut costs seconds of data rather than the filesystem. WAL and
 `fsync` already bound the loss to seconds; a read-only root removes the
 corruption risk that a battery shutdown was protecting against.
 
-There is one documented alternative worth knowing: the SD3078 RTC on this pack
-supports a **scheduled wake**, so a node that shut down could be brought back
-at a fixed time. That is a timed return, not a power-triggered one, and it is
-not implemented here.
+Scheduled RTC wake is a separate feature and is not configured here. The
+PiSugar3 has an MCU-emulated RTC; the separate SD3078 belonged to the old board.
 
 ### Why it is hard to make it fire wrongly
 
