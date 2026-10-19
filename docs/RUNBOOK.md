@@ -829,6 +829,80 @@ reboot, and enabled at run time so no reboot was needed. The reader uses only
 the standard library over `/dev/i2c-1` and needs group membership rather than
 root.
 
+## USB GPS naming and hotplug
+
+The same BU-353S4 receiver changed from `/dev/ttyUSB0` to `/dev/ttyUSB1` on
+2026-10-19. gpsd was still configured with the old name, so the daemon was
+active but its actual `DEVICES` response was empty. Debian's installed
+`60-gpsd.rules` deliberately disables automatic matching for generic PL2303
+USB serial adapters, which explains why `USBAUTO="true"` alone did not fix it.
+
+`scripts/install-gps-hotplug.sh` prepares a durable repair using the measured
+USB identity and a stable `/dev/hummer_gps` alias. **The installer and rule are
+tested and staged; manual root activation is still required.** Run on the Pi:
+
+```bash
+sudo bash /home/jeremy/hummer-obd/scripts/install-gps-hotplug.sh
+```
+
+From a workstation, use:
+
+```bash
+ssh -t "$PI_HOST" 'sudo bash /home/jeremy/hummer-obd/scripts/install-gps-hotplug.sh'
+```
+
+The installer refuses a workstation and requires exactly one receiver matching
+the inspected USB profile. It backs up `/etc/default/gpsd` and any prior
+`79-hummer-gps.rules` under `/var/backups/hummer-gps/`, preserves unrelated
+gpsd options, sets `DEVICES="/dev/hummer_gps"` and `USBAUTO="true"`, then
+installs a narrowly matched udev rule. Only this receiver receives a change
+event; there is no global USB trigger. It restarts gpsd and its GPS hotplug
+unit, while leaving the OBD and radar recorders running. Their existing gpsd
+clients reconnect to the same local port.
+
+On future insertion, udev creates `/dev/hummer_gps`, declares its systemd
+device alias and starts Debian's `gpsdctl@hummer_gps.service`. That stock unit
+adds the alias to gpsd and is bound to `dev-hummer_gps.device`; on removal it
+removes the device from gpsd. Both the configured boot path and hotplug path
+use the same alias, preventing separate alias/kernel-name registrations.
+Rebooting, re-enumerating under another `ttyUSB` number, or moving this single
+receiver to another USB port therefore do not require editing the configured
+device name.
+
+The receiver exposes a model identity without a unique hardware serial. The
+installer refuses two indistinguishable matching adapters; supporting two of
+those at once requires a deliberate physical-port mapping. Unrelated USB
+serial hardware does not match the installed rule.
+
+Read-only checks, with no coordinates printed:
+
+```bash
+readlink -f /dev/hummer_gps
+python3 -I /home/jeremy/hummer-obd/src/hummer_obd/gps_setup.py --check
+systemctl status gpsd gpsdctl@hummer_gps --no-pager
+```
+
+The check compares gpsd's actual device list with the alias's resolved target,
+so it also accepts a daemon reporting the underlying numbered path. It reports
+device registration separately from satellite fix mode: `registered=true`
+with no fix means the device is present but has not acquired satellites. An
+empty device list fails the check even if systemd says gpsd is active.
+
+Acceptance after manual installation: verify registration, unplug/replug the
+receiver, then verify the alias and gpsd registration return automatically and
+the recorder processes stay running. Numbered tty names may or may not change
+on any given reinsertion. No physical unplug, daemon restart or reboot was
+performed by the agent while preparing the repair.
+
+To roll back, restore the installer backups, remove the new rule if none
+previously existed, reload udev rules, stop `gpsdctl@hummer_gps.service`, and
+restart gpsd. The original numbered path may still be absent, so inspect it
+before relying on the restored configuration.
+
+This follows [Debian's gpsd hotplug unit](https://sources.debian.org/src/gpsd/3.25-5%2Bdeb13u2/systemd/gpsdctl%40.service.in/),
+the [gpsd device-management interface](https://gpsd.io/gpsd.html), and
+[systemd device aliases and dependencies](https://www.freedesktop.org/software/systemd/man/latest/systemd.device.html).
+
 ## Troubleshooting
 
 ### Pi appears online but SSH times out

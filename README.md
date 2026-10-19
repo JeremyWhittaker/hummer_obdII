@@ -1489,7 +1489,8 @@ of them run `sudo`:
 
 - **Run on the node.** `bootstrap_pi.sh`, `bt-grant.sh`, `bt-recover.sh`,
   `enable_service_control.sh`, `enable_agent_service_control.sh`,
-  `pair_obdlink.sh`, `switch_wifi_profile.sh`, `install-pisugar3-power.sh`.
+  `pair_obdlink.sh`, `switch_wifi_profile.sh`, `install-pisugar3-power.sh`,
+  `install-gps-hotplug.sh`.
   These change systemd units, `/etc/sudoers.d`, `/etc/polkit-1/rules.d`, `/etc/default`, kernel modules
   or Wi-Fi profiles on whatever machine invokes them. Each one sources
   `scripts/lib/require-node.sh` and calls `require_node` before touching
@@ -1736,9 +1737,13 @@ See [Validation](docs/VALIDATION.md) for the test matrix and evidence policy.
 
 ## GPS
 
-A BU-353S4 (SiRF Star IV over a PL2303 bridge, 4800 baud) on `/dev/ttyUSB0`,
-served by `gpsd` on its standard port 2947. The recorder reads gpsd's JSON
-protocol on a background thread and appends nine columns to every session row:
+A BU-353S4 (SiRF Star IV over a PL2303 bridge, 4800 baud), served by `gpsd` on
+its standard port 2947. Its numbered USB device can change after reconnecting.
+The [USB GPS installer](docs/RUNBOOK.md#usb-gps-naming-and-hotplug) assigns the
+stable `/dev/hummer_gps` alias and enables matching add/remove events through
+Debian's existing gpsd hotplug service. **The repair is prepared; manual root
+installation and unplug/replug acceptance are still pending.** The recorder
+reads gpsd's JSON protocol on a background thread and appends nine columns to every session row:
 fix mode, latitude, longitude, altitude, speed, track, satellites used, gpsd's
 longitude-error estimate, and the satellite timestamp.
 
