@@ -104,3 +104,19 @@ pauses the timer, installs the candidate and reloads the Bluetooth UART
 driver, then restores previously running consumers. Wi-Fi, Pi power and the
 reserve monitor remain online. Live Bluetooth recovery and fresh recorder
 rows remain unverified until that manual privileged step completes.
+
+## October 20 live-drive follow-up
+
+At 13:28 MST, the Pi remained reachable. GPSd reported the SiRF receiver
+registered through `/dev/hummer_gps` with a mode-3 position fix. The UPS
+reported 100% charge, external input present and restore enabled; the original
+reserve-monitor process remained running without restarts. No throttling flags
+or failed systemd units were reported. A separate 30-second GPS sample during
+movement contained 60 position reports, all mode 3, with 10 of 12 visible
+satellites in use and speeds of 36.71–49.73 km/h (about 23–31 mph).
+
+The staged Bluetooth recovery had not been applied: the active watchdog still
+matched the old source, the recorder remained blocked, and kernel HCI timeouts
+continued. The dashboard correctly marked the old OBD and radar readings
+stale. A running recorder process does not establish that a drive is being
+recorded; fresh rows and detector packets remain the acceptance criteria.

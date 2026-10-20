@@ -29,9 +29,12 @@ outside the active root import path and needs the owner-run
 `scripts/repair-bluetooth-controller.sh` activation/recovery described in the
 [runbook](RUNBOOK.md#controller-timeouts-with-cached-connected-flags).
 **Bluetooth recovery and fresh recorder acceptance remain pending that step.**
-The reserve monitor remains active. Current GPS registration works; the
-receiver sees satellites but has no position fix at this location. Prior boot
-journals were volatile, so yesterday's exact reserve cutoff is unavailable.
+At the 13:28 MST drive check, the reserve monitor remained active with its
+original PID, the UPS reported 100% charge with external power and restore
+enabled, and the USB GPS had a mode-3 position fix through the stable alias.
+The Bluetooth recovery had not yet been applied: the old watchdog source
+remained active and both OBD and radar readings were stale. Prior boot journals
+were volatile, so yesterday's exact reserve cutoff is unavailable.
 
 **For "what can this thing actually read?", go to
 [the access matrix](ACCESS_MATRIX.md) rather than to any prose in this file.**
