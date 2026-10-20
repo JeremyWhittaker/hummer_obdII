@@ -462,6 +462,14 @@ bluetoothctl info "$OBD_MAC" | grep -E 'Connected|Paired|Bonded|Trusted'
 
 ## Data retention and backup
 
+The radar panel's `/api/r8` response checks two clocks: `age_s` is the age of
+the published state, while `telemetry_age_s` is the detector packet age at
+publication plus elapsed time since publication. A heartbeat does not refresh
+detector telemetry. Packets older than ten seconds, a producer stale flag,
+unknown packet age, or a disconnected detector withhold cached voltage,
+GPS-lock and live alerts. The dashboard keeps the detector screen dark when
+stale or disconnected; recorded alert history remains available separately.
+
 Private runtime data lives under:
 
 ```text

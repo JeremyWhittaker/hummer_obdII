@@ -31,7 +31,8 @@ def _good(**over):
         "link": {"connected": True, "compatible": True},
         "collector": {"mode": "continuous"},
         "counters": {"alert_packets": 583},
-        "telemetry": {"voltage": 13.6, "gps_locked": True},
+        "telemetry": {"voltage": 13.6, "gps_locked": True,
+                      "age_s": 0.0, "stale": False},
         "alerts": [],
     }
     doc.update(over)
@@ -99,6 +100,66 @@ class TestStalenessIsComputedHere(unittest.TestCase):
             doc["updated_at"] = (NOW + timedelta(hours=1)).isoformat().replace("+00:00", "Z")
             self.assertFalse(r8.read_state(_state(tmp, doc), now=NOW)["available"])
 
+    def test_a_heartbeat_does_not_refresh_old_detector_readings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            doc = _good(telemetry={"voltage": 13.9, "gps_locked": True,
+                                   "age_s": 7156.0, "stale": True},
+                        alerts=[{"band": "KA", "strength": 4}])
+            doc["updated_at"] = NOW.isoformat()
+            got = r8.read_state(_state(tmp, doc), now=NOW)
+            self.assertTrue(got["available"])
+            self.assertEqual(got["age_s"], 0.0)
+            self.assertEqual(got["telemetry_age_s"], 7156.0)
+            self.assertTrue(got["stale"])
+            self.assertIsNone(got["voltage"])
+            self.assertIsNone(got["gps_locked"])
+            self.assertEqual(got["alerts"], [])
+
+    def test_packet_age_keeps_increasing_after_the_writer_stops(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            doc = _good(telemetry={"voltage": 13.6, "gps_locked": True,
+                                   "age_s": 0.1, "stale": False})
+            got = r8.read_state(_state(tmp, doc), now=NOW)
+            self.assertAlmostEqual(got["telemetry_age_s"], 10.1)
+            self.assertTrue(got["stale"])
+            self.assertIsNone(got["voltage"])
+
+    def test_the_producers_stale_flag_can_expire_a_younger_packet(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            doc = _good(telemetry={"voltage": 13.6, "age_s": 0.0, "stale": True})
+            got = r8.read_state(_state(tmp, doc), now=NOW)
+            self.assertTrue(got["stale"])
+            self.assertIsNone(got["voltage"])
+
+    def test_disconnection_hides_even_recent_cached_readings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            doc = _good(link={"connected": False, "compatible": True},
+                        alerts=[{"band": "KA", "strength": 4}])
+            got = r8.read_state(_state(tmp, doc), now=NOW)
+            self.assertFalse(got["connected"])
+            self.assertIsNone(got["voltage"])
+            self.assertIsNone(got["gps_locked"])
+            self.assertEqual(got["alerts"], [])
+
+    def test_unusable_packet_age_is_not_current_telemetry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for bad in (None, True, "0", -1.0, float("nan"), float("inf")):
+                with self.subTest(age_s=bad):
+                    doc = _good(telemetry={"voltage": 13.6, "age_s": bad,
+                                           "stale": False})
+                    got = r8.read_state(_state(tmp, doc), now=NOW)
+                    self.assertTrue(got["stale"])
+                    self.assertIsNone(got["telemetry_age_s"])
+                    self.assertIsNone(got["voltage"])
+
+    def test_a_future_clock_within_tolerance_does_not_rejuvenate_packets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            doc = _good(telemetry={"voltage": 13.6, "age_s": 11.0, "stale": False})
+            doc["updated_at"] = (NOW + timedelta(seconds=20)).isoformat()
+            got = r8.read_state(_state(tmp, doc), now=NOW)
+            self.assertTrue(got["stale"])
+            self.assertEqual(got["telemetry_age_s"], 11.0)
+
 
 class TestEnumeratedFieldsAreAllowlisted(unittest.TestCase):
 
@@ -126,7 +187,8 @@ class TestEnumeratedFieldsAreAllowlisted(unittest.TestCase):
             for value, expect in ((True, True), (False, False),
                                   (None, None), ("yes", None)):
                 with self.subTest(value=value):
-                    doc = _good(telemetry={"gps_locked": value})
+                    doc = _good(telemetry={"gps_locked": value,
+                                           "age_s": 0.0, "stale": False})
                     self.assertIs(
                         r8.read_state(_state(tmp, doc), now=NOW)["gps_locked"], expect)
 

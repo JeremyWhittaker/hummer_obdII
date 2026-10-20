@@ -1776,10 +1776,13 @@ That file belongs to another process, so it is treated as untrusted:
 - **The schema is pinned to exactly 1**, never a minimum. The sibling's own
   tests pin its key sets as literals *because* this project consumes them, so a
   `>=` would silently accept a schema 2 whose fields had moved.
-- **Staleness is computed here**, from `updated_at` against this machine's
-  clock. The file's own `stale` flag is packet age at write time, so it stops
-  updating when the writer dies — exactly when staleness matters most. A
-  timestamp in the future is refused rather than read as fresh.
+- **Both document and packet age are checked.** A fresh logger heartbeat may
+  carry an old detector packet. Packet age at publication keeps increasing on
+  this machine's clock; after ten seconds, or sooner if the producer reports
+  stale data, voltage, GPS lock and live alerts are withheld. Disconnection
+  also withholds those cached readings. The document itself expires after
+  90 seconds; an implausibly future timestamp is refused. `/api/r8` reports
+  document `age_s` and effective `telemetry_age_s` separately.
 - **`gps_locked` stays tri-state.** `null` means the detector never said, which
   is not the same as "no lock", and collapsing it would report a fault nobody
   observed.

@@ -6394,7 +6394,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
     var linked = d && d.available && d.connected === true && !d.stale;
     if (!linked) {
       var why = !d || !d.available ? (d && d.reason ? d.reason : "no state file")
-              : d.stale ? "logger quiet for " + duration(d.age_s)
+              : d.stale ? "detector data is stale"
               : d.connected === false ? "detector not connected"
               : "link state unknown";
       r8Text(screen, 364, 148, 27, "#31363b", 500, "middle", why);
@@ -6487,7 +6487,7 @@ tbody tr:hover{background:rgba(255,255,255,.022)}
                 : d.gps_locked === false ? "no lock" : "not reported");
     if (typeof d.alert_packets === "number") fact("packets", String(d.alert_packets));
     el["r8-sub"].textContent = d.stale
-      ? "Last published " + duration(d.age_s) + " ago — the detector's logger has gone quiet."
+      ? "Detector data is stale. Logger last published " + duration(d.age_s) + " ago."
       : d.connected === false
       ? "The logger is running, but it has no link to the detector — so the "
         + "screen is drawn dark, which is what the detector itself is showing."

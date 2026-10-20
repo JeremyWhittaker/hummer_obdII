@@ -16,9 +16,9 @@ Three specific rules, each earned:
 * **Pin the schema to exactly 1.** The sibling's tests pin its key sets as
   literals precisely because this project consumes them. A ``>=`` comparison
   would silently accept a schema 2 whose fields moved.
-* **Compute age here, from ``updated_at``, on our own clock.** The file's own
-  ``stale`` flag is packet age at write time, so it stops updating when the
-  writer dies -- exactly when staleness matters most.
+* **Age both the document and the detector packets.** A fresh heartbeat can
+  carry old packets, and the packet age at write time must keep increasing
+  when the writer stops. Cached readings are withheld when stale or unlinked.
 * **Allowlist every enumerated value.** Band and direction reach a display, and
   a display is not the place to find out a field was free text.
 """
@@ -26,6 +26,7 @@ Three specific rules, each earned:
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,6 +43,10 @@ MAX_BYTES = 64 * 1024
 
 #: Past this age the reading is reported stale rather than shown as current.
 MAX_AGE_S = 90.0
+
+#: A logger heartbeat is not a detector reading. Match the producer's default
+#: ten-second packet limit; a stricter producer stale flag also takes effect.
+MAX_PACKET_AGE_S = 10.0
 
 #: A clock that disagrees by more than this is wrong, not early.
 MAX_SKEW_S = 30.0
@@ -93,6 +98,17 @@ def read_state(path: Path = STATE_PATH, *, now: Optional[datetime] = None) -> di
     coll = doc.get("collector") if isinstance(doc.get("collector"), dict) else {}
     counters = doc.get("counters") if isinstance(doc.get("counters"), dict) else {}
 
+    packet_age = tele.get("age_s")
+    if (isinstance(packet_age, (int, float)) and not isinstance(packet_age, bool)
+            and math.isfinite(packet_age) and packet_age >= 0):
+        # Tolerated clock skew must never make an old packet younger.
+        packet_age += max(0.0, age)
+    else:
+        packet_age = None
+    stale = (age > MAX_AGE_S or tele.get("stale") is not False
+             or packet_age is None or packet_age > MAX_PACKET_AGE_S)
+    current = not stale and link.get("connected") is True
+
     def flag(value):
         # gps_locked is genuinely tri-state: true, false, or unevaluable. None
         # must survive as None -- collapsing it into false would report "no
@@ -102,16 +118,18 @@ def read_state(path: Path = STATE_PATH, *, now: Optional[datetime] = None) -> di
     return {
         "available": True,
         "age_s": round(age, 1),
-        "stale": age > MAX_AGE_S,
+        "telemetry_age_s": round(packet_age, 1) if packet_age is not None else None,
+        "stale": stale,
         "connected": flag(link.get("connected")),
         "compatible": flag(link.get("compatible")),
         "mode": coll.get("mode") if isinstance(coll.get("mode"), str) else None,
-        "voltage": tele.get("voltage") if isinstance(tele.get("voltage"), (int, float))
+        "voltage": tele.get("voltage") if current
+                   and isinstance(tele.get("voltage"), (int, float))
                    and not isinstance(tele.get("voltage"), bool) else None,
-        "gps_locked": flag(tele.get("gps_locked")),
+        "gps_locked": flag(tele.get("gps_locked")) if current else None,
         "alert_packets": counters.get("alert_packets")
                          if isinstance(counters.get("alert_packets"), int) else None,
-        "alerts": _alerts(doc.get("alerts")),
+        "alerts": _alerts(doc.get("alerts")) if current else [],
     }
 
 
