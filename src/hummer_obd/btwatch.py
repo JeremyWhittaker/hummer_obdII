@@ -24,7 +24,9 @@ byte to a vehicle module.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
+import math
 import os
 import re
 import subprocess
@@ -65,6 +67,75 @@ WEDGE_WINDOW_S = 600
 
 #: Nothing is attempted more often than this, whatever the timer does.
 MIN_INTERVAL_S = 45.0
+
+#: Cached BlueZ connection flags can outlive a wedged radio. Only positively
+#: stale traffic from BOTH consumers may override them, alongside HCI errors.
+TRAFFIC_MAX_AGE_S = 90.0
+
+
+def traffic_fresh(raw_path="/home/jeremy/hummer-obd/logs/drive-raw.jsonl",
+                  radar_path="/home/jeremy/unidenr8/.state/state.json", *, now=None):
+    """Passive traffic evidence: True, both stale False, or unknown None.
+
+    Read only a bounded raw-log tail and the published radar state. Transmits
+    and logger heartbeats are not replies. Missing/malformed evidence never
+    licenses a controller reset, and either fresh stream protects a recovered
+    controller while its old HCI errors remain in the journal window.
+    """
+    now = time.time() if now is None else now
+
+    def age(stamp):
+        if not isinstance(stamp, str):
+            return None
+        try:
+            parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                return None
+            seconds = now - parsed.timestamp()
+            return max(0.0, seconds) if seconds >= -30 else None
+        except (ValueError, OverflowError):
+            return None
+
+    replies = None
+    try:
+        with open(raw_path, "rb") as handle:
+            size = handle.seek(0, os.SEEK_END)
+            offset = max(0, size - 256 * 1024)
+            handle.seek(offset)
+            if offset:
+                handle.readline()  # Discard the first partial record.
+            for line in handle:
+                try:
+                    item = json.loads(line)
+                    if (not isinstance(item, dict) or item.get("dir") != "rx"
+                            or b">" not in base64.b64decode(item.get("b64", ""), validate=True)):
+                        continue
+                    delta = age(item.get("ts"))
+                    replies = delta <= TRAFFIC_MAX_AGE_S if delta is not None else None
+                except (ValueError, TypeError, RecursionError):
+                    continue
+    except OSError:
+        pass
+
+    radar = None
+    try:
+        with open(radar_path, "rb") as handle:
+            raw = handle.read(64 * 1024 + 1)
+        if len(raw) <= 64 * 1024:
+            item = json.loads(raw)
+            tele = item.get("telemetry") if isinstance(item, dict) else None
+            if isinstance(item, dict) and item.get("schema") == 1 and isinstance(tele, dict):
+                delta = age(item.get("updated_at"))
+                packet_age = tele.get("age_s")
+                if (delta is not None and isinstance(packet_age, (int, float))
+                        and not isinstance(packet_age, bool)
+                        and math.isfinite(packet_age) and packet_age >= 0):
+                    radar = delta + packet_age <= TRAFFIC_MAX_AGE_S
+    except (OSError, ValueError, TypeError, OverflowError, RecursionError):
+        pass
+    if replies is True or radar is True:
+        return True
+    return False if replies is False and radar is False else None
 
 #: Every external command is bounded. A watchdog that hangs is not a watchdog.
 COMMAND_TIMEOUT_S = 25.0
@@ -127,6 +198,8 @@ class Health:
     controller: Optional[bool] = None
     #: True when the kernel logged HCI command timeouts in the last few minutes.
     wedged: Optional[bool] = None
+    #: At least one fresh stream, both positively stale, or insufficient data.
+    traffic_fresh: Optional[bool] = None
 
     @property
     def all_known_down(self) -> bool:
@@ -144,7 +217,8 @@ class Health:
             return "?" if value is None else ("up" if value else "down")
         return (f"controller={say(self.controller)} obd={say(self.obd)} "
                 f"radar={say(self.radar)} rfcomm={self.rfcomm or '?'}"
-                + (" kernel=hci-timeouts" if self.wedged else ""))
+                + (" kernel=hci-timeouts" if self.wedged else "")
+                + (" traffic=stale" if self.traffic_fresh is False else ""))
 
 
 def controller_up() -> Optional[bool]:
@@ -167,7 +241,7 @@ def controller_wedged(window_s: float = WEDGE_WINDOW_S) -> Optional[bool]:
 def look(obd: str = OBD_ADAPTER, radar: str = RADAR_DETECTOR) -> Health:
     return Health(obd=connected(obd), radar=connected(radar),
                   rfcomm=rfcomm_state(), controller=controller_up(),
-                  wedged=controller_wedged())
+                  wedged=controller_wedged(), traffic_fresh=traffic_fresh())
 
 
 @dataclass
@@ -200,14 +274,15 @@ class Watchdog:
         """One pass: look, then climb no further than the state justifies."""
         state = look(self.obd, self.radar) if health is None else health
 
-        if state.any_connected:
+        stalled_wedge = state.wedged is True and state.traffic_fresh is False
+        if state.any_connected and not stalled_wedge:
             if self.strikes:
                 self.say(f"recovered after {self.strikes} unhealthy checks "
                          f"({state.describe()})")
             self.strikes = 0
             return state
 
-        if not state.all_known_down:
+        if not state.all_known_down and not stalled_wedge:
             # One device down, or a controller that would not answer. Neither
             # justifies touching anything: a sleeping vehicle takes the OBD
             # adapter with it, every single night.
@@ -215,7 +290,8 @@ class Watchdog:
             return state
 
         self.strikes += 1
-        self.say(f"both links down, strike {self.strikes} ({state.describe()})")
+        why = "kernel fault and both streams stale" if stalled_wedge else "both links down"
+        self.say(f"{why}, strike {self.strikes} ({state.describe()})")
 
         # Both devices switched off with the truck looks exactly like this, and
         # reconnect attempts time out the same way either way (161 of 162 over
@@ -378,6 +454,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 "utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                 "obd": state.obd, "radar": state.radar, "rfcomm": state.rfcomm,
                 "controller": state.controller,
+                "traffic_fresh": state.traffic_fresh,
                 "strikes": dog.strikes, "actions": list(dog.actions),
                 "log": list(lines),
             }, allow_nan=False), flush=True)

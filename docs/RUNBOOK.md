@@ -153,6 +153,36 @@ sudo systemctl disable --now hummer-btdiscover.service
 It never opens the serial device, pairs/trusts/removes a device, runs a probe,
 enables the collector, or sends a vehicle command.
 
+### Controller timeouts with cached connected flags
+
+Kernel HCI timeouts plus a recorder blocked in `tty_wait_until_sent` and stale
+radar packets indicate a controller fault even if BlueZ still says connected.
+The watchdog checks successful adapter replies and actual radar packet age
+before overriding those flags: both must be positively stale for more than
+90 seconds, with recent kernel HCI-error evidence. Missing data is unknown;
+either fresh stream protects a recovered controller from old journal errors.
+The existing escalation intervals and reload cooldown remain in force.
+
+For the prepared October 20 repair, the candidate watchdog is staged at
+`.foreman/btwatch-next.py`, outside the running root timer's import path.
+Read-only preflight on the Pi:
+
+```bash
+bash /home/jeremy/hummer-obd/scripts/repair-bluetooth-controller.sh --check
+```
+
+Owner-run activation and recovery:
+
+```bash
+sudo bash /home/jeremy/hummer-obd/scripts/repair-bluetooth-controller.sh
+```
+
+The Pi-only script backs up the active watchdog, pauses its timer, installs
+the tested candidate, reloads `hci_uart`, and restores the previously running
+recorder and radar collector. It starts classic RFCOMM before the BLE
+subscriber. Pi power, Wi-Fi and the reserve monitor stay online. Check fresh
+CSV rows and radar packets afterward; active processes alone are insufficient.
+
 ## Raw probe and transcript review
 
 The initial probe is a supervised acceptance action, not a health-check loop.

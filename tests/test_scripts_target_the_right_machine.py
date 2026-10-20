@@ -30,6 +30,7 @@ GUARD = SCRIPTS / "lib" / "require-node.sh"
 #: Scripts that mutate system state on whatever machine runs them. Each MUST
 #: source the guard, or it will happily configure a workstation.
 MUST_GUARD = {
+    "repair-bluetooth-controller.sh",
     "install-gps-hotplug.sh",
     "install-pisugar3-power.sh",
     "bootstrap_pi.sh",

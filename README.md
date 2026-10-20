@@ -1214,7 +1214,11 @@ rebinding needs privileges the recorder does not have and should not have.
 
 `hummer-obd-btwatch` runs as root on a timer and climbs a ladder — reconnect,
 reset the controller, restart the daemon, then reload the UART driver — one
-rung at a time, only when *both* devices are known down. Each timer run is a
+rung at a time when both devices are known down. Cached connected flags also
+qualify only when the kernel reports HCI timeouts and both independent data
+streams are positively stale for over 90 seconds. A fresh stream or unknown
+traffic evidence preserves the connected-link restraint, so old kernel errors
+cannot reset a recovered controller. Each timer run is a
 fresh process, so it keeps its strike count in `/dev/shm/hummer-btwatch.json`
 (the unit's sandbox leaves `/dev` as the only persistent writable tree; the
 record is forgotten after five quiet minutes or a reboot, and only a root-owned,

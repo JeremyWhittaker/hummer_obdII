@@ -48,10 +48,10 @@ recovery; all fail before the fix and pass after it.
   sessions, including the two drives missed by OBD. No completed alert events
   were recorded. Nine initial rows from today's boot carried the restored
   old clock and are excluded from that count.
-- At the live check, OBD recording and radar streaming are active. GPSd serves
+- At the initial live check, OBD recording and radar streaming were active. GPSd serves
   the SiRF receiver through `/dev/hummer_gps`; its current cold-start fix is
   mode 1. Registration and available satellite reception are separate checks.
-- No failed systemd units, undervoltage/throttling flags, current-boot HCI
+- Initially no failed systemd units, undervoltage/throttling flags, HCI
   timeout/reset faults or filesystem-error evidence were found. Root usage is
   22%, with 22 GiB free. A dashboard bind retry before the VPN address existed
   recovered automatically.
@@ -77,8 +77,30 @@ clock saved at the prior shutdown before network time corrects them; they do
 not prove the Pi booted yesterday. Persistent CSV/raw/radar history support
 the drive findings, but cannot establish yesterday's exact UPS cutoff reason.
 
-The radar dashboard freshness fix also withholds old voltage, GPS-lock and
-live alerts when telemetry is stale or disconnected. Both that fix and the
-wake-probe fix require the owner to restart `hummer-dashboard` and
-`hummer-drive` after the staged source is deployed. Activation and fresh live
-checks must be recorded before calling the patched processes verified.
+## Activation and additional Bluetooth fault
+
+The owner restarted the patched dashboard and recorder at 11:46 MST. The new
+dashboard API reports packet age separately and withheld voltage/GPS-lock
+when a fresh heartbeat carried a 16.5-second-old packet, proving that fix is
+loaded. Full source validation passed 1,612 tests and 4,180 subtests, with one
+skip; 24 targeted tests also passed on the Pi.
+
+The same verification caught a controller hang after restart. Kernel HCI
+timeouts (`0x0406`, `0x2005`, `0x200b`) coincided with the recorder blocked in
+`tty_wait_until_sent`, no raw-log progress, and radar packet age exceeding
+90 seconds. Cached connected flags made the watchdog return healthy without
+escalating despite that evidence.
+
+The watchdog correction uses passive successful-reply and packet-age checks.
+Only positive staleness of both streams together with recent kernel errors
+can override cached connected flags. Fresh traffic or missing evidence keeps
+the existing restraint; escalation spacing, service allowlists and cooldown
+remain unchanged. Regression tests cover the captured failure and protect a
+recovered controller while old errors remain in the journal.
+
+The candidate is staged outside the active root import path. The owner-run
+`scripts/repair-bluetooth-controller.sh` validates it, backs up the old source,
+pauses the timer, installs the candidate and reloads the Bluetooth UART
+driver, then restores previously running consumers. Wi-Fi, Pi power and the
+reserve monitor remain online. Live Bluetooth recovery and fresh recorder
+rows remain unverified until that manual privileged step completes.

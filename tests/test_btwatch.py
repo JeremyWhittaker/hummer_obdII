@@ -11,7 +11,11 @@ are not about this code.
 """
 
 import pathlib
+import base64
+import json
+import tempfile
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from hummer_obd import btwatch
@@ -268,6 +272,100 @@ class DevicesOffRestraintTests(unittest.TestCase):
             self.assertFalse(btwatch.controller_wedged())
         with patch.object(btwatch, "_run", return_value=(1, "")):
             self.assertIsNone(btwatch.controller_wedged())
+
+
+class CachedConnectionsTests(unittest.TestCase):
+    def step(self, traffic, wedged=True):
+        state = btwatch.Health(obd=True, radar=True, rfcomm="connected",
+                               controller=True, wedged=wedged)
+        state.traffic_fresh = traffic
+        dog = btwatch.Watchdog(recorder_check=lambda: False)
+        dog.strikes = btwatch.RELOAD_AFTER - 1
+        done = []
+        with patch.object(dog, "_act", side_effect=lambda name, argv: done.append(name) or True):
+            dog.step(state)
+        return done
+
+    def test_kernel_wedge_and_both_stalled_streams_override_cached_connections(self):
+        self.assertIn("unload-hci-uart", self.step(False))
+
+    def test_fresh_traffic_protects_a_recovered_controller_with_old_kernel_errors(self):
+        self.assertEqual(self.step(True), [])
+
+    def test_unknown_traffic_never_overrides_an_apparently_connected_link(self):
+        self.assertEqual(self.step(None), [])
+
+    def test_stale_traffic_without_a_kernel_fault_does_not_reset_connected_devices(self):
+        self.assertEqual(self.step(False, wedged=False), [])
+
+
+class TrafficFreshnessTests(unittest.TestCase):
+    NOW = datetime(2026, 10, 20, 18, 50, tzinfo=timezone.utc).timestamp()
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.raw = pathlib.Path(folder.name) / "raw.jsonl"
+        self.radar = pathlib.Path(folder.name) / "state.json"
+
+    def stamp(self, age):
+        return datetime.fromtimestamp(self.NOW - age, timezone.utc).isoformat()
+
+    def write_raw(self, age):
+        self.raw.write_text(json.dumps({"kind": "io", "dir": "rx", "ts": self.stamp(age),
+                                       "b64": base64.b64encode(b"13.8V\r\r>").decode()}) + "\n")
+
+    def write_radar(self, packet_age, document_age=0):
+        self.radar.write_text(json.dumps({"schema": 1, "updated_at": self.stamp(document_age),
+                                          "telemetry": {"age_s": packet_age}}))
+
+    def fresh(self):
+        return btwatch.traffic_fresh(self.raw, self.radar, now=self.NOW)
+
+    def test_one_stream_still_reporting_prevents_a_repair(self):
+        self.write_raw(1)
+        self.write_radar(300)
+        self.assertIs(self.fresh(), True)
+
+    def test_new_radar_heartbeat_does_not_refresh_old_detector_packets(self):
+        self.write_raw(300)
+        self.write_radar(300)
+        self.assertIs(self.fresh(), False)
+
+    def test_new_transmits_do_not_refresh_an_old_adapter_reply(self):
+        self.write_raw(300)
+        with self.raw.open('a') as out:
+            out.write(json.dumps({"kind": "io", "dir": "tx", "ts": self.stamp(0),
+                                  "b64": base64.b64encode(b"ATRV\r").decode()}) + "\n")
+        self.write_radar(300)
+        self.assertIs(self.fresh(), False)
+
+    def test_stopped_radar_writer_cannot_keep_its_packet_young(self):
+        self.write_raw(300)
+        self.write_radar(1, document_age=300)
+        self.assertIs(self.fresh(), False)
+
+    def test_missing_or_unreadable_stream_is_unknown_not_broken(self):
+        self.write_radar(300)
+        self.assertIsNone(self.fresh())
+        self.raw.write_text('{invalid')
+        self.assertIsNone(self.fresh())
+
+    def test_invalid_packet_age_or_clock_is_unknown(self):
+        self.write_raw(300)
+        for age in (None, True, -1, "0", float('nan'), float('inf')):
+            with self.subTest(age=age):
+                self.write_radar(age)
+                self.assertIsNone(self.fresh())
+        self.write_radar(0, document_age=-300)
+        self.assertIsNone(self.fresh())
+
+    def test_invalid_radar_shapes_do_not_crash_the_watchdog(self):
+        self.write_raw(300)
+        for doc in ([], None, 1, {"schema": 1, "telemetry": []}):
+            with self.subTest(doc=doc):
+                self.radar.write_text(json.dumps(doc))
+                self.assertIsNone(self.fresh())
 
 
 class RecorderRestoreTests(unittest.TestCase):

@@ -17,11 +17,21 @@ OBD logging missed. Raw wake probes inherited enhanced priority `ATCP14`;
 the corrected probe establishes the already-approved standard address first.
 Regression tests reproduce both wrong-address detection and the missed second
 session. Radar cached-reading freshness was also fixed in `2fa69a6`.
-**Updated source must be loaded by restarting only `hummer-drive` and
-`hummer-dashboard`, under the owner's manual sudo policy.** Keep the reserve
-monitor and radar collector running. Current GPS receiver registration works;
-its post-boot satellite fix is pending sky visibility. Prior boot journals
-were volatile, so yesterday's exact reserve cutoff cannot be reconstructed.
+The owner restarted both services at 11:46 MST. The dashboard's new packet-age
+field and stale-value suppression are operationally verified. Subsequent
+verification caught a Bluetooth controller hang: HCI timeouts, the recorder
+blocked in `tty_wait_until_sent`, and stale radar packets, while cached
+connected flags kept the existing watchdog from escalating.
+
+A conservative watchdog fix requires both streams to be positively stale
+alongside kernel-error evidence before overriding cached flags. It is staged
+outside the active root import path and needs the owner-run
+`scripts/repair-bluetooth-controller.sh` activation/recovery described in the
+[runbook](RUNBOOK.md#controller-timeouts-with-cached-connected-flags).
+**Bluetooth recovery and fresh recorder acceptance remain pending that step.**
+The reserve monitor remains active. Current GPS registration works; the
+receiver sees satellites but has no position fix at this location. Prior boot
+journals were volatile, so yesterday's exact reserve cutoff is unavailable.
 
 **For "what can this thing actually read?", go to
 [the access matrix](ACCESS_MATRIX.md) rather than to any prose in this file.**
