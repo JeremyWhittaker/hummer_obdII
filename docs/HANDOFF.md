@@ -4,6 +4,23 @@ This is the durable starting point for the next human or coding agent. Read
 [Safety](SAFETY.md) first, then check this file against the live node before
 making a change.
 
+**Post-drive follow-up, 2026-10-20:** review of the October 19 drives is waiting
+for Pi access. SSH timed out and the VPN reported the node offline, last seen
+October 19 at 20:11 MST. This does not establish whether it shut down normally
+or lost networking. The newest local session copy is from September, so no
+October 19 trip summary or current hardware-health conclusion has been made.
+
+A confirmed radar dashboard defect is fixed in `2fa69a6`: fresh collector
+heartbeats previously made cached detector readings look current. Packet age
+now advances independently of publication time, and stale/disconnected voltage,
+GPS-lock and live alerts are withheld. Full regression: 1,609 passed, one
+skipped, 4,176 subtests; fresh/stale desktop and phone browser checks passed.
+**The patch is pushed but not yet deployed or operationally verified on the
+Pi.** Once reachable, collect yesterday's session/raw logs before repairs,
+inspect the reserve shutdown/startup evidence, verify GPS/OBD/radar behavior,
+deploy the radar patch, and have the owner perform any required privileged
+dashboard restart. Keep the Pi online during inspection.
+
 **For "what can this thing actually read?", go to
 [the access matrix](ACCESS_MATRIX.md) rather than to any prose in this file.**
 It is generated from the code, it covers what is *not* reachable as carefully as
