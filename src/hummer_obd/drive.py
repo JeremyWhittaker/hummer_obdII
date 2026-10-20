@@ -1254,9 +1254,15 @@ def _vehicle_answers(transport: Transport, timeout: float) -> bool:
 
     This is the question the rail voltage cannot answer, asked as cheaply as it
     can be asked.  A sleeping vehicle costs one request to check; a woken one
-    is detected on the next pass either way.
+    is detected on the next pass either way. Configure the same physical
+    address as normal standard reads first: record() leaves enhanced priority
+    0x14 active, which makes the standard wake request go unanswered even when
+    the truck is driving. These AT commands configure only the adapter; the
+    vehicle still receives just the existing 010D probe.
     """
     try:
+        for command in STANDARD_ADDRESS:
+            transport.send(validate_command(command), timeout=timeout)
         reply = parse_reply(
             transport.send(validate_command(WAKE_PROBE), timeout=timeout).data
         )
@@ -1280,11 +1286,11 @@ def run_auto(
 ) -> None:
     """Record whenever the vehicle is awake; stay silent while it sleeps.
 
-    The sleeping branch sends **only** ``ATRV``.  That is the whole reason this
-    can run unattended against a parked vehicle: the overnight measurements that
-    cleared the power gate were taken with exactly that command set and showed
-    ``ATCS T:00 R:00`` on every one of 158 samples, so a service that polls
-    voltage and nothing else is doing what has already been proven harmless.
+    The low-voltage branch sends only ``ATRV``. After a session ends because
+    modules stopped answering, an ambiguous awake rail permits the existing
+    single-PID wake check at the bounded watch cadence. Its address setup is
+    adapter-local and adds no vehicle requests. A low rail or silent adapter
+    never triggers that probe.
 
     A session ends when the vehicle goes back to sleep, so each wake period
     produces its own file rather than one unbounded CSV.

@@ -4,22 +4,24 @@ This is the durable starting point for the next human or coding agent. Read
 [Safety](SAFETY.md) first, then check this file against the live node before
 making a change.
 
-**Post-drive follow-up, 2026-10-20:** review of the October 19 drives is waiting
-for Pi access. SSH timed out and the VPN reported the node offline, last seen
-October 19 at 20:11 MST. This does not establish whether it shut down normally
-or lost networking. The newest local session copy is from September, so no
-October 19 trip summary or current hardware-health conclusion has been made.
+**Post-drive follow-up, 2026-10-20:** access returned after the owner found a
+possibly unplugged power cable. UPS input and restore both read enabled;
+reserve monitor and recorder started normally after the 90-second GPS boot
+wait. Root-owned UPS helper/hook hashes match source. The manual-button report
+does not establish a restore failure when the input cable may have been absent;
+a controlled cutoff/restoration test remains deferred.
 
-A confirmed radar dashboard defect is fixed in `2fa69a6`: fresh collector
-heartbeats previously made cached detector readings look current. Packet age
-now advances independently of publication time, and stale/disconnected voltage,
-GPS-lock and live alerts are withheld. Full regression: 1,609 passed, one
-skipped, 4,176 subtests; fresh/stale desktop and phone browser checks passed.
-**The patch is pushed but not yet deployed or operationally verified on the
-Pi.** Once reachable, collect yesterday's session/raw logs before repairs,
-inspect the reserve shutdown/startup evidence, verify GPS/OBD/radar behavior,
-deploy the radar patch, and have the owner perform any required privileged
-dashboard restart. Keep the Pi online during inspection.
+The [drive audit](DRIVE_AUDIT_2026-10-20.md) found two recorded drives totaling
+20.94 miles, with 3D GPS on all 762 rows, plus two radar-confirmed drives that
+OBD logging missed. Raw wake probes inherited enhanced priority `ATCP14`;
+the corrected probe establishes the already-approved standard address first.
+Regression tests reproduce both wrong-address detection and the missed second
+session. Radar cached-reading freshness was also fixed in `2fa69a6`.
+**Updated source must be loaded by restarting only `hummer-drive` and
+`hummer-dashboard`, under the owner's manual sudo policy.** Keep the reserve
+monitor and radar collector running. Current GPS receiver registration works;
+its post-boot satellite fix is pending sky visibility. Prior boot journals
+were volatile, so yesterday's exact reserve cutoff cannot be reconstructed.
 
 **For "what can this thing actually read?", go to
 [the access matrix](ACCESS_MATRIX.md) rather than to any prose in this file.**

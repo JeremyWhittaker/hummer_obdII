@@ -894,6 +894,64 @@ class TestASleepingVehicleSeesOnlyATRVAndOneProbe(unittest.TestCase):
         self.assertFalse(drive._vehicle_answers(_Dead(), 1.0))
 
 
+class WakeProbeAddressingTests(unittest.TestCase):
+    class Link(_Fake):
+        def __init__(self):
+            super().__init__()
+            # What record() leaves behind after restoring enhanced priority.
+            self.priority = "14"
+            self.header = "DA17F1"
+            self.receive = "18DAF117"
+
+        def send(self, command, timeout=None):
+            if command.startswith("ATCP"):
+                self.priority = command[4:]
+            elif command.startswith("ATSH"):
+                self.header = command[4:]
+            elif command.startswith("ATCRA"):
+                self.receive = command[5:]
+            if command == "010D":
+                self.sent.append(command)
+                addressed = (self.priority, self.header, self.receive) == (
+                    "18", "DA17F1", "18DAF117")
+                return Response(command, b"18DAF11703410D20\r\r>" if addressed
+                                else b"NO DATA\r\r>", .01)
+            return super().send(command, timeout)
+
+    def test_wake_probe_recovers_the_address_left_by_a_finished_session(self):
+        link = self.Link()
+        self.assertTrue(drive._vehicle_answers(link, 1.0))
+        # Adapter configuration is local; still exactly one vehicle request.
+        self.assertEqual([c for c in link.sent if not c.startswith("AT")], ["010D"])
+        for command in link.sent:
+            validate_command(command)
+
+    def test_probe_does_not_inherit_an_unrelated_module_filter(self):
+        link = self.Link()
+        link.header, link.receive = "DA28F1", "142AF128"
+        self.assertTrue(drive._vehicle_answers(link, 1.0))
+
+    def test_auto_mode_starts_a_second_session_after_a_sleep_transition(self):
+        link = self.Link()
+        calls = []
+        loops = 0
+
+        def record_then_sleep(*args, **kwargs):
+            calls.append(True)
+            link.priority = "14"
+            return drive.Session(ended_asleep=True)
+
+        def stop():
+            nonlocal loops
+            loops += 1
+            return len(calls) >= 2 or loops > 5
+
+        with tempfile.TemporaryDirectory() as tmp, patch(
+                'hummer_obd.drive.record', side_effect=record_then_sleep):
+            run_auto(link, output_dir=tmp, stop=stop, sleeper=lambda _: None)
+        self.assertEqual(len(calls), 2, "a woken truck must resume recording")
+
+
 class TestTheWatchCanGetADeadLinkBack(unittest.TestCase):
     """A link that dies while the vehicle is parked must not strand the watch.
 

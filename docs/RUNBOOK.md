@@ -239,9 +239,19 @@ systemctl status hummer-drive --no-pager
 journalctl -u hummer-drive -n 40 --no-pager
 ```
 
-It records a session whenever the vehicle is awake and sends **only `ATRV`**
-while it sleeps. Settings live in `/etc/default/hummer-drive`; sessions land in
+It records a session whenever the vehicle is awake. The low-voltage watch
+sends only `ATRV`; after a session ends from module silence, an ambiguous rail
+permits the existing single `010D` wake check at the bounded watch cadence.
+Settings live in `/etc/default/hummer-drive`; sessions land in
 `evidence/sessions/drive-<timestamp>.csv`, one file per wake period.
+
+The wake check must establish `ATCP18`, `ATSHDA17F1` and `ATCRA18DAF117`
+before sending `010D`. Normal recording leaves enhanced priority `ATCP14`
+active; inheriting it makes a woken truck return `NO DATA` or `CAN ERROR` to
+the standard probe. This caused missing morning and late evening captures on
+2026-10-19, independently confirmed by radar history and the raw transcript.
+The fix changes adapter addressing, without adding vehicle requests or
+changing the sleep cadence. See the [post-drive audit](DRIVE_AUDIT_2026-10-20.md).
 
 ### Restarting it
 
