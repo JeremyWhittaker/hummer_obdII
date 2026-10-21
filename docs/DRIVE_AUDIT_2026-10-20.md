@@ -120,3 +120,97 @@ matched the old source, the recorder remained blocked, and kernel HCI timeouts
 continued. The dashboard correctly marked the old OBD and radar readings
 stale. A running recorder process does not establish that a drive is being
 recorded; fresh rows and detector packets remain the acceptance criteria.
+
+## October 21 — recovery applied, and the recordings it was owed
+
+### The controller fault did not survive a power cycle
+
+The node powered off some time after 00:56 MST and came up again at 12:06 MST.
+The boot's first entries carry the clock restored from the previous shutdown,
+so they are stamped 00:56; `hummer-gpstime` corrected the clock from the GPS at
+12:07 and real timestamps begin there. The recorder opened a session 70 seconds
+after that boot and recorded normally, with the wedged controller gone and the
+staged watchdog still not installed. The power cycle, not the repair, cleared
+the October 20 hang.
+
+| Session (UTC) | Rows | Speed rows | Position rows | Odometer | Peak |
+|---|---|---|---|---|---|
+| 19:07:18 – 21:07:15 | 902 | 693 | 902 | 4242.3 → 4270.3 km | 95 km/h |
+| 21:07:21 – 22:45:26 | 411 | 152 | 411 | 4270.3 → 4275.3 km | 80 km/h |
+
+Together 33.0 km (20.5 miles) across two wake sessions, every row with a
+mode-3 GPS position. This is the wake-probe addressing fix working in
+production rather than in a test: the second session begins immediately after
+the first ends, which is the sleep-to-next-session recovery the regression
+tests cover.
+
+Standard mode-01 PIDs stop answering partway through the second session — the
+last speed and odometer sample is at 21:37, and the remaining 192 rows carry
+neither, while the extended `22` DIDs keep answering (state of charge is
+present in 404 of 411 rows). The same shape appears in the parked session that
+follows. Absent standard PIDs on a parked truck are therefore expected here;
+they are not evidence of a wake-probe regression.
+
+### Owner-run Bluetooth recovery
+
+The owner ran `sudo bash scripts/repair-bluetooth-controller.sh` at 15:46:06
+MST. The script backed the old watchdog up under `/var/backups/hummer-bluetooth`,
+installed the candidate — the active source now matches the staged
+`.foreman/btwatch-next.py` byte for byte — and restored the consumers it had
+stopped: the recorder came back at 15:46:09 and reopened the serial device, the
+radar collector at 15:46:14, and the watchdog timer's next run finished cleanly
+at 15:47:47. The adapter reports connected, the character device's timestamp
+advances, and a new session is growing.
+
+Acceptance read from behaviour, not from process state: of 64 published
+signals, 29 are fresh, including state of charge at 74.696%, the 12 V rail at
+12.8 V, cell minimum, maximum and spread, the 26-position `array_2b43` array,
+and GPS mode 3 with 11 satellites in use. `speed_kph` and `odometer_km` are
+reported `missing` with 0 of 10 samples, for the parked-truck reason above.
+
+`/api/r8` carries `telemetry_age_s` and reports `stale` with a null voltage, so
+the radar cached-heartbeat correction is loaded in the running API.
+
+### Radar still has not connected this boot
+
+The collector is active, but the detector has not been reachable at any point
+this boot — the status panel has said `r8 connecting` since 12:06, which is
+before the Bluetooth repair as well as after it, and `/api/r8` reports
+`connected: false` with no packets. The radar link is BLE and independent of
+the RFCOMM path that was repaired. Nothing here establishes why; a detector
+that is unpowered while the truck is parked looks exactly the same from the
+node. The earlier alert history remains readable.
+
+### The node is on UPS battery now, and the journal still cannot record it
+
+At 16:00 MST the board reports 3.949 V, 91%, `external=False`, `restore=True`,
+`CTR1=0x7C`: the vehicle feed is absent and the node is running on the UPS with
+the reserve monitor armed. That is the first observation of the new monitor in
+the state that ends in an automatic shutdown.
+
+It would leave no evidence. `/etc/systemd/journald.conf` has said
+`Storage=persistent` since 2026-09-03 and has never had any effect, because
+Raspberry Pi OS ships `/usr/lib/systemd/journald.conf.d/40-rpi-volatile-storage.conf`
+and a drop-in is applied after the main file. `/var/log/journal` has been empty
+since the image was written; every boot logs to `/run` and is destroyed with
+it. That is why this audit cannot say what powered the node off at 00:56, and
+why `LOW BATTERY: graceful reserve shutdown` and `/run/hummer-low-battery` —
+the only two traces an automatic reserve shutdown leaves — would both be gone
+by the time anyone looked.
+
+`scripts/enable-persistent-journal.sh` installs one `/etc` drop-in that sorts
+after the vendor's and restarts `systemd-journald`; it is Pi-guarded, has a
+read-only `--check`, and verifies that a journal file actually appears under
+`/var/log/journal` instead of trusting an exit code. Until an owner runs it,
+the deferred UPS acceptance stays unprovable after the fact, however many
+times the cycle actually happens.
+
+### What this did not establish
+
+- The cause of the 00:56 MST power-off. The previous boot's journal was never
+  written and the shutdown marker lives in a tmpfs. The 12:06 boot is
+  *consistent with* restored vehicle input and nothing more; whether anyone
+  pressed the button is not recorded anywhere.
+- The complete UPS lifecycle: automatic shutdown at reserve, output cutoff,
+  restored input, unattended return. Still owed, as before.
+- Why the radar detector has not connected this boot.

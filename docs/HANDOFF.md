@@ -4,6 +4,31 @@ This is the durable starting point for the next human or coding agent. Read
 [Safety](SAFETY.md) first, then check this file against the live node before
 making a change.
 
+**Current state, 2026-10-21.** The node booted at 12:06 MST without the staged
+Bluetooth repair and recorded two drives normally — 902 and 411 rows, 33.0 km,
+mode-3 GPS in every row — so the October 20 controller hang did not survive a
+power cycle. The owner then ran `scripts/repair-bluetooth-controller.sh` at
+15:46 MST; the active watchdog source now matches the staged candidate, and the
+recorder, radar collector and watchdog timer came back. Fresh-row acceptance is
+met: 29 of 64 signals fresh, state of charge, 12 V rail, cell spread, the
+26-position array and GPS mode 3 with 11 satellites. `/api/r8` carries
+`telemetry_age_s`. The full suite is green (1,623 passed, 1 skipped, 4,195
+subtests) and `scripts/restart-node-services.sh --check` now passes against the
+live node, which it had never been run against before.
+
+Three things are still open. The **radar detector has not connected at any
+point this boot**, before or after the repair, and the reason is not
+established. The node is **running on UPS battery right now** (3.949 V, 91%,
+`external=False`), which is the state that ends in an automatic reserve
+shutdown. And that shutdown would leave no trace, because the journal is
+volatile: `/etc/systemd/journald.conf` has said `Storage=persistent` since
+2026-09-03 and never took effect, since Raspberry Pi OS ships a later drop-in
+setting `Storage=volatile`. Until an owner runs
+`scripts/enable-persistent-journal.sh` on the Pi, the deferred UPS acceptance
+cannot be confirmed after the fact no matter how often the cycle happens. See
+the [drive audit](DRIVE_AUDIT_2026-10-20.md) and
+[runbook](RUNBOOK.md#making-the-reserve-lifecycle-provable-a-journal-that-survives-power-loss).
+
 **Post-drive follow-up, 2026-10-20:** access returned after the owner found a
 possibly unplugged power cable. UPS input and restore both read enabled;
 reserve monitor and recorder started normally after the 90-second GPS boot
@@ -28,7 +53,8 @@ alongside kernel-error evidence before overriding cached flags. It is staged
 outside the active root import path and needs the owner-run
 `scripts/repair-bluetooth-controller.sh` activation/recovery described in the
 [runbook](RUNBOOK.md#controller-timeouts-with-cached-connected-flags).
-**Bluetooth recovery and fresh recorder acceptance remain pending that step.**
+**That step was completed by the owner on 2026-10-21; see the current-state
+block at the top of this file for what it did and did not establish.**
 At the 13:28 MST drive check, the reserve monitor remained active with its
 original PID, the UPS reported 100% charge with external power and restore
 enabled, and the USB GPS had a mode-3 position fix through the stable alias.

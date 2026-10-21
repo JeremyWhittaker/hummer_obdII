@@ -788,6 +788,50 @@ The vendor driver uses control bit 5 to cut output; newer documentation also
 describes it as delayed cutoff, so register `0x09` is explicitly set to zero.
 Only the intended control bits are changed, preserving all other bits.
 
+### Making the reserve lifecycle provable: a journal that survives power loss
+
+The acceptance above is an *observed sequence*, and until 2026-10-21 the node
+could not record one. `/etc/systemd/journald.conf` has said
+`Storage=persistent` since 2026-09-03 and it never took effect: Raspberry Pi OS
+ships `/usr/lib/systemd/journald.conf.d/40-rpi-volatile-storage.conf`, a
+drop-in is applied *after* the main file, so the vendor's `Storage=volatile`
+wins. `/var/log/journal` exists and has been empty since the image was written.
+Reading the main file alone is what made this look configured.
+
+The consequence is not cosmetic. Every boot logs to `/run` and dies with it, so
+`journalctl --list-boots` only ever shows the current boot. The October 19
+audit could not examine the boot that lost two drives; the cause of the
+October 21 00:56 MST power-off cannot be established; and an automatic reserve
+shutdown leaves nothing behind, because `LOW BATTERY: graceful reserve
+shutdown` goes to a journal in a tmpfs and `/run/hummer-low-battery` is in the
+same tmpfs.
+
+Read-only report, on the Pi, no root needed:
+
+```bash
+bash /home/jeremy/hummer-obd/scripts/enable-persistent-journal.sh --check
+```
+
+Owner-run fix:
+
+```bash
+sudo bash /home/jeremy/hummer-obd/scripts/enable-persistent-journal.sh
+```
+
+It writes one drop-in, `/etc/systemd/journald.conf.d/50-hummer-persistent.conf`,
+which sorts after the vendor's `40-` file and therefore wins; deleting the
+vendor file instead would be undone by the next OS update. It then restarts
+`systemd-journald` and checks the *behaviour* — a journal file actually present
+under `/var/log/journal` — rather than the exit code, and asserts the recorder,
+API and battery watch are still active. The write load is bounded by the
+retention policy already in the main file (200 MiB cap, 20 MiB per file, two
+weeks), which the script prints rather than chooses.
+
+It cannot recover past boots. Nothing can; they were never written. From the
+next boot onward the reserve lifecycle, the boot that follows it, and a
+Bluetooth controller hang visible only in kernel HCI errors are all provable
+after the fact instead of only while someone is watching.
+
 ### Why the legacy watch stops polling
 
 This used to rest on one fact — a PiSugar2 cannot power the Pi back on — and

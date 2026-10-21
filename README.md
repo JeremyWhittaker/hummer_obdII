@@ -105,11 +105,11 @@ the evidence behind every claim, is in [Capabilities](docs/CAPABILITIES.md).
 | Identifier sweeping, unattended or into the recorded set | The recorder never scans, and an identifier joins the recorded set only with a source or a cross-validated scan result. As of 2026-09-15 a **supervised, parked, person-started scan** of the read-only service-22 space is authorized on a separate gate — see [DEEP_SCAN.md](docs/DEEP_SCAN.md) |
 | Per-cell temperature, individually | The pack reports a temperature, and module `CB` answers a 24-value array whose scaling is not established. Nothing read here resolves an individual cell's temperature. (Pack **voltage** was listed here until 2026-09-03 and is now proven — see the row above. The claim outlived the fact by a day) |
 | Remote commands (lock, unlock, precondition, start) | Out of scope. This node has no vehicle write authority of any kind |
-| GPS / location | No receiver, and location is not an OBD-II service |
+| GPS / location *from the vehicle* | Location is not an OBD-II service, and this truck offers none. The node carries its own USB GNSS receiver instead — see the GPS section below — so recorded sessions do have a position, which is a different claim. This row read "no receiver" until 2026-10-21, by which time 902 consecutive rows carried a mode-3 fix. The API withholds position columns unless it is started with `--expose-location` |
 | OnStar / GM cloud data | A different system. Belongs in a separate broker with isolated credentials |
 | Raw transcript upload | Refused at config load: raw logs can contain an unmasked VIN |
 | Continuous collector autostart | Gated on two unproven physical results: overnight 12 V stability, and sleep while actively polling |
-| Automatic power-off on low battery | PiSugar3 reserve monitor installed and active: graceful shutdown at a board-reported 10% reserve, then a late UPS output-cut hook for auto-start on restored input. Installation verified 2026-10-19; complete shutdown/restoration hardware acceptance remains deferred. See the [power runbook](docs/RUNBOOK.md#pisugar3-reserve-shutdown-installation) |
+| Automatic power-off on low battery | PiSugar3 reserve monitor installed and active: graceful shutdown at a board-reported 10% reserve, then a late UPS output-cut hook for auto-start on restored input. Installation verified 2026-10-19; complete shutdown/restoration hardware acceptance remains deferred — and until an owner runs `scripts/enable-persistent-journal.sh`, it cannot be confirmed afterwards either, because the node's journal is volatile and the shutdown's only two traces live in a tmpfs. See the [power runbook](docs/RUNBOOK.md#pisugar3-reserve-shutdown-installation) |
 
 Report the live state of a node at any time, without touching the vehicle:
 
@@ -1494,7 +1494,8 @@ of them run `sudo`:
 - **Run on the node.** `bootstrap_pi.sh`, `bt-grant.sh`, `bt-recover.sh`,
   `enable_service_control.sh`, `enable_agent_service_control.sh`,
   `pair_obdlink.sh`, `switch_wifi_profile.sh`, `install-pisugar3-power.sh`,
-  `install-gps-hotplug.sh`.
+  `install-gps-hotplug.sh`, `repair-bluetooth-controller.sh`,
+  `enable-persistent-journal.sh`.
   These change systemd units, `/etc/sudoers.d`, `/etc/polkit-1/rules.d`, `/etc/default`, kernel modules
   or Wi-Fi profiles on whatever machine invokes them. Each one sources
   `scripts/lib/require-node.sh` and calls `require_node` before touching

@@ -31,6 +31,7 @@ GUARD = SCRIPTS / "lib" / "require-node.sh"
 #: source the guard, or it will happily configure a workstation.
 MUST_GUARD = {
     "repair-bluetooth-controller.sh",
+    "enable-persistent-journal.sh",
     "install-gps-hotplug.sh",
     "install-pisugar3-power.sh",
     "bootstrap_pi.sh",
