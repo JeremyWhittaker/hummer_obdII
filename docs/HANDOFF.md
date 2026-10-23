@@ -4,7 +4,22 @@ This is the durable starting point for the next human or coding agent. Read
 [Safety](SAFETY.md) first, then check this file against the live node before
 making a change.
 
-**Current state, 2026-10-21.** The node booted at 12:06 MST without the staged
+**Current state, 2026-10-22.** The node's last complete recording ended cleanly
+at 09:51 MST with a whole final row, at the hour the previous evening's drain
+predicted the 10% reserve — the automatic reserve shutdown's first apparent
+occurrence, and still unproven, because the journal that holds its only two
+records is volatile. The owner then powered the node directly; the board reads
+4.197 V, 100%, external present, restore armed, no undervoltage.
+
+Since that boot the **Bluetooth bond is gone** — paired and trusted lists both
+empty, pairing store rewritten at 11:57 MST — so the recorder cannot open a
+link. The binding and `/etc/default/hummer-rfcomm` are intact and the adapter
+answers a direct page, so the repair is a re-pair of a known address, not a
+setup. `scripts/recover-node-link.sh` drives both that and the journal fix from
+a workstation; with no argument it only reports. The watchdog correctly declined
+to treat an absent peer as a controller fault.
+
+**Post-drive follow-up, 2026-10-21.** The node booted at 12:06 MST without the staged
 Bluetooth repair and recorded two drives normally — 902 and 411 rows, 33.0 km,
 mode-3 GPS in every row — so the October 20 controller hang did not survive a
 power cycle. The owner then ran `scripts/repair-bluetooth-controller.sh` at

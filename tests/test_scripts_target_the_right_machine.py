@@ -52,6 +52,9 @@ SSH_TARGETED = {
     "deploy.sh",
     "deploy-panel.sh",
     "enable-remote-dashboard.sh",
+    # Same trap one level up: the two recovery steps it drives live in Pi-only
+    # scripts, so typing them on a workstation gives "command not found".
+    "recover-node-link.sh",
     # Exists BECAUSE of the mistake this file is about, in the other direction:
     # `systemctl restart hummer-battery hummer-dashboard` typed on a workstation
     # fails with "Unit not found" rather than doing anything, because those

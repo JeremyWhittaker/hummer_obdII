@@ -183,6 +183,45 @@ recorder and radar collector. It starts classic RFCOMM before the BLE
 subscriber. Pi power, Wi-Fi and the reserve monitor stay online. Check fresh
 CSV rows and radar packets afterward; active processes alone are insufficient.
 
+### Driving the recovery from a workstation
+
+The two recovery steps above live in Pi-only scripts, so typing either on a
+workstation gives "command not found". `scripts/recover-node-link.sh` names the
+node, uses `ssh -t` so `sudo` can prompt there, and with no argument changes
+nothing:
+
+```bash
+scripts/recover-node-link.sh            # read-only: which of the two is broken
+scripts/recover-node-link.sh journal    # make the node's journal persistent
+scripts/recover-node-link.sh pair       # re-pair the OBD adapter (interactive)
+scripts/recover-node-link.sh all        # journal first, then pair
+```
+
+The report distinguishes three states that look alike from a distance. A
+**bonded classic adapter stops advertising**, so an inquiry finding nothing
+proves nothing; a *direct page* by address answers or it does not, which
+separates "out of range or unpowered" from "present but no longer paired". It
+also refuses to pair a device that does not answer a page, because pairing
+something unreachable only produces a confusing failure. And a quiet recorder
+log is not treated as good news unless bytes are actually moving through the
+serial device — between attempts the recorder sleeps, so an empty window would
+otherwise read as healthy.
+
+`journal` runs first in `all` deliberately: once the journal is persistent, the
+pairing attempt is itself recorded instead of vanishing at the next power cut.
+
+For `pair` the recorder is stopped for the attempt and started again
+afterwards, including when the attempt fails — `start`/`stop` of
+`hummer-drive` is the one thing the node's polkit rules allow without a
+password. It is recording nothing while the link is down, so that costs no
+readings, and its repeated attempts to open the port would otherwise land in
+the middle of the pairing handshake. The adapter's MAC is read from the node's
+own `/etc/default/hummer-rfcomm` and printed masked.
+
+The pairing itself cannot be automated: the adapter uses Secure Simple Pairing,
+the confirmation has to be answered by a person, and its button may have to be
+pressed first.
+
 ## Raw probe and transcript review
 
 The initial probe is a supervised acceptance action, not a health-check loop.

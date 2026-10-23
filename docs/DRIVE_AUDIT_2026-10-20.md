@@ -214,3 +214,61 @@ times the cycle actually happens.
 - The complete UPS lifecycle: automatic shutdown at reserve, output cutoff,
   restored input, unattended return. Still owed, as before.
 - Why the radar detector has not connected this boot.
+
+## October 22 — the reserve shutdown probably fired, and the bond was lost
+
+### Evidence that the automatic shutdown happened
+
+The last complete recording of the day ends at 09:51 MST with 244 rows, and its
+final row carries all 64 fields. A flushed, whole last row is what a *graceful*
+stop looks like; a power cut tears it. From the previous evening's drain — 77%
+at 23:18, about 1.9 points per hour with the vehicle feed absent — the 10%
+reserve falls around 10:00 MST. It stopped at 09:51.
+
+That is the first apparent occurrence of the automatic reserve shutdown, and it
+is **not proven**: the journal was volatile, so the monitor's own
+`LOW BATTERY: graceful reserve shutdown` line and the `/run` marker were both
+destroyed by the power loss they describe. This is the second consecutive day on
+which the pending `scripts/enable-persistent-journal.sh` would have settled the
+question outright.
+
+The node was not dark afterwards. The 20:41 MST boot restored its clock to
+19:30, and a restored clock can only come from a later write than 09:51, so at
+least one boot ran in between and also ended. The owner then supplied power
+directly; the board charged while the Pi was off and reads 4.197 V, 100%,
+`external=True`, `restore=True`, `CTR1=0xFC`, with `throttled=0x0` — the direct
+supply is adequate and the board is healthy.
+
+### The Bluetooth bond was lost, and what that looks like
+
+After the 20:41 boot the recorder could not open a link: unanswered `ATRV`
+probes, then `reopen failed: read failed for ATZ`. The cause is narrower than
+it appears:
+
+- `bluetoothctl devices Paired` and `Trusted` are both **empty**. The pairing
+  store's mtime is 11:57 MST, during the intermediate boot.
+- The binding is intact: `rfcomm0 … channel 1 closed [tty-attached]`, and
+  `/etc/default/hummer-rfcomm` still holds the right address and channel.
+- The adapter is **present**: it answers a direct page as `OBDLink MX+`. A
+  classic inquiry found nothing, which proves nothing — a bonded classic device
+  stops advertising. The radar detector was also seen advertising, so the node
+  is still with the vehicle.
+
+So the repair is a re-pair of a known address, not a first-time setup. Why the
+bond was lost is not established, and the journal that would have shown it was
+erased.
+
+The watchdog behaved correctly throughout, logging
+`nothing to do (controller=up obd=down rfcomm=closed)`: an absent peer is not a
+controller fault, and it did not reset the Bluetooth stack over it. That is the
+restraint added on October 20 working on a case it had not seen.
+
+### What October 22 did not establish
+
+- That the shutdown at 09:51 was the reserve monitor's. The reading is
+  circumstantial — a clean final row at the hour the drain predicted — and the
+  two records that would decide it were in a tmpfs.
+- Why the Bluetooth bond disappeared, or exactly when within the 11:57 window.
+- What ran between roughly 10:00 and 19:30, beyond the fact that something did.
+- Whether the radar detector can connect; it advertises, but nothing has
+  attempted a connection since the bond was lost.

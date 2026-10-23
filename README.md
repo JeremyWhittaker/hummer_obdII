@@ -1503,13 +1503,18 @@ of them run `sudo`:
   have needed and exits without changing a byte.
 - **Run from a workstation, targeting the node over ssh.**
   `deploy.sh`, `deploy-panel.sh`, `allow-places-write.sh`,
-  `enable-remote-dashboard.sh`, `restart-node-services.sh`. These name their
+  `enable-remote-dashboard.sh`, `restart-node-services.sh`,
+  `recover-node-link.sh`. These name their
   target and must *not* carry the guard, since being run from a workstation is
   the only correct way to use them. `restart-node-services.sh` exists because
   the obvious thing to type — `systemctl restart hummer-battery
   hummer-dashboard` — fails with "Unit not found" on a workstation, those units
   existing only on the node; it restarts them there, never names the recorder,
   and then reads back the *behaviour* rather than trusting an exit code.
+  `recover-node-link.sh` is the same trap one level up: it drives the two
+  recovery steps that live in Pi-only scripts — re-pairing the adapter and
+  making the journal persistent — and with no argument it only reports, naming
+  which of the two is actually broken.
 - **Change nothing.** `collect_evidence.sh`, `pi_smoke.sh`, `run_trial.sh`,
   `install_mark_alias.sh`, `install_waveshare_driver.sh`.
 
