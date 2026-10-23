@@ -202,10 +202,15 @@ The report distinguishes three states that look alike from a distance. A
 proves nothing; a *direct page* by address answers or it does not, which
 separates "out of range or unpowered" from "present but no longer paired". It
 also refuses to pair a device that does not answer a page, because pairing
-something unreachable only produces a confusing failure. And a quiet recorder
-log is not treated as good news unless bytes are actually moving through the
-serial device — between attempts the recorder sleeps, so an empty window would
-otherwise read as healthy.
+something unreachable only produces a confusing failure.
+
+Whether anything is being recorded is read from the link state in `rfcomm -a`
+and the session file's own mtime, never from `/dev/rfcomm0`'s timestamp. That
+timestamp advances on the recorder's *write attempts*, with or without a peer,
+and an earlier version of this script reported "written 61s ago, so bytes are
+flowing" while the link was closed and the adapter unpaired. A quiet recorder
+log is likewise not good news on its own: the recorder sleeps between
+attempts, so an empty window would otherwise read as healthy.
 
 `journal` runs first in `all` deliberately: once the journal is persistent, the
 pairing attempt is itself recorded instead of vanishing at the next power cut.

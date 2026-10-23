@@ -65,7 +65,6 @@ if [ -n "$MAC" ]; then
     echo "trusted=$(timeout 10 bluetoothctl devices Trusted 2>/dev/null | grep -ci "$MAC" || true)"
 fi
 echo "rfcomm=$(rfcomm -a 2>/dev/null | head -1)"
-echo "tty_mtime=$(stat -c %Y /dev/rfcomm0 2>/dev/null || echo 0)"
 echo "now=$(date +%s)"
 echo "recorder=$(systemctl is-active hummer-drive 2>&1)"
 echo "silent=$(journalctl -u hummer-drive --since '-3min' --no-pager -o cat 2>/dev/null \
@@ -92,7 +91,7 @@ load_state() {
         k=${line%%=*}
         v=${line#*=}
         case "$k" in
-            mac|mac_masked|page|paired|trusted|rfcomm|tty_mtime|now|recorder|silent|\
+            mac|mac_masked|page|paired|trusted|rfcomm|now|recorder|silent|\
             session|session_mtime|journal_storage|journal_persistent) ST["$k"]=$v ;;
         esac
     done <<<"$s"
@@ -127,22 +126,31 @@ report() {
     else
         no "hummer-drive is ${ST[recorder]:-unknown}"
     fi
-    age=$(( $(num now) - $(num tty_mtime) ))
+    # The link state in `rfcomm -a` is the authority on whether there is a peer
+    # at all. /dev/rfcomm0's mtime is NOT: the recorder's own write attempts
+    # touch it even when nothing is connected, so "written 61s ago" was
+    # reported as "bytes are flowing" while the link was closed and unpaired.
+    # It survives only as a weak signal, and never as the thing that passes.
+    local rows_age=$(( $(num now) - $(num session_mtime) ))
     if [ "$(num silent)" -gt 0 ]; then
         no "it has logged $(num silent) unanswered ATRV probes in the last 3 minutes"
-    elif [ "$(num tty_mtime)" -gt 0 ] && [ "$age" -lt 120 ]; then
-        ok "no unanswered adapter probes in the last 3 minutes"
-    else
-        # Quiet is not the same as working: between attempts it sleeps, so an
-        # empty window would otherwise read as good news while nothing flows.
-        hm "quiet for 3 minutes, but nothing is flowing either; it backs off between attempts"
     fi
-    if [ "$(num tty_mtime)" -gt 0 ] && [ "$age" -lt 120 ]; then
-        ok "the serial device was written ${age}s ago, so bytes are flowing"
-    else
-        hm "the serial device has not been written for ${age}s"
-    fi
-    printf '   newest session: %s\n' "${ST[session]:-<none>}"
+    case "${ST[rfcomm]:-}" in
+        *" connected"*)
+            if [ "$(num session_mtime)" -gt 0 ] && [ "$rows_age" -lt 180 ]; then
+                ok "the link is open and rows were written ${rows_age}s ago"
+            else
+                hm "the link is open, but no rows for ${rows_age}s; the truck may be asleep"
+            fi
+            ;;
+        *" closed"*)
+            no "the link is closed: nothing is being recorded"
+            ;;
+        *)
+            hm "link state unknown: ${ST[rfcomm]:-<none>}"
+            ;;
+    esac
+    printf '   newest session: %s (written %ss ago)\n' "${ST[session]:-<none>}" "$rows_age"
 
     say "the journal"
     if [ "$(num journal_persistent)" -gt 0 ]; then
