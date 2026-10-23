@@ -73,8 +73,15 @@ report
 
 if [ "${1:-}" = --check ]; then
     echo
-    if [ "$(effective_storage)" = persistent ] && [ "$(persistent_files)" -gt 0 ]; then
+    if [ "$(persistent_files)" -gt 0 ]; then
         echo 'Already persistent. Nothing to do, and nothing was changed.'
+    elif [ "$(effective_storage)" = persistent ]; then
+        # Half done, which is a state worth naming rather than calling it
+        # volatile: the setting is right, so the next boot will be recorded,
+        # but this boot is still only in /run because nothing flushed it.
+        echo 'The setting is right, but this boot is still only in /run: nothing'
+        echo 'has asked journald to migrate. The next boot will be recorded; this'
+        echo 'one will not. Re-run without --check, as root, to flush it now.'
     else
         echo 'The journal is volatile: this boot is all there will ever be.'
         echo 'Nothing was changed. Re-run without --check, as root, to fix it.'
@@ -125,6 +132,17 @@ fi
 
 systemctl restart systemd-journald
 
+# Restarting is not enough, and this cost a day. journald re-reads the config
+# and knows Storage=persistent, but it keeps writing to the runtime journal
+# until something asks it to migrate. At boot that is
+# systemd-journal-flush.service -- a one-shot whose ExecStart is literally
+# `journalctl --flush`, which has already run and will not run again. Without
+# this call the first run installed the drop-in, restarted the daemon, and left
+# /var/log/journal empty: persistence would have begun only at the NEXT boot,
+# which is the one event we are trying to record.
+journalctl --flush
+journalctl --sync 2>/dev/null || true
+
 echo
 echo '== after'
 report
@@ -135,7 +153,10 @@ FAILED=0
 if [ "$(persistent_files)" -gt 0 ]; then
     echo '   ok    the journal is now written to /var/log/journal'
 else
-    echo '   FAIL  journald restarted but is still writing only to /run' >&2
+    echo '   FAIL  journald was restarted and flushed, and is STILL writing only' >&2
+    echo '         to /run. The drop-in is in place and the effective Storage is' >&2
+    echo '         persistent, so the next boot will use /var/log/journal anyway;' >&2
+    echo '         what is lost is this boot. A reboot would also settle it.' >&2
     FAILED=1
 fi
 for unit in hummer-drive.service hummer-dashboard.service hummer-battery.service; do

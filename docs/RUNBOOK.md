@@ -865,9 +865,19 @@ sudo bash /home/jeremy/hummer-obd/scripts/enable-persistent-journal.sh
 It writes one drop-in, `/etc/systemd/journald.conf.d/50-hummer-persistent.conf`,
 which sorts after the vendor's `40-` file and therefore wins; deleting the
 vendor file instead would be undone by the next OS update. It then restarts
-`systemd-journald` and checks the *behaviour* — a journal file actually present
-under `/var/log/journal` — rather than the exit code, and asserts the recorder,
-API and battery watch are still active. The write load is bounded by the
+`systemd-journald`, **flushes the runtime journal**, and checks the
+*behaviour* — a journal file actually present under `/var/log/journal` —
+rather than the exit code, and asserts the recorder, API and battery watch are
+still active.
+
+The flush is not optional, and leaving it out cost a day. A restarted journald
+knows `Storage=persistent` but keeps writing to the runtime journal until
+something asks it to migrate; at boot that is
+`systemd-journal-flush.service`, a one-shot whose `ExecStart` is literally
+`journalctl --flush` and which will not run again. The first run of this script
+installed the drop-in, restarted the daemon, and left `/var/log/journal` empty —
+persistence would have begun only at the next boot, which is exactly the event
+being recorded. The behaviour check caught it and refused to report success. The write load is bounded by the
 retention policy already in the main file (200 MiB cap, 20 MiB per file, two
 weeks), which the script prints rather than chooses.
 
