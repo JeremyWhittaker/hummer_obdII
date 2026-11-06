@@ -102,6 +102,11 @@ def _widen_csp(source: str, base: str) -> str:
     widened = []
     for directive in policy.split(";"):
         name = directive.strip().split(" ")[0] if directive.strip() else ""
+        if name == "frame-ancestors":
+            # Browsers ignore this directive in a meta policy. The hosting
+            # server must enforce framing through its HTTP response headers;
+            # HA serves this panel with X-Frame-Options: SAMEORIGIN.
+            continue
         if name in ("connect-src", "img-src"):
             directive = directive.rstrip() + " " + base
         widened.append(directive)

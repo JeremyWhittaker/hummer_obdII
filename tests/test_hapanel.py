@@ -80,6 +80,14 @@ class PolicyTests(unittest.TestCase):
                 self.assertNotIn("http://node:8765", directive,
                                  f"{name} was widened and did not need to be")
 
+    def test_header_only_frame_policy_is_not_claimed_in_meta(self):
+        for framing in ("'none'", "'self'"):
+            page = PAGE.replace("base-uri 'none'", f"base-uri 'none'; frame-ancestors {framing}")
+            out = hapanel.render("http://node:8765", page)
+            self.assertEqual(self.policy_of(out), self.policy_of(hapanel.render("http://node:8765", PAGE)))
+            self.assertIn("frame-ancestors", page, "the original source must remain unchanged")
+            self.assertIn("<body>hi</body>", out)
+
     def test_a_page_with_no_policy_is_refused_rather_than_shipped_open(self):
         with self.assertRaises(ValueError):
             hapanel.render("http://node:8765", "<html><head></head><body>x</body></html>")

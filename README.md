@@ -408,6 +408,13 @@ own `connect-src` and `img-src` to reach it — without that last part the panel
 loads, fetches nothing, and shows its empty state with only a console message
 to explain why.
 
+The generated HA variant omits `frame-ancestors` from its meta policy because
+browsers enforce that directive only in an HTTP response header
+([CSP specification](https://www.w3.org/TR/CSP3/#directive-frame-ancestors)). Framing remains
+the hosting server's responsibility; Home Assistant serves the panel with
+`X-Frame-Options: SAMEORIGIN`. Verify that header when deploying. Other policy
+directives and the exact API-origin restrictions are preserved.
+
 **`--allow-origin` is not optional and is never `*`.** A browser hands any
 page on an allowed origin whatever this API answers, and what it answers
 includes where the vehicle is. Origins are named exactly, echoed rather than
